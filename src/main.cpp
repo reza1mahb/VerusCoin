@@ -3895,6 +3895,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
     CCheckQueueControl<CScriptCheck> control(fExpensiveChecks && nScriptCheckThreads ? &scriptcheckqueue : NULL);
     CCurrencyDefinition newThisChain;
+    std::vector<uint256> vOrphanErase;
 
     unsigned int nSigOps = 0;
     {
@@ -4420,6 +4421,17 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                 if (!view.HaveShieldedRequirements(tx))
                     return state.DoS(100, error("ConnectBlock(): JoinSplit requirements not met"),
                                     REJECT_INVALID, "bad-txns-joinsplit-requirements-not-met");
+
+                // Which orphan pool entries must we evict?
+                for (size_t j = 0; j < tx.vin.size(); j++) {
+                    auto itByPrev = mapOrphanTransactionsByPrev.find(tx.vin[j].prevout);
+                    if (itByPrev == mapOrphanTransactionsByPrev.end()) continue;
+                    for (auto mi = itByPrev->second.begin(); mi != itByPrev->second.end(); ++mi) {
+                        const CTransaction& orphanTx = (*mi)->second.tx;
+                        const uint256& orphanHash = orphanTx.GetHash();
+                        vOrphanErase.push_back(orphanHash);
+                    }
+                }
 
                 for (size_t j = 0; j < tx.vin.size(); j++) {
 
@@ -5218,6 +5230,16 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
     //FlushStateToDisk();
     komodo_connectblock(pindex,*(CBlock *)&block);
+
+    // Erase orphan transactions include or precluded by this block
+    if (vOrphanErase.size()) {
+        int nErased = 0;
+        for (uint256 &orphanHash : vOrphanErase) {
+            nErased += EraseOrphanTx(orphanHash);
+        }
+        LogPrint("mempool", "Erased %d orphan tx included or conflicted by block\n", nErased);
+    }
+
     return true;
 }
 
