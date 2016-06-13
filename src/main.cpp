@@ -9145,14 +9145,30 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                  tx.vShieldedSpend.empty() &&
                  tx.vShieldedOutput.empty())
         {
-            // valid stake transactions end up in the orphan tx bin
-            AddOrphanTx(tx, pfrom->GetId());
+            bool fRejectedParents = false; // It may be the case that the orphans parents have all been rejected
+            for (const CTxIn& txin : tx.vin) {
+                if (recentRejects->contains(txin.prevout.hash)) {
+                    fRejectedParents = true;
+                    break;
+                }
+            }
+            if (!fRejectedParents) {
+                for (const CTxIn& txin : tx.vin) {
+                    CInv inv(MSG_TX, txin.prevout.hash);
+                    pfrom->AddKnownTxId(inv.hash);
+                    if (!AlreadyHave(inv)) pfrom->AskFor(inv);
+                }
+                // valid stake transactions end up in the orphan tx bin
+                AddOrphanTx(tx, pfrom->GetId());
 
-            // DoS prevention: do not allow mapOrphanTransactions to grow unbounded
-            unsigned int nMaxOrphanTx = (unsigned int)std::max((int64_t)0, GetArg("-maxorphantx", DEFAULT_MAX_ORPHAN_TRANSACTIONS));
-            unsigned int nEvicted = LimitOrphanTxSize(nMaxOrphanTx);
-            if (nEvicted > 0)
-                LogPrint("mempool", "mapOrphan overflow, removed %u tx\n", nEvicted);
+                // DoS prevention: do not allow mapOrphanTransactions to grow unbounded
+                unsigned int nMaxOrphanTx = (unsigned int)std::max((int64_t)0, GetArg("-maxorphantx", DEFAULT_MAX_ORPHAN_TRANSACTIONS));
+                unsigned int nEvicted = LimitOrphanTxSize(nMaxOrphanTx);
+                if (nEvicted > 0)
+                    LogPrint("mempool", "mapOrphan overflow, removed %u tx\n", nEvicted);
+            } else {
+                LogPrint("mempool", "not keeping orphan with rejected parents %s\n",tx.GetHash().ToString());
+            }
         } else {
             assert(recentRejects);
             recentRejects->insert(tx.GetHash());
