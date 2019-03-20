@@ -8467,7 +8467,8 @@ void static ProcessOrphanTx(const CChainParams& chainparams, std::set<uint256>& 
 {
     AssertLockHeld(cs_main);
     set<NodeId> setMisbehaving;
-    while (!orphan_work_set.empty()) {
+    bool done = false;
+    while (!done && !orphan_work_set.empty()) {
         const uint256 orphanHash = *orphan_work_set.begin();
         orphan_work_set.erase(orphan_work_set.begin());
 
@@ -8496,6 +8497,7 @@ void static ProcessOrphanTx(const CChainParams& chainparams, std::set<uint256>& 
                 }
             }
             EraseOrphanTx(orphanHash);
+            done = true;
         } else if (!fMissingInputs2) {
             int nDos = 0;
             if (stateDummy.IsInvalid(nDos) && nDos > 0) {
@@ -8514,6 +8516,7 @@ void static ProcessOrphanTx(const CChainParams& chainparams, std::set<uint256>& 
             assert(recentRejects);
             recentRejects->insert(WTxId(orphanTx.GetHash()).ToBytes());
             EraseOrphanTx(orphanHash);
+            done = true;
         }
         mempool.check(pcoinsTip);
     }
@@ -9102,7 +9105,6 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             return true;
         }
 
-        std::set<uint256> orphan_work_set;
         CTransaction tx;
         vRecv >> tx;
 
@@ -9132,7 +9134,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                 auto it_by_prev = mapOrphanTransactionsByPrev.find(COutPoint(txid, i));
                 if (it_by_prev != mapOrphanTransactionsByPrev.end()) {
                     for (const auto& elem : it_by_prev->second) {
-                        orphan_work_set.insert(elem->first);
+                        pfrom->orphan_work_set.insert(elem->first);
                     }
                 }
             }
@@ -9143,7 +9145,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                      mempool.mapTx.size());
 
             // Recursively process any orphan transactions that depended on this one
-            ProcessOrphanTx(chainparams, orphan_work_set);
+            ProcessOrphanTx(chainparams, pfrom->orphan_work_set);
         }
         // TODO: currently, prohibit joinsplits and shielded spends/outputs from entering mapOrphans
         else if (!isCoinBase &&
@@ -9658,8 +9660,14 @@ bool ProcessMessages(CNode* pfrom)
     if (!pfrom->vRecvGetData.empty())
         ProcessGetData(pfrom, chainparams.GetConsensus());
 
+    if (!pfrom->orphan_work_set.empty()) {
+        LOCK(cs_main);
+        ProcessOrphanTx(chainparams, pfrom->orphan_work_set);
+    }
+
     // this maintains the order of responses
     if (!pfrom->vRecvGetData.empty()) return fOk;
+    if (!pfrom->orphan_work_set.empty()) return true;
 
     std::deque<CNetMessage>::iterator it = pfrom->vRecvMsg.begin();
     while (!pfrom->fDisconnect && it != pfrom->vRecvMsg.end()) {
