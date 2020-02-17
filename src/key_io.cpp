@@ -614,6 +614,8 @@ T1 DecodeAny(
             CDataStream ss(serialized, SER_NETWORK, PROTOCOL_VERSION);
             T2 ret;
             ss >> ret;
+            memory_cleanse(serialized.data(), serialized.size());
+            memory_cleanse(data.data(), data.size());
             return ret;
         }
     }
@@ -629,6 +631,7 @@ T1 DecodeAny(
                 CDataStream ss(data, SER_NETWORK, PROTOCOL_VERSION);
                 T3 ret;
                 ss >> ret;
+                memory_cleanse(data.data(), data.size());
                 return ret;
             }
         }
