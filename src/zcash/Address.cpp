@@ -1,5 +1,4 @@
 #include "Address.hpp"
-#include "zcash/zip32.h"
 
 #include <librustzcash.h>
 
@@ -47,4 +46,8 @@ bool IsValidPaymentAddress(const libzcash::PaymentAddress& zaddr, uint32_t conse
 
 bool IsValidViewingKey(const libzcash::ViewingKey& vk) {
     return vk.which() != 0;
+}
+
+bool IsValidSpendingKey(const libzcash::SpendingKey& zkey) {
+    return zkey.which() != 0;
 }

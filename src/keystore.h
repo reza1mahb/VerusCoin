@@ -14,7 +14,6 @@
 #include "sync.h"
 #include "zcash/Address.hpp"
 #include "zcash/NoteEncryption.hpp"
-#include "zcash/zip32.h"
 #include "pbaas/identity.h"
 
 #include <boost/signals2/signal.hpp>
@@ -228,12 +227,12 @@ public:
     virtual bool GetIdentity(const CIdentityMapKey &mapKey, const uint256 &txid, std::pair<CIdentityMapKey, CIdentityMapValue> &keyAndIdentity) const;
     virtual bool GetFirstIdentity(const CIdentityID &idID, std::pair<CIdentityMapKey, CIdentityMapValue> &keyAndIdentity, uint32_t gteHeight=0) const;
     virtual bool GetPriorIdentity(const CIdentityMapKey &mapKey, std::pair<CIdentityMapKey, CIdentityMapValue> &keyAndIdentity) const;
-    virtual bool GetIdentities(std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &mine, 
-                               std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &imsigner, 
+    virtual bool GetIdentities(std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &mine,
+                               std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &imsigner,
                                std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &notmine) const;
     virtual bool GetIdentities(const std::vector<uint160> &queryList,
-                               std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &mine, 
-                               std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &imsigner, 
+                               std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &mine,
+                               std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &imsigner,
                                std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &notmine) const;
     virtual std::set<CKeyID> GetIdentityKeyIDs();
 

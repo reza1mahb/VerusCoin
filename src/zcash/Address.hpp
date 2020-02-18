@@ -3,6 +3,7 @@
 
 #include "zcash/address/sapling.hpp"
 #include "zcash/address/sprout.hpp"
+#include "zcash/address/zip32.h"
 
 #include <boost/variant.hpp>
 
@@ -14,7 +15,8 @@ public:
 };
 
 typedef boost::variant<InvalidEncoding, SproutPaymentAddress, SaplingPaymentAddress> PaymentAddress;
-typedef boost::variant<InvalidEncoding, SproutViewingKey, SaplingIncomingViewingKey> ViewingKey;
+typedef boost::variant<InvalidEncoding, SproutViewingKey> ViewingKey;
+typedef boost::variant<InvalidEncoding, SproutSpendingKey, SaplingExtendedSpendingKey> SpendingKey;
 
 class AddressInfoFromSpendingKey : public boost::static_visitor<std::pair<std::string, PaymentAddress>> {
 public:
@@ -31,5 +33,8 @@ bool IsValidPaymentAddress(const libzcash::PaymentAddress& zaddr, uint32_t conse
 
 /** Check whether a ViewingKey is not an InvalidEncoding. */
 bool IsValidViewingKey(const libzcash::ViewingKey& vk);
+
+/** Check whether a SpendingKey is not an InvalidEncoding. */
+bool IsValidSpendingKey(const libzcash::SpendingKey& zkey);
 
 #endif // ZC_ADDRESS_H_
