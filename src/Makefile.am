@@ -148,6 +148,8 @@ LIBZCASH_H = \
   zcash/IncrementalMerkleTree.hpp \
   zcash/NoteEncryption.hpp \
   zcash/Address.hpp \
+  zcash/address/sapling.hpp \
+  zcash/address/sprout.hpp \
   zcash/JoinSplit.hpp \
   zcash/Note.hpp \
   zcash/prf.h \
@@ -473,7 +475,7 @@ crypto_libbitcoin_crypto_a_SOURCES = \
   crypto/sph_keccak.c \
   crypto/sph_keccak.h \
   crypto/keccak.c \
-  crypto/keccak.h 
+  crypto/keccak.h
 
 if ENABLE_MINING
 EQUIHASH_TROMP_SOURCES = \
@@ -758,6 +760,8 @@ libzcash_a_SOURCES = \
 	zcash/IncrementalMerkleTree.cpp \
 	zcash/NoteEncryption.cpp \
 	zcash/Address.cpp \
+	zcash/address/sapling.cpp \
+    zcash/address/sprout.cpp \
 	zcash/JoinSplit.cpp \
 	zcash/Proof.cpp \
 	zcash/Note.cpp \
