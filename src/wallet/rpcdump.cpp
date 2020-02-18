@@ -1030,25 +1030,11 @@ UniValue z_exportviewingkey(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid zaddr");
     }
 
-    if (boost::get<libzcash::SproutPaymentAddress>(&address) == nullptr) {
-        auto addr = boost::get<libzcash::SaplingPaymentAddress>(address);
-        libzcash::SaplingIncomingViewingKey ivk;
-        if(!pwalletMain->GetSaplingIncomingViewingKey(addr, ivk)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Wallet does not hold viewing key for this zaddr");
-        }
-        return EncodeViewingKey(ivk);
+    auto vk = boost::apply_visitor(GetViewingKeyForPaymentAddress(pwalletMain), address);
+    if (vk) {
+        return EncodeViewingKey(vk.get());
+    } else {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Wallet does not hold private key or viewing key for this zaddr");
     }
-
-    auto addr = boost::get<libzcash::SproutPaymentAddress>(address);
-    libzcash::SproutViewingKey vk;
-    if (!pwalletMain->GetSproutViewingKey(addr, vk)) {
-        libzcash::SproutSpendingKey k;
-        if (!pwalletMain->GetSproutSpendingKey(addr, k)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Wallet does not hold private key or viewing key for this zaddr");
-        }
-        vk = k.viewing_key();
-    }
-
-    return EncodeViewingKey(vk);
 }
 
