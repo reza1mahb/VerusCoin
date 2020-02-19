@@ -619,7 +619,7 @@ public:
     boost::optional<std::pair<
 	libzcash::SaplingNotePlaintext,
 	libzcash::SaplingPaymentAddress>> RecoverSaplingNote(
-            SaplingOutPoint op, std::set<uint256>& ovks) const;	
+            SaplingOutPoint op, std::set<uint256>& ovks) const;
 
     //! filter decides which addresses will count towards the debit
     bool HasMatureCoins() const;    // coinbase transactions can support instant-spend outputs for conversion, import, and non-emission outputs
@@ -805,7 +805,7 @@ class CWallet : public CCryptoKeyStore, public CValidationInterface
 {
 private:
     bool SelectCoins(const CAmount& nTargetValue, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, CAmount& nValueRet, CCurrencyValueMap &reserveChange, bool& fOnlyCoinbaseCoinsRet, bool& fNeedCoinbaseCoinsRet, const CCoinControl *coinControl = NULL) const;
-    bool SelectReserveCoins(const CCurrencyValueMap& targetReserveValues, 
+    bool SelectReserveCoins(const CCurrencyValueMap& targetReserveValues,
                             CAmount targetNativeValue,
                             set<pair<const CWalletTx*,unsigned int> >& setCoinsRet,
                             CCurrencyValueMap &valueRet,
@@ -1067,12 +1067,12 @@ public:
     void AvailableCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed=true, const CCoinControl *coinControl = NULL, bool fIncludeZeroValue=false, bool fIncludeCoinBase=true, bool fIncludeProtectedCoinbase=true, bool fIncludeImmatureCoins=false, bool fIncludeIDLockedCoins=true) const;
     void AvailableReserveCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed, const CCoinControl *coinControl, bool fIncludeCoinBase, bool fIncludeNative=true, const CTxDestination *pOnlyFromDest=nullptr, const CCurrencyValueMap *pOnlyTheseCurrencies=nullptr, bool fIncludeIDLockedCoins=true) const;
     bool SelectCoinsMinConf(const CAmount& nTargetValue, int nConfMine, int nConfTheirs, std::vector<COutput> vCoins, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, CAmount& nValueRet) const;
-    bool SelectReserveCoinsMinConf(const CCurrencyValueMap& targetValues, 
-                                    CAmount targetNativeValue, 
-                                    int nConfMine, 
-                                    int nConfTheirs, 
-                                    std::vector<COutput> vCoins, 
-                                    std::set<std::pair<const CWalletTx*, unsigned int>> &setCoinsRet, 
+    bool SelectReserveCoinsMinConf(const CCurrencyValueMap& targetValues,
+                                    CAmount targetNativeValue,
+                                    int nConfMine,
+                                    int nConfTheirs,
+                                    std::vector<COutput> vCoins,
+                                    std::set<std::pair<const CWalletTx*, unsigned int>> &setCoinsRet,
                                     CCurrencyValueMap& valueRet,
                                     CAmount &nativeValueRet) const;
 
@@ -1270,8 +1270,8 @@ public:
     enum {
         RPC_OK = 1
     };
-    int CreateReserveTransaction(const std::vector<CRecipient>& vecSend, CWalletTx& wtxNew, CReserveKey& reservekey, CAmount& nFeeRet, int& nChangePosRet, 
-                           int &nChangeOutputs, std::string& strFailReason, const CCoinControl *coinControl = NULL, 
+    int CreateReserveTransaction(const std::vector<CRecipient>& vecSend, CWalletTx& wtxNew, CReserveKey& reservekey, CAmount& nFeeRet, int& nChangePosRet,
+                           int &nChangeOutputs, std::string& strFailReason, const CCoinControl *coinControl = NULL,
                            const CTxDestination *pOnlyFromDest=NULL, bool sign = true);
     bool CommitTransaction(CWalletTx& wtxNew, boost::optional<CReserveKey&> reservekey);
 
@@ -1649,13 +1649,26 @@ public:
     }
 };
 
-enum SpendingKeyAddResult {
+enum KeyAddResult {
+    SpendingKeyExists,
     KeyAlreadyExists,
     KeyAdded,
     KeyNotAdded,
 };
 
-class AddSpendingKeyToWallet : public boost::static_visitor<SpendingKeyAddResult>
+class AddViewingKeyToWallet : public boost::static_visitor<KeyAddResult>
+{
+private:
+    CWallet *m_wallet;
+public:
+    AddViewingKeyToWallet(CWallet *wallet) : m_wallet(wallet) {}
+
+    KeyAddResult operator()(const libzcash::SproutViewingKey &sk) const;
+    KeyAddResult operator()(const libzcash::SaplingExtendedFullViewingKey &sk) const;
+    KeyAddResult operator()(const libzcash::InvalidEncoding& no) const;
+};
+
+class AddSpendingKeyToWallet : public boost::static_visitor<KeyAddResult>
 {
 private:
     CWallet *m_wallet;
@@ -1677,9 +1690,9 @@ public:
     ) : m_wallet(wallet), params(params), nTime(_nTime), hdKeypath(_hdKeypath), seedFpStr(_seedFp), log(_log) {}
 
 
-    SpendingKeyAddResult operator()(const libzcash::SproutSpendingKey &sk) const;
-    SpendingKeyAddResult operator()(const libzcash::SaplingExtendedSpendingKey &sk) const;
-    SpendingKeyAddResult operator()(const libzcash::InvalidEncoding& no) const;    
+    KeyAddResult operator()(const libzcash::SproutSpendingKey &sk) const;
+    KeyAddResult operator()(const libzcash::SaplingExtendedSpendingKey &sk) const;
+    KeyAddResult operator()(const libzcash::InvalidEncoding& no) const;
 };
 
 

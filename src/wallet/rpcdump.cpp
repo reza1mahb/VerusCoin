@@ -892,49 +892,17 @@ UniValue z_importviewingkey(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid viewing key");
     }
 
-    if (boost::get<libzcash::SproutViewingKey>(&viewingkey) == nullptr) {
-        if (params.size() < 4) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Missing zaddr for Sapling viewing key.");
-        }
-        string strAddress = params[3].get_str();
-        auto address = DecodePaymentAddress(strAddress);
-        if (!IsValidPaymentAddress(address)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid zaddr");
-        }
-
-        auto addr = boost::get<libzcash::SaplingPaymentAddress>(address);
-        auto ivk = boost::get<libzcash::SaplingIncomingViewingKey>(viewingkey);
-
-        if (pwalletMain->HaveSaplingIncomingViewingKey(addr)) {
-            if (fIgnoreExistingKey) {
-                return NullUniValue;
-            }
-        } else {
-            pwalletMain->MarkDirty();
-
-            if (!pwalletMain->AddSaplingIncomingViewingKey(ivk, addr)) {
-                throw JSONRPCError(RPC_WALLET_ERROR, "Error adding viewing key to wallet");
-            }
-        }
-    } else {
-        auto vkey = boost::get<libzcash::SproutViewingKey>(viewingkey);
-        auto addr = vkey.address();
-        if (pwalletMain->HaveSproutSpendingKey(addr)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "The wallet already contains the private key for this viewing key");
-        }
-
-        // Don't throw error in case a viewing key is already there
-        if (pwalletMain->HaveSproutViewingKey(addr)) {
-            if (fIgnoreExistingKey) {
-                return NullUniValue;
-            }
-        } else {
-            pwalletMain->MarkDirty();
-
-            if (!pwalletMain->AddSproutViewingKey(vkey)) {
-                throw JSONRPCError(RPC_WALLET_ERROR, "Error adding viewing key to wallet");
-            }
-        }
+    auto addResult = boost::apply_visitor(AddViewingKeyToWallet(pwalletMain), viewingkey);
+    if (addResult == SpendingKeyExists) {
+        throw JSONRPCError(
+            RPC_WALLET_ERROR,
+            "The wallet already contains the private key for this viewing key");
+    } else if (addResult == KeyAlreadyExists && fIgnoreExistingKey) {
+        return NullUniValue;
+    }
+    pwalletMain->MarkDirty();
+    if (addResult == KeyNotAdded) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Error adding viewing key to wallet");
     }
 
     // We want to scan for transactions and notes
