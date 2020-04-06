@@ -892,13 +892,18 @@ UniValue z_importviewingkey(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid viewing key");
     }
 
+    auto addrInfo = boost::apply_visitor(libzcash::AddressInfoFromViewingKey{}, viewingkey);
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("type", addrInfo.first);
+    result.pushKV("address", EncodePaymentAddress(addrInfo.second));
+
     auto addResult = boost::apply_visitor(AddViewingKeyToWallet(pwalletMain), viewingkey);
     if (addResult == SpendingKeyExists) {
         throw JSONRPCError(
             RPC_WALLET_ERROR,
             "The wallet already contains the private key for this viewing key");
     } else if (addResult == KeyAlreadyExists && fIgnoreExistingKey) {
-        return NullUniValue;
+        return result;
     }
     pwalletMain->MarkDirty();
     if (addResult == KeyNotAdded) {
@@ -909,7 +914,8 @@ UniValue z_importviewingkey(const UniValue& params, bool fHelp)
     if (fRescan) {
         pwalletMain->ScanForWalletTransactions(chainActive[nRescanHeight], true);
     }
-    return NullUniValue;
+
+    return result;
 }
 
 UniValue z_exportkey(const UniValue& params, bool fHelp)
