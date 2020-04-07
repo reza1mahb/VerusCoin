@@ -722,7 +722,7 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
             "\nResult:\n"
             "{\n"
             "  \"type\" : \"xxxx\",                         (string) \"sprout\" or \"sapling\"\n"
-            "  \"address\" : \"address|DefaultAddress\",    (string) The address(sprout) or the DefaultAddress(sapling)\n"
+            "  \"address\" : \"address|DefaultAddress\",    (string) The address corresponding to the spending key (for Sapling, this is the default address).\n"
             "}\n"
             "\nExamples:\n"
             "\nExport a zkey\n"
@@ -785,8 +785,8 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
         }
         if (success)
         {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Hex key detected. Spending key cannot be verified. If it is valid, the correct spending key would be:\n" + 
-                                                           EncodeSpendingKey(extSk) + 
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Hex key detected. Spending key cannot be verified. If it is valid, the correct spending key would be:\n" +
+                                                           EncodeSpendingKey(extSk) +
                                                            "\n* DO NOT USE UNLESS YOU ARE CERTAIN THIS IS A VALID KEY!");
         }
         else
@@ -836,6 +836,11 @@ UniValue z_importviewingkey(const UniValue& params, bool fHelp)
             "3. startHeight        (numeric, optional, default=0) Block height to start rescan from\n"
             "4. zaddr               (string, optional, default=\"\") zaddr in case of importing viewing key for Sapling\n"
             "\nNote: This call can take minutes to complete if rescan is true.\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"type\" : \"xxxx\",                         (string) \"sprout\" or \"sapling\"\n"
+            "  \"address\" : \"address|DefaultAddress\",    (string) The address corresponding to the viewing key (for Sapling, this is the default address).\n"
+            "}\n"
             "\nExamples:\n"
             "\nImport a viewing key\n"
             + HelpExampleCli("z_importviewingkey", "\"vkey\"") +
