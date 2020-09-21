@@ -17,6 +17,7 @@
 #include "main.h"
 #include "mmr.h"
 #include "net.h"
+#include "random.h"
 #include "rpc/protocol.h"
 #include "rpc/server.h"
 #include "script/script.h"
@@ -34,6 +35,7 @@
 #include "pbaas/identity.h"
 #include "pbaas/pbaas.h"
 
+#include <algorithm>
 #include <assert.h>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -5658,7 +5660,7 @@ bool CWallet::SelectCoinsMinConf(const CAmount& nTargetValue, int nConfMine, int
     vector<pair<CAmount, pair<const CWalletTx*,unsigned int> > > vValue;
     CAmount nTotalLower = 0;
 
-    random_shuffle(vCoins.begin(), vCoins.end(), GetRandInt);
+    std::shuffle(vCoins.begin(), vCoins.end(), ZcashRandomEngine());
 
     BOOST_FOREACH(const COutput &output, vCoins)
     {
@@ -5913,7 +5915,7 @@ bool CWallet::SelectReserveUTXOs(const CCurrencyValueMap& targetValues,
     std::vector<std::pair<CUTXORef, CCurrencyValueMap>> vOutputsToOptimize;
     std::vector<int> vOutputsToOptimizeIndexes;
 
-    random_shuffle(vCoins.begin(), vCoins.end(), GetRandInt);
+    std::shuffle(vCoins.begin(), vCoins.end(), ZcashRandomEngine());
 
     CCurrencyValueMap nTotalTarget = targetValues.CanonicalMap();
 
