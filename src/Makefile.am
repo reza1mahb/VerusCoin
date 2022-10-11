@@ -152,12 +152,9 @@ LIBZCASH_H = \
   zcash/Note.hpp \
   zcash/prf.h \
   zcash/Proof.hpp \
-  zcash/address/sapling.hpp \
-  zcash/address/sprout.hpp \
   zcash/util.h \
   zcash/Zcash.h \
-  zcash/address/zip32.cpp \
-  zcash/address/zip32.h
+  zcash/zip32.h
 
 .PHONY: FORCE collate-libsnark check-symbols check-security
 # bitcoin core #
@@ -284,9 +281,9 @@ BITCOIN_CORE_H = \
   utiltime.h \
   validationinterface.h \
   version.h \
+  wallet/asyncrpcoperation_common.h \
   wallet/asyncrpcoperation_mergetoaddress.h \
-  wallet/asyncrpcoperation_saplingconsolidation.h \
-  wallet/asyncrpcoperation_sweeptoaddress.h \
+  wallet/asyncrpcoperation_saplingmigration.h \
   wallet/asyncrpcoperation_sendmany.h \
   wallet/asyncrpcoperation_shieldcoinbase.h \
   wallet/crypter.h \
@@ -430,8 +427,7 @@ libbitcoin_wallet_a_SOURCES = \
   zcbenchmarks.h \
   wallet/asyncrpcoperation_common.cpp \
   wallet/asyncrpcoperation_mergetoaddress.cpp \
-  wallet/asyncrpcoperation_saplingconsolidation.cpp \
-  wallet/asyncrpcoperation_sweeptoaddress.cpp \
+  wallet/asyncrpcoperation_saplingmigration.cpp \
   wallet/asyncrpcoperation_sendmany.cpp \
   wallet/asyncrpcoperation_shieldcoinbase.cpp \
   wallet/crypter.cpp \
@@ -446,7 +442,7 @@ libbitcoin_wallet_a_SOURCES = \
   wallet/wallet.cpp \
   wallet/wallet_ismine.cpp \
   wallet/walletdb.cpp \
-  zcash/address/zip32.cpp \
+  zcash/zip32.cpp \
   $(BITCOIN_CORE_H) \
   $(LIBZCASH_H)
 
@@ -766,10 +762,8 @@ libzcash_a_SOURCES = \
 	zcash/Proof.cpp \
 	zcash/Note.cpp \
 	zcash/prf.cpp \
-	zcash/address/sapling.cpp \
-	zcash/address/sprout.cpp \
 	zcash/util.cpp \
-    zcash/address/zip32.cpp \
+  zcash/zip32.cpp \
 	zcash/circuit/commitment.tcc \
 	zcash/circuit/gadget.tcc \
 	zcash/circuit/merkle.tcc \

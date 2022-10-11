@@ -326,7 +326,7 @@ double benchmark_try_decrypt_sapling_notes(size_t nKeys)
 
     for (int i = 0; i < nKeys; i++) {
         auto sk = masterKey.Derive(i);
-        wallet.AddSaplingSpendingKey(sk);
+        wallet.AddSaplingSpendingKey(sk, sk.DefaultAddress());
     }
 
     // Generate a key that has not been added to the wallet
@@ -426,7 +426,7 @@ double benchmark_increment_sapling_note_witnesses(size_t nTxs)
     SaplingMerkleTree saplingTree;
 
     auto saplingSpendingKey = GetTestMasterSaplingSpendingKey();
-    wallet.AddSaplingSpendingKey(saplingSpendingKey);
+    wallet.AddSaplingSpendingKey(saplingSpendingKey, saplingSpendingKey.DefaultAddress());
 
     // First block
     CBlock block1;

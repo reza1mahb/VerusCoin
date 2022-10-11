@@ -8,7 +8,7 @@
 #include "serialize.h"
 #include "support/allocators/secure.h"
 #include "uint256.h"
-#include "zcash/address/sapling.hpp"
+#include "zcash/Address.hpp"
 
 #include <boost/optional.hpp>
 
@@ -134,6 +134,11 @@ struct SaplingExtendedSpendingKey {
     }
 };
 
+typedef boost::variant<InvalidEncoding, SproutSpendingKey, SaplingExtendedSpendingKey> SpendingKey;
+
 }
+
+/** Check whether a SpendingKey is not an InvalidEncoding. */
+bool IsValidSpendingKey(const libzcash::SpendingKey& zkey);
 
 #endif // ZCASH_ZIP32_H

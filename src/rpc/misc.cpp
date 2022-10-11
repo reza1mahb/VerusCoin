@@ -532,10 +532,10 @@ public:
 #ifdef ENABLE_WALLET
         if (pwalletMain) {
             libzcash::SaplingIncomingViewingKey ivk;
-            libzcash::SaplingExtendedFullViewingKey extfvk;
+            libzcash::SaplingFullViewingKey fvk;
             bool isMine = pwalletMain->GetSaplingIncomingViewingKey(zaddr, ivk) &&
-                pwalletMain->GetSaplingFullViewingKey(ivk, extfvk) &&
-                pwalletMain->HaveSaplingSpendingKey(extfvk);
+                pwalletMain->GetSaplingFullViewingKey(ivk, fvk) &&
+                pwalletMain->HaveSaplingSpendingKey(fvk);
             obj.push_back(Pair("ismine", isMine));
         }
 #endif
