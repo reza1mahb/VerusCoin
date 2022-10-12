@@ -6323,11 +6323,14 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
     bool isToSaplingZaddr = false;
     CTxDestination taddr = DecodeDestination(destaddress);
     if (!IsValidDestination(taddr)) {
-        if (IsValidPaymentAddressString(destaddress, branchId)) {
-            // Is this a Sapling address?
-            auto res = DecodePaymentAddress(destaddress);
-            if (IsValidPaymentAddress(res)) {
-                isToSaplingZaddr = boost::get<libzcash::SaplingPaymentAddress>(&res) != nullptr;
+        auto decodeAddr = DecodePaymentAddress(destaddress);
+        if (IsValidPaymentAddress(decodeAddr)) {
+            if (boost::get<libzcash::SaplingPaymentAddress>(&decodeAddr) != nullptr) {
+                isToSaplingZaddr = true;
+                // If Sapling is not active, do not allow sending to a sapling addresses.
+                if (!saplingActive) {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, Sapling has not activated");
+                }
             } else {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Legacy Sprout address not supported as destination. Use a transparent or Sapling compatible address");
             }
