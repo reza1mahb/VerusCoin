@@ -3900,15 +3900,43 @@ std::string CConnectedChains::GetFriendlyCurrencyName(const uint160 &currencyID)
     return retName;
 }
 
+std::string CConnectedChains::GetFriendlyIdentityName(const std::string &name, const uint160 &parentCurrencyID)
+{
+    uint160 parent;
+    std::string cleanName = CleanName(name, parent, false, true);
+
+    if (parentCurrencyID.IsNull())
+    {
+        std::string lowerName = boost::to_lower_copy(cleanName);
+        if (lowerName == "vrsc" || lowerName == "vrsctest")
+        {
+            return name + "@";
+        }
+        else
+        {
+            return name + ".@";
+        }
+    }
+    else
+    {
+        return name + '.' + GetFriendlyCurrencyName(parentCurrencyID) + '@';
+    }
+}
+
+std::string CConnectedChains::GetFriendlyIdentityName(const CIdentity &identity)
+{
+    return GetFriendlyIdentityName(identity.name, identity.parent);
+}
+
 // returns all unspent chain exports for a specific chain/currency
 bool CConnectedChains::GetUnspentSystemExports(const CCoinsViewCache &view, 
                                                const uint160 systemID, 
-                                               std::vector<pair<int, CInputDescriptor>> &exportOutputs)
+                                               std::vector<std::pair<int, CInputDescriptor>> &exportOutputs)
 {
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>> unspentOutputs;
     std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> exportUTXOs;
 
-    std::vector<pair<int, CInputDescriptor>> exportOuts;
+    std::vector<std::pair<int, CInputDescriptor>> exportOuts;
 
     LOCK2(cs_main, mempool.cs);
 
@@ -3965,12 +3993,12 @@ bool CConnectedChains::GetUnspentSystemExports(const CCoinsViewCache &view,
 // returns all unspent chain exports for a specific chain/currency
 bool CConnectedChains::GetUnspentCurrencyExports(const CCoinsViewCache &view, 
                                                  const uint160 currencyID, 
-                                                 std::vector<pair<int, CInputDescriptor>> &exportOutputs)
+                                                 std::vector<std::pair<int, CInputDescriptor>> &exportOutputs)
 {
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>> unspentOutputs;
     std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> exportUTXOs;
 
-    std::vector<pair<int, CInputDescriptor>> exportOuts;
+    std::vector<std::pair<int, CInputDescriptor>> exportOuts;
 
     LOCK2(cs_main, mempool.cs);
 

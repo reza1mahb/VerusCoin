@@ -1370,9 +1370,13 @@ UniValue signdata(const UniValue& params, bool fHelp)
 
     if (fHelp || params.size() != 1)
         throw runtime_error(
-            "signdata '{\"identity\":\"i-address or friendly name (t-address will result in simple signature w/indicated hash and prefix, nothing else)\",\n"
+            "signdata '{\"address\":\"i-address or friendly name (t-address will result in simple signature w/indicated hash and prefix, nothing else)\",\n"
             "           \"prefixstring\":\"extra string that is hashed during signature and must be supplied for verification\",\n"
-            "           \"filename\":\"filepath/filename\" | \"message\":\"any message\" | \"messagehex\":\"hexdata\" | \"messagebase64\":\"base64data\",\n"
+            "           \"filename\":\"filepath/filename\" |\n"
+            "             \"message\":\"any message\" |\n"
+            "             \"messagehex\":\"hexdata\" |\n"
+            "             \"messagebase64\":\"base64data\" |\n"
+            "             \"datahash\":\"256bithex\",\n"
             "           \"vdxfkeys\":[\"vdxfkey i-address\", ...],\n"
             "           \"vdxfkeynames\":[\"vdxfkeyname, object for getvdxfid API, or friendly name ID -- no i-addresses\", ...],\n"
             "           \"boundhashes\":[\"hexhash\", ...],\n"
@@ -1382,14 +1386,15 @@ UniValue signdata(const UniValue& params, bool fHelp)
             "\nGenerates a hash (SHA256 default if \"hashtype\" not specified) of the data, returns the hash, and signs it with parameters specified"
             + HelpRequiringPassphrase() + "\n"
             "\nArguments:\n"
-            "1. \"t-addr or identity\"              (string, required) The transparent address or identity to use for signing.\n"
-            "2. \"filename\"                        (string, required) Local file to sign\n"
-            "3. \"cursig\"                          (string) The current signature of the message encoded in base 64 if multisig ID\n"
-            "3. \"vdxfkeys\":[\"vdxfkey\", ...],    (array)  Array of vdxfkeys or ID i-addresses\n"
-            "3. \"vdxfkeys\":[\"vdxfkeyname\", ...], (array)  Array of vdxfkey names or fully qualified friendly IDs\n"
-            "4. \"boundhashes\":[\"hexhash\", ...],\n"
-            "5. \"hashtype\"                        (string, optional) one of --\n"
-            "                                           \"sha256\", \"sha256D\", \"blake2b\", \"keccak256\" -- defaults to sha256\n"
+            "{\n"
+            "  \"address\":\"t-addr or identity\"                               (string, required) The transparent address or identity to use for signing.\n"
+            "  \"filename\" | \"message\" | \"messagehex\" | \"messagebase64\" | \"datahash\" (string, required) Data to sign\n"
+            "  \"vdxfkeys\":[\"vdxfkey\", ...],                                 (array, optional)  Array of vdxfkeys or ID i-addresses\n"
+            "  \"vdxfkeynames\":[\"vdxfkeyname\", ...],                         (array, optional)  Array of vdxfkey names or fully qualified friendly IDs\n"
+            "  \"boundhashes\":[\"hexhash\", ...],                              (array, optional)  Array of bound hash values\n"
+            "  \"hashtype\"                                                     (string, optional) one of: \"sha256\", \"sha256D\", \"blake2b\", \"keccak256\", defaults to sha256\n"
+            "  \"signature\"                                                    (string, optional) The current signature of the message encoded in base 64 if multisig ID\n"
+            "}\n"
 
             "\nResult:\n"
             "{\n"
@@ -1417,6 +1422,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
     string strMessage;
     string strHex;
     string strBase64;
+    string strDataHash;
     string strSignature;
     string hashTypeStr = "sha256";
 
@@ -1429,12 +1435,13 @@ UniValue signdata(const UniValue& params, bool fHelp)
 
     if (!params[0].isStr() && params[0].isObject())
     {
-        strAddress = uni_get_str(find_value(params[0], "identity"));
-        strPrefix = uni_get_str(find_value(params[0], "prefixstring"));
+        strAddress = uni_get_str(find_value(params[0], "address"));
+        strPrefix = uni_get_str(find_value(params[0], "prefixstring"), verusDataSignaturePrefix);
         strFileName = uni_get_str(find_value(params[0], "filename"));
         strMessage = uni_get_str(find_value(params[0], "message"));
         strHex = uni_get_str(find_value(params[0], "messagehex"));
         strBase64 = uni_get_str(find_value(params[0], "messagebase64"));
+        strDataHash = uni_get_str(find_value(params[0], "datahash"));
         hashTypeStr = uni_get_str(find_value(params[0], "hashtype"), hashTypeStr);
         vdxfKeys = find_value(params[0], "vdxfkeys");
         vdxfKeyNames = find_value(params[0], "vdxfkeynames");
@@ -1444,10 +1451,13 @@ UniValue signdata(const UniValue& params, bool fHelp)
              (int)strMessage.empty() +
              (int)strHex.empty() +
              (int)strBase64.empty() +
-             (int)strAddress.empty() +
-             (int)hashTypeStr.empty()) != 3)
+             (int)strDataHash.empty()) != 4)
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include only one of \"filename\", \"message\", \"messagehex\", \"messagebase64\" and a valid \"identity\"");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include one and only one of \"filename\", \"message\", \"messagehex\", \"messagebase64\", and \"datahash\"");
+        }
+        if (strAddress.empty() || hashTypeStr.empty())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include a valid \"address\" and either no explicit \"hashtype\" or one that is valid");
         }
         dest = DecodeDestination(strAddress);
         if (!IsValidDestination(dest)) {
@@ -1525,6 +1535,15 @@ UniValue signdata(const UniValue& params, bool fHelp)
         {
             hw << DecodeBase64(strBase64);
             msgHash = hw.GetHash();
+        }
+        else if (!strDataHash.empty() && IsHex(strDataHash))
+        {
+            msgHash.SetHex(strDataHash);
+            // sha256 is reversed for sha256sum compatibility
+            if (hashType == CCurrencyDefinition::EHashTypes::HASH_SHA256)
+            {
+                std::reverse(msgHash.begin(), msgHash.end());
+            }
         }
     }
 
@@ -1638,8 +1657,8 @@ UniValue signdata(const UniValue& params, bool fHelp)
             }
             ret.push_back(Pair("system", ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID)));
             ret.push_back(Pair("hashtype", hashTypeStr));
-            ret.push_back(Pair("identity", (identity.parent.IsNull() ?
-                                            identity.name :
+            ret.push_back(Pair("address", (identity.parent.IsNull() ?
+                                            identity.name : 
                                             identity.name + '.' + ConnectedChains.GetFriendlyCurrencyName(identity.parent)) +
                                            '@'));
             ret.push_back(Pair("height", (int64_t)nHeight));
@@ -1693,7 +1712,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
         UniValue ret(UniValue::VOBJ);
         ret.push_back(Pair("system", ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID)));
         ret.push_back(Pair("hashtype", hashTypeStr));
-        ret.push_back(Pair("identity", EncodeDestination(dest)));
+        ret.push_back(Pair("address", EncodeDestination(dest)));
         std::reverse(msgHash.begin(), msgHash.end());   // return a reversed hash for compatibility with sha256sum
         ret.push_back(Pair("hash", msgHash.GetHex()));
         ret.push_back(Pair("signature", EncodeBase64(&vchSig[0], vchSig.size())));

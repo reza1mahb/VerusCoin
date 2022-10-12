@@ -307,7 +307,7 @@ uint256 CIdentitySignature::IdentitySignatureHash(const std::vector<uint160> &vd
                                                   const std::vector<uint256> &statements, 
                                                   const uint160 &systemID, 
                                                   uint32_t blockHeight, 
-                                                  uint160 idID,
+                                                  const uint160 &idID,
                                                   const std::string &prefixString, 
                                                   const uint256 &msgHash) const
 {

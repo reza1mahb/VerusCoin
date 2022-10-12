@@ -835,6 +835,109 @@ UniValue hashdata(const UniValue& params, bool fHelp)
     return result.GetHex();
 }
 
+uint160 ParseVDXFKey(const std::string &keyString);
+
+CIdentitySignature::ESignatureVerification CheckBasicIDSignature(uint256 msgHash, const std::string &signatureString, const uint160 &systemID, const CIdentityID &idID, bool checkLatest)
+{
+    // lookup identity from the requested blockheight
+    CIdentitySignature signature;
+    bool fInvalid;
+
+    // get the signature, a hex string, which is deserialized into an instance of the ID signature class
+    std::vector<unsigned char> sigVec;
+    try
+    {
+        sigVec = DecodeBase64(signatureString.c_str(), &fInvalid);
+        if (fInvalid)
+        {
+            sigVec.clear();
+        }
+
+        if (sigVec.size())
+        {
+            signature = CIdentitySignature(sigVec);
+        }
+    }
+    catch(const std::exception& e)
+    {
+        LogPrintf("Exception %s decoding signature %s\n", e.what(), signatureString.c_str());
+        signature = CIdentitySignature();
+    }
+
+    if (signature.signatures.size())
+    {
+        if (msgHash.IsNull())
+        {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid null hash");
+        }
+        else
+        {
+            msgHash = signature.IdentitySignatureHash(std::vector<uint160>(),
+                                                      std::vector<std::__cxx11::string>(), 
+                                                      std::vector<uint256>(),
+                                                      systemID,
+                                                      signature.blockHeight,
+                                                      idID,
+                                                      verusDataSignaturePrefix,
+                                                      msgHash);
+        }
+
+        std::set<uint160> signatureKeyIDs;
+        for (auto &oneSig : signature.signatures)
+        {
+            CPubKey pubkey;
+            if (pubkey.RecoverCompact(msgHash, oneSig))
+            {
+                signatureKeyIDs.insert(pubkey.GetID());
+            }
+        }
+
+        CIdentity identity;
+        int numSigs = 0;
+        if (signatureKeyIDs.size() != 0)
+        {
+            identity = CIdentity::LookupIdentity(idID, checkLatest ? 0 : signature.blockHeight);
+            if (identity.IsValidUnrevoked())
+            {
+                // remove all valid addresses and count
+                for (auto &oneAddr : identity.primaryAddresses)
+                {
+                    if (!(oneAddr.which() == COptCCParams::ADDRTYPE_PK || oneAddr.which() == COptCCParams::ADDRTYPE_PKH))
+                    {
+                        numSigs = 0;
+                        break;
+                    }
+                    uint160 addrID = GetDestinationID(oneAddr);
+                    if (signatureKeyIDs.count(addrID))
+                    {
+                        numSigs++;
+                        signatureKeyIDs.erase(addrID);
+                        if (!signatureKeyIDs.size())
+                        {
+                            break;
+                        }
+                    }
+                }
+
+                // all signatures must be from valid keys, and if there are enough, it is valid
+                if (signatureKeyIDs.size() == 0 && numSigs >= identity.minSigs)
+                {
+                    return CIdentitySignature::ESignatureVerification::SIGNATURE_COMPLETE;
+                }
+                else if (signatureKeyIDs.size() != 0 || !numSigs)
+                {
+                    return CIdentitySignature::ESignatureVerification::SIGNATURE_INVALID;
+                }
+                else
+                {
+                    return CIdentitySignature::ESignatureVerification::SIGNATURE_PARTIAL;
+                }
+            }
+        }
+    }
+    return CIdentitySignature::ESignatureVerification::SIGNATURE_EMPTY;
+}
+
 UniValue verifyhash(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() < 3 || params.size() > 4)
@@ -893,85 +996,11 @@ UniValue verifyhash(const UniValue& params, bool fHelp)
 
     if (destination.which() == COptCCParams::ADDRTYPE_ID)
     {
-        // lookup identity from the requested blockheight
-        bool checkLatest = params.size() > 3 && uni_get_bool(params[3]);
-
-        CIdentitySignature signature;
-
-        // get the signature, a hex string, which is deserialized into an instance of the ID signature class
-        std::vector<unsigned char> sigVec;
-        try
-        {
-            sigVec = DecodeBase64(strSign.c_str(), &fInvalid);
-            if (fInvalid)
-            {
-                sigVec.clear();
-            }
-
-            if (sigVec.size())
-            {
-                signature = CIdentitySignature(sigVec);
-            }
-        }
-        catch(const std::exception& e)
-        {
-            std::cerr << e.what() << '\n';
-        }
-
-        if (signature.signatures.size())
-        {
-            CHashWriterSHA256 ss(SER_GETHASH, PROTOCOL_VERSION);
-            ss << verusDataSignaturePrefix;
-            ss << ConnectedChains.ThisChain().GetID();
-            ss << signature.blockHeight;
-            ss << GetDestinationID(destination);
-            ss << msgHash;
-
-            msgHash = ss.GetHash();
-
-            std::set<uint160> signatureKeyIDs;
-            for (auto &oneSig : signature.signatures)
-            {
-                CPubKey pubkey;
-                if (pubkey.RecoverCompact(msgHash, oneSig))
-                {
-                    signatureKeyIDs.insert(pubkey.GetID());
-                }
-            }
-
-            CIdentity identity;
-            int numSigs = 0;
-            if (signatureKeyIDs.size() != 0)
-            {
-                identity = CIdentity::LookupIdentity(GetDestinationID(destination), checkLatest ? 0 : signature.blockHeight);
-                if (identity.IsValidUnrevoked())
-                {
-                    // remove all valid addresses and count
-                    for (auto &oneAddr : identity.primaryAddresses)
-                    {
-                        if (!(oneAddr.which() == COptCCParams::ADDRTYPE_PK || oneAddr.which() == COptCCParams::ADDRTYPE_PKH))
-                        {
-                            numSigs = 0;
-                            break;
-                        }
-                        uint160 addrID = GetDestinationID(oneAddr);
-                        if (signatureKeyIDs.count(addrID))
-                        {
-                            numSigs++;
-                            signatureKeyIDs.erase(addrID);
-                            if (!signatureKeyIDs.size())
-                            {
-                                break;
-                            }
-                        }
-                    }
-
-                    // all signatures must be from valid keys, and if there are enough, it is valid
-                    return signatureKeyIDs.size() == 0 && numSigs >= identity.minSigs;
-                }
-            }
-        }
-        return false;
+        return CheckBasicIDSignature(msgHash, 
+                                     strSign,
+                                     ConnectedChains.ThisChain().GetID(),
+                                     GetDestinationID(destination),
+                                     params.size() > 3 && uni_get_bool(params[3])) == CIdentitySignature::ESignatureVerification::SIGNATURE_COMPLETE;
     }
     else
     {
@@ -1029,94 +1058,28 @@ UniValue verifymessage(const UniValue& params, bool fHelp)
 
     CTxDestination destination = DecodeDestination(strAddress);
     if (!IsValidDestination(destination)) {
-        throw JSONRPCError(RPC_TYPE_ERROR, "Invalid address");
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid address");
+    }
+
+    if (strMessage.empty()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot verify empty message");
+    }
+
+    if (strSign.empty()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid signature");
     }
 
     if (destination.which() == COptCCParams::ADDRTYPE_ID)
     {
-        // lookup identity from the requested blockheight
-        bool checkLatest = params.size() > 3 && uni_get_bool(params[3]);
+        CHashWriterSHA256 ss(SER_GETHASH, PROTOCOL_VERSION);
+        ss << strMessage;
+        uint256 msgHash = ss.GetHash();
 
-        CIdentitySignature signature;
-
-        // get the signature, a hex string, which is deserialized into an instance of the ID signature class
-        std::vector<unsigned char> sigVec;
-        try
-        {
-            sigVec = DecodeBase64(strSign.c_str(), &fInvalid);
-            if (fInvalid)
-            {
-                sigVec.clear();
-            }
-
-            if (sigVec.size())
-            {
-                signature = CIdentitySignature(sigVec);
-            }
-        }
-        catch(const std::exception& e)
-        {
-            std::cerr << e.what() << '\n';
-        }
-
-        if (signature.signatures.size())
-        {
-            CHashWriterSHA256 ss(SER_GETHASH, PROTOCOL_VERSION);
-            ss << strMessage;
-            uint256 msgHash = ss.GetHash();
-
-            ss.Reset();
-            ss << verusDataSignaturePrefix;
-            ss << ConnectedChains.ThisChain().GetID();
-            ss << signature.blockHeight;
-            ss << GetDestinationID(destination);
-            ss << msgHash;
-
-            msgHash = ss.GetHash();
-
-            std::set<uint160> signatureKeyIDs;
-            for (auto &oneSig : signature.signatures)
-            {
-                CPubKey pubkey;
-                if (pubkey.RecoverCompact(msgHash, oneSig))
-                {
-                    signatureKeyIDs.insert(pubkey.GetID());
-                }
-            }
-
-            CIdentity identity;
-            int numSigs = 0;
-            if (signatureKeyIDs.size() != 0)
-            {
-                identity = CIdentity::LookupIdentity(GetDestinationID(destination), checkLatest ? 0 : signature.blockHeight);
-                if (identity.IsValidUnrevoked())
-                {
-                    // remove all valid addresses and count
-                    for (auto &oneAddr : identity.primaryAddresses)
-                    {
-                        if (!(oneAddr.which() == COptCCParams::ADDRTYPE_PK || oneAddr.which() == COptCCParams::ADDRTYPE_PKH))
-                        {
-                            numSigs = 0;
-                            break;
-                        }
-                        uint160 addrID = GetDestinationID(oneAddr);
-                        if (signatureKeyIDs.count(addrID))
-                        {
-                            numSigs++;
-                            signatureKeyIDs.erase(addrID);
-                            if (!signatureKeyIDs.size())
-                            {
-                                break;
-                            }
-                        }
-                    }
-
-                    // all signatures must be from valid keys, and if there are enough, it is valid
-                    return signatureKeyIDs.size() == 0 && numSigs >= identity.minSigs;
-                }
-            }
-        }
-        return false;
+        return CheckBasicIDSignature(msgHash, 
+                                     strSign,
+                                     ConnectedChains.ThisChain().GetID(),
+                                     GetDestinationID(destination),
+                                     params.size() > 3 && uni_get_bool(params[3])) == CIdentitySignature::ESignatureVerification::SIGNATURE_COMPLETE;
     }
     else
     {
@@ -1179,97 +1142,25 @@ UniValue verifyfile(const UniValue& params, bool fHelp)
     if (!IsValidDestination(destination)) {
         throw JSONRPCError(RPC_TYPE_ERROR, "Invalid address");
     }
+    if (strSign.empty()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid signature");
+    }
 
     if (destination.which() == COptCCParams::ADDRTYPE_ID)
     {
-        // lookup identity from the requested blockheight
-        bool checkLatest = params.size() == 4 && uni_get_bool(params[3]);
-
-        CIdentitySignature signature;
-
-        // get the signature, a hex string, which is deserialized into an instance of the ID signature class
-        std::vector<unsigned char> sigVec;
-        try
+        uint256 msgHash = HashFile(strFileName);
+        if (msgHash.IsNull())
         {
-            sigVec = DecodeBase64(strSign.c_str(), &fInvalid);
-            if (fInvalid)
-            {
-                sigVec.clear();
-            }
-
-            if (sigVec.size())
-            {
-                signature = CIdentitySignature(sigVec);
-            }
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Cannot open file " + strFileName);
         }
-        catch(const std::exception& e)
+        else
         {
-            LogPrintf("Exception decoding file signature %s\n", e.what());
-            signature = CIdentitySignature();
+            return CheckBasicIDSignature(msgHash, 
+                                        strSign,
+                                        ConnectedChains.ThisChain().GetID(),
+                                        GetDestinationID(destination),
+                                        params.size() > 3 && uni_get_bool(params[3])) == CIdentitySignature::ESignatureVerification::SIGNATURE_COMPLETE;
         }
-
-        if (signature.signatures.size())
-        {
-            uint256 msgHash = HashFile(strFileName);
-
-            if (msgHash.IsNull())
-            {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Cannot open file " + strFileName);
-            }
-            else
-            {
-                CHashWriterSHA256 ss(SER_GETHASH, PROTOCOL_VERSION);
-                ss << verusDataSignaturePrefix;
-                ss << ConnectedChains.ThisChain().GetID();
-                ss << signature.blockHeight;
-                ss << GetDestinationID(destination);
-                ss << msgHash;
-                msgHash = ss.GetHash();
-            }
-
-            std::set<uint160> signatureKeyIDs;
-            for (auto &oneSig : signature.signatures)
-            {
-                CPubKey pubkey;
-                if (pubkey.RecoverCompact(msgHash, oneSig))
-                {
-                    signatureKeyIDs.insert(pubkey.GetID());
-                }
-            }
-
-            CIdentity identity;
-            int numSigs = 0;
-            if (signatureKeyIDs.size() != 0)
-            {
-                identity = CIdentity::LookupIdentity(GetDestinationID(destination), checkLatest ? 0 : signature.blockHeight);
-                if (identity.IsValidUnrevoked())
-                {
-                    // remove all valid addresses and count
-                    for (auto &oneAddr : identity.primaryAddresses)
-                    {
-                        if (!(oneAddr.which() == COptCCParams::ADDRTYPE_PK || oneAddr.which() == COptCCParams::ADDRTYPE_PKH))
-                        {
-                            numSigs = 0;
-                            break;
-                        }
-                        uint160 addrID = GetDestinationID(oneAddr);
-                        if (signatureKeyIDs.count(addrID))
-                        {
-                            numSigs++;
-                            signatureKeyIDs.erase(addrID);
-                            if (!signatureKeyIDs.size())
-                            {
-                                break;
-                            }
-                        }
-                    }
-
-                    // all signatures must be from valid keys, and if there are enough, it is valid
-                    return signatureKeyIDs.size() == 0 && numSigs >= identity.minSigs;
-                }
-            }
-        }
-        return false;
     }
     else
     {
@@ -1302,6 +1193,367 @@ UniValue verifyfile(const UniValue& params, bool fHelp)
             return false;
 
         return (pubkey.GetID() == *keyID);
+    }
+}
+
+UniValue verifysignature(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1 || !params[0].isObject() || find_value(params[0], "signature").isNull())
+        throw runtime_error(
+            "verifysignature '{\"address\":\"i-address or friendly name (t-address checks on simple signature w/hash and prefix, nothing else)\",\n"
+            "                  \"prefixstring\":\"extra string that is hashed during signature and must be supplied for verification\",\n"
+            "                  \"filename\":\"filepath/filename\" |\n"
+            "                    \"message\":\"any message\" |\n"
+            "                    \"messagehex\":\"hexdata\" |\n"
+            "                    \"messagebase64\":\"base64data\" |\n"
+            "                    \"datahash\":\"256bithex\",\n"
+            "                  \"vdxfkeys\":[\"vdxfkey i-address\", ...],\n"
+            "                  \"vdxfkeynames\":[\"vdxfkeyname, object for getvdxfid API, or friendly name ID -- no i-addresses\", ...],\n"
+            "                  \"boundhashes\":[\"hexhash\", ...],\n"
+            "                  \"hashtype\": \"sha256\" | \"sha256D\" | \"blake2b\" | \"keccak256\"\n"
+            "                  \"checklatest\": true | false\n"
+            "                  \"signature\":\"verificationsignature\"}'\n\n"
+
+            "\nChecks to see if the signature is valid and returns an error for invalid parameters"
+            "{\n"
+            "  \"address\":\"t-addr or identity\"                               (string, required) The transparent address or identity to verify against the signature\n"
+            "  \"filename\" | \"message\" | \"messagehex\" | \"messagebase64\" | \"datahash\" (string, required) Data or hash of data signed\n"
+            "  \"vdxfkeys\":[\"vdxfkey\", ...],                                 (array, optional)  Array of vdxfkeys or ID i-addresses\n"
+            "  \"vdxfkeynames\":[\"vdxfkeyname\", ...],                         (array, optional)  Array of vdxfkey names or fully qualified friendly IDs\n"
+            "  \"boundhashes\":[\"hexhash\", ...],                              (array, optional)  Array of bound hash values\n"
+            "  \"hashtype\"                                                     (string, optional) one of: \"sha256\", \"sha256D\", \"blake2b\", \"keccak256\", defaults to sha256\n"
+            "  \"signature\"                                                    (string, optional) The current signature of the message encoded in base 64\n"
+            "  \"checklatest\"                                                  (bool, optional)   If true, checks signature validity based on latest identity. defaults to false,\n"
+            "                                                                                      which determines validity of signing height stored in signature.\n"
+            "}\n"
+
+            "\nResult:\n"
+            "{\n"
+            "  \"hash\":\"hexhash\"         (string) The hash of the message (SHA256, NOT SHA256D)\n"
+            "  \"signature\":\"base64sig\"  (string) The aggregate signature of the message encoded in base 64 if all or partial signing successful\n"
+            "}\n"
+            "\nExamples:\n"
+            "\nCreate the signature\n"
+            + HelpExampleCli("signdata", "'{\"identity\":\"Verus Coin Foundation.vrsc@\", \"message\":\"hello world\"}'") +
+            "\nVerify the signature\n"
+            + HelpExampleCli("verifydata", "'{\"identity\":\"Verus Coin Foundation.vrsc@\", \"message\":\"hello world\", \"signature\":\"base64sig\"}'") +
+            "\nAs json rpc\n"
+            + HelpExampleRpc("signdata", "'{\"identity\":\"Verus Coin Foundation.vrsc@\", \"message\":\"hello world\"}'")
+        );
+
+    string strAddress;
+    string strPrefix;
+    string strFileName;
+    string strMessage;
+    string strHex;
+    string strBase64;
+    string strDataHash;
+    string strSignature;
+    string hashTypeStr = "sha256";
+    bool checkLatest = false;
+
+    UniValue vdxfKeys(UniValue::VNULL);
+    UniValue vdxfKeyNames(UniValue::VNULL);
+    UniValue boundHashes(UniValue::VNULL);
+
+    CTxDestination dest;
+
+    strAddress = uni_get_str(find_value(params[0], "address"));
+    strPrefix = uni_get_str(find_value(params[0], "prefixstring"), verusDataSignaturePrefix);
+    strFileName = uni_get_str(find_value(params[0], "filename"));
+    strMessage = uni_get_str(find_value(params[0], "message"));
+    strHex = uni_get_str(find_value(params[0], "messagehex"));
+    strBase64 = uni_get_str(find_value(params[0], "messagebase64"));
+    strDataHash = uni_get_str(find_value(params[0], "datahash"));
+    hashTypeStr = uni_get_str(find_value(params[0], "hashtype"), hashTypeStr);
+    checkLatest = uni_get_bool(find_value(params[0], "checklatest"));
+    vdxfKeys = find_value(params[0], "vdxfkeys");
+    vdxfKeyNames = find_value(params[0], "vdxfkeynames");
+    boundHashes = find_value(params[0], "boundhashes");
+    strSignature = uni_get_str(find_value(params[0], "signature"));
+    if (((int)strFileName.empty() +
+            (int)strMessage.empty() +
+            (int)strHex.empty() +
+            (int)strBase64.empty() +
+            (int)strDataHash.empty()) != 4)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include one and only one of \"filename\", \"message\", \"messagehex\", \"messagebase64\", and \"datahash\"");
+    }
+    if (strAddress.empty() || hashTypeStr.empty())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include a valid \"address\" and either no explicit \"hashtype\" or one that is valid");
+    }
+    dest = DecodeDestination(strAddress);
+    if (!IsValidDestination(dest)) {
+        throw JSONRPCError(RPC_TYPE_ERROR, "\"identity\" specified in object must be valid VerusID or address");
+    }
+    if (dest.which() != COptCCParams::ADDRTYPE_ID &&
+        ((vdxfKeys.isArray() && vdxfKeys.size()) ||
+            (vdxfKeyNames.isArray() && vdxfKeyNames.size()) ||
+            (boundHashes.isArray() && vdxfKeyNames.size()) ||
+            strSignature.size()))
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "When signing with public key and not identity, cannot include vdxf keys, vdxf key names, bound hashes, or multisig");
+    }
+
+    uint256 msgHash;
+    CCurrencyDefinition::EHashTypes hashType = CCurrencyDefinition::EHashTypes::HASH_SHA256;
+
+    if (hashTypeStr == "sha256")
+    {
+        hashType = CCurrencyDefinition::EHashTypes::HASH_SHA256;
+    }
+    else if (hashTypeStr == "sha256D")
+    {
+        hashType = CCurrencyDefinition::EHashTypes::HASH_SHA256D;
+    }
+    else if (hashTypeStr == "blake2b")
+    {
+        hashType = CCurrencyDefinition::EHashTypes::HASH_BLAKE2BMMR;
+    }
+    else if (hashTypeStr == "keccak256")
+    {
+        hashType = CCurrencyDefinition::EHashTypes::HASH_KECCAK;
+    }
+    else
+    {
+        throw JSONRPCError(RPC_TYPE_ERROR, "Invalid hash type" + hashTypeStr + " must be one of -- \"sha256\", \"sha256D\", \"blake2b\", \"keccak256\"");
+    }
+
+    {
+        CNativeHashWriter hw(hashType);
+        if (!strFileName.empty())
+        {
+            msgHash = HashFile(strFileName, hw);
+        }
+        else if (!strMessage.empty())
+        {
+            hw << strMessage;
+            msgHash = hw.GetHash();
+        }
+        else if (!strHex.empty())
+        {
+            if (!IsHex(strHex))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "\"messagehex\" must be hex string with no additional characters");
+            }
+            hw << ParseHex(strHex);
+            msgHash = hw.GetHash();
+        }
+        else if (!strBase64.empty())
+        {
+            hw << DecodeBase64(strBase64);
+            msgHash = hw.GetHash();
+        }
+        else if (!strDataHash.empty() && IsHex(strDataHash))
+        {
+            msgHash.SetHex(strDataHash);
+            // sha256 is reversed for sha256sum compatibility
+            if (hashType == CCurrencyDefinition::EHashTypes::HASH_SHA256)
+            {
+                std::reverse(msgHash.begin(), msgHash.end());
+            }
+        }
+    }
+
+    if (msgHash.IsNull())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMS, "Cannot open file " + strFileName);
+    }
+
+    if (dest.which() == COptCCParams::ADDRTYPE_ID)
+    {
+        LOCK(cs_main);
+
+        uint32_t nHeight = chainActive.Height();
+
+        CIdentity identity;
+
+        identity = CIdentity::LookupIdentity(GetDestinationID(dest));
+        if (identity.IsValidUnrevoked())
+        {
+            UniValue ret(UniValue::VOBJ);
+
+            CIdentitySignature identitySig = CIdentitySignature(nHeight, std::vector<unsigned char>(), hashType, CIdentitySignature::VERSION_ETHBRIDGE);
+            if (!strSignature.empty())
+            {
+                std::vector<unsigned char> sigVec;
+                try
+                {
+                    bool fInvalid = false;
+                    sigVec = DecodeBase64(strSignature.c_str(), &fInvalid);
+                    if (fInvalid)
+                    {
+                        sigVec.clear();
+                    }
+                    if (sigVec.size())
+                    {
+                        identitySig = CIdentitySignature(sigVec);
+                        if (!identitySig.IsValid() || identitySig.blockHeight > (nHeight + 1))
+                        {
+                            sigVec.clear();
+                        }
+                    }
+                }
+                catch(const std::exception& e)
+                {
+                    sigVec.clear();
+                }
+                if (!sigVec.size())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid pre-existing signature");
+                }
+            }
+            else
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMS, "Missing or invalid \"signature\"");
+            }
+
+            // go through VDXF keys, VDXF key names, and bound hashes
+            std::vector<uint160> vdxfCodes;
+            std::vector<std::string> vdxfCodeNames;
+            std::vector<uint256> statements;
+
+            for (int i = 0; i < vdxfKeys.size(); i++)
+            {
+                uint160 oneKey = ParseVDXFKey(uni_get_str(vdxfKeys[i]));
+                if (oneKey.IsNull())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid VDXF key");
+                }
+                vdxfCodes.push_back(oneKey);
+            }
+            for (int i = 0; i < vdxfKeyNames.size(); i++)
+            {
+                std::string oneName = uni_get_str(vdxfKeys[i]);
+                std::vector<unsigned char> vch;
+                if (oneName.empty() || DecodeBase58Check(uni_get_str(vdxfKeyNames[i]), vch) && vch.size())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid VDXF key name. Key names must be fully qualified, friendly names.");
+                }
+                uint160 oneKey = ParseVDXFKey(oneName);
+                if (oneKey.IsNull())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid VDXF key name");
+                }
+                vdxfCodeNames.push_back(boost::to_lower_copy(oneName));
+            }
+            for (int i = 0; i < boundHashes.size(); i++)
+            {
+                uint256 oneHash = uint256S(uni_get_str(boundHashes[i]));
+                if (oneHash.IsNull())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid bound hash");
+                }
+                if (hashType == CCurrencyDefinition::EHashTypes::HASH_SHA256)
+                {
+                    std::reverse(oneHash.begin(), oneHash.end());
+                }
+                statements.push_back(oneHash);
+            }
+
+            CIdentitySignature::ESignatureVerification sigCheckResult =
+                identitySig.CheckSignature(identity, vdxfCodes, vdxfCodeNames, statements, ASSETCHAINS_CHAINID, strPrefix, msgHash);
+            
+            std::string sigCheckStr;
+            switch (sigCheckResult)
+            {
+                case CIdentitySignature::ESignatureVerification::SIGNATURE_EMPTY:
+                {
+                    sigCheckStr = "empty";
+                    break;
+                }
+                case CIdentitySignature::ESignatureVerification::SIGNATURE_COMPLETE:
+                {
+                    sigCheckStr = "verified";
+                    break;
+                }
+                case CIdentitySignature::ESignatureVerification::SIGNATURE_PARTIAL:
+                {
+                    sigCheckStr = "partial";
+                    break;
+                }
+                default:
+                {
+                    sigCheckStr = "invalid";
+                    break;
+                }
+            }
+            ret.pushKV("signaturestatus", sigCheckStr);
+
+            if (hashType == CCurrencyDefinition::EHashTypes::HASH_SHA256)
+            {
+                std::reverse(msgHash.begin(), msgHash.end());   // return a reversed hash for compatibility with sha256sum
+            }
+            ret.push_back(Pair("system", ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID)));
+            ret.push_back(Pair("systemid", EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID))));
+            ret.push_back(Pair("identity", ConnectedChains.GetFriendlyIdentityName(identity)));
+            ret.push_back(Pair("hashtype", hashTypeStr));
+            ret.push_back(Pair("hash", msgHash.GetHex()));
+            ret.push_back(Pair("address", EncodeDestination(identity.GetID())));
+            ret.push_back(Pair("height", (int64_t)nHeight));
+            if (vdxfKeys.size())
+            {
+                ret.push_back(Pair("vdxfkeys", vdxfKeys));
+            }
+            if (vdxfKeyNames.size())
+            {
+                ret.push_back(Pair("vdxfkeynames", vdxfKeyNames));
+            }
+            if (boundHashes.size())
+            {
+                ret.push_back(Pair("boundhashes", boundHashes));
+            }
+            ret.push_back(Pair("signature", strSignature));
+            return ret;
+        }
+        else if (!identity.IsValid())
+        {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid identity");
+        }
+        else
+        {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Identity is revoked and cannot sign");
+        }
+    }
+    else
+    {
+        const CKeyID *keyID = boost::get<CKeyID>(&dest);
+        if (!keyID) {
+            throw JSONRPCError(RPC_TYPE_ERROR, "Address does not refer to key");
+        }
+
+        CKey key;
+        if (!pwalletMain->GetKey(*keyID, key)) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Private key not available");
+        }
+
+        CHashWriterSHA256 ss(SER_GETHASH, PROTOCOL_VERSION);
+        ss << verusDataSignaturePrefix;
+        ss << msgHash;
+
+        uint256 sigHash = ss.GetHash();
+
+        CPubKey pubkey;
+        std::vector<unsigned char> vchSig = DecodeBase64(strSignature.c_str());
+        if (!pubkey.RecoverCompact(sigHash, vchSig))
+        {
+            return false;
+        }
+
+        if (pubkey.GetID() != GetDestinationID(dest))
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid signature");
+        }
+
+        UniValue ret(UniValue::VOBJ);
+        ret.push_back(Pair("system", ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID)));
+        ret.push_back(Pair("hashtype", hashTypeStr));
+        ret.push_back(Pair("address", EncodeDestination(dest)));
+        std::reverse(msgHash.begin(), msgHash.end());   // return a reversed hash for compatibility with sha256sum
+        ret.push_back(Pair("hash", msgHash.GetHex()));
+        ret.push_back(Pair("signature", strSignature));
+        return ret;
     }
 }
 
@@ -2182,6 +2434,7 @@ static const CRPCCommand commands[] =
     { "identity",           "verifymessage",          &verifymessage,          true  },
     { "identity",           "verifyfile",             &verifyfile,             true  },
     { "identity",           "verifyhash",             &verifyhash,             true  },
+    { "identity",           "verifysignature",        &verifysignature,        true  },
     { "vdxf",               "getvdxfid",              &getvdxfid,              true  },
     { "hidden",             "hashdata",               &hashdata,               true  }, // not visible in help
 

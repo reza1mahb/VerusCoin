@@ -818,6 +818,8 @@ public:
     void AggregateChainTransfers(const CTransferDestination &feeRecipient, uint32_t nHeight);
     CCurrencyDefinition GetCachedCurrency(const uint160 &currencyID);
     std::string GetFriendlyCurrencyName(const uint160 &currencyID);
+    std::string GetFriendlyIdentityName(const CIdentity &identity);
+    std::string GetFriendlyIdentityName(const std::string &name, const uint160 &parentCurrencyID);
     CCurrencyDefinition UpdateCachedCurrency(const CCurrencyDefinition &currentCurrency, uint32_t height);
 
     bool GetLastImport(const uint160 &currencyID, 
@@ -830,11 +832,11 @@ public:
 
     bool GetUnspentSystemExports(const CCoinsViewCache &view,
                                  const uint160 systemID, 
-                                 std::vector<pair<int, CInputDescriptor>> &exportOutputs);
+                                 std::vector<std::pair<int, CInputDescriptor>> &exportOutputs);
 
     bool GetUnspentCurrencyExports(const CCoinsViewCache &view,
                                    const uint160 currencyID, 
-                                   std::vector<pair<int, CInputDescriptor>> &exportOutputs);
+                                   std::vector<std::pair<int, CInputDescriptor>> &exportOutputs);
 
     // get the exports to a specific system on this chain from a specific height up to a specific height
     bool GetSystemExports(const uint160 &systemID,                                 // transactions exported to system
