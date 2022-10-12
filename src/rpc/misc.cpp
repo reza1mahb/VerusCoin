@@ -1233,12 +1233,10 @@ UniValue verifysignature(const UniValue& params, bool fHelp)
             "  \"signature\":\"base64sig\"  (string) The aggregate signature of the message encoded in base 64 if all or partial signing successful\n"
             "}\n"
             "\nExamples:\n"
-            "\nCreate the signature\n"
-            + HelpExampleCli("signdata", "'{\"identity\":\"Verus Coin Foundation.vrsc@\", \"message\":\"hello world\"}'") +
             "\nVerify the signature\n"
-            + HelpExampleCli("verifydata", "'{\"identity\":\"Verus Coin Foundation.vrsc@\", \"message\":\"hello world\", \"signature\":\"base64sig\"}'") +
+            + HelpExampleCli("verifysignature", "'{\"identity\":\"Verus Coin Foundation.vrsc@\", \"message\":\"hello world\", \"signature\":\"base64sig\"}'") +
             "\nAs json rpc\n"
-            + HelpExampleRpc("signdata", "'{\"identity\":\"Verus Coin Foundation.vrsc@\", \"message\":\"hello world\"}'")
+            + HelpExampleRpc("verifysignature", "'{\"identity\":\"Verus Coin Foundation.vrsc@\", \"message\":\"hello world\", \"signature\":\"base64sig\"}'")
         );
 
     string strAddress;
