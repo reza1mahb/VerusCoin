@@ -203,10 +203,6 @@ BITCOIN_CORE_H = \
   crypto/haraka_portable.h \
   crypto/verus_clhash.h \
   crypto/verus_hash.h \
-  crypto/sph_keccak.c \
-  crypto/sph_keccak.h \
-  crypto/keccak.c \
-  crypto/keccak.h \
   deprecation.h \
   hash.h \
   httprpc.h \
@@ -358,10 +354,6 @@ libbitcoin_server_a_SOURCES = \
   crypto/verus_clhash.h \
   crypto/verus_hash.h \
   crypto/verus_hash.cpp \
-  crypto/sph_keccak.c \
-  crypto/sph_keccak.h \
-  crypto/keccak.c \
-  crypto/keccak.h \
   deprecation.cpp \
   httprpc.cpp \
   httpserver.cpp \
@@ -474,11 +466,7 @@ crypto_libbitcoin_crypto_a_SOURCES = \
   crypto/haraka.h \
   crypto/haraka_portable.h \
   crypto/verus_hash.h \
-  crypto/verus_hash.cpp \
-  crypto/sph_keccak.c \
-  crypto/sph_keccak.h \
-  crypto/keccak.c \
-  crypto/keccak.h
+  crypto/verus_hash.cpp 
 
 if ENABLE_MINING
 EQUIHASH_TROMP_SOURCES = \
@@ -542,10 +530,6 @@ libbitcoin_common_a_SOURCES = \
   crypto/verus_clhash.h \
   crypto/verus_hash.h \
   crypto/verus_hash.cpp \
-  crypto/sph_keccak.c \
-  crypto/sph_keccak.h \
-  crypto/keccak.c \
-  crypto/keccak.h \
   hash.cpp \
   importcoin.cpp \
   key.cpp \
