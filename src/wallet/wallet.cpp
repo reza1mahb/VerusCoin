@@ -4359,10 +4359,11 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
         //Lock cs_keystore to prevent wallet from locking during rescan
         LOCK2(mempool.cs, cs_KeyStore);
 
+        // REMOVE UNTIL WE HAVE A BETTER WAY OF ENABLING NEW KEYS THAT MAY HAVE EXISTED BEFORE WALLET BIRTHDAY
         // no need to read and scan block, if block was created before
         // our wallet birthday (as adjusted for block time variability)
-        while (pindex && nTimeFirstKey && (pindex->GetBlockTime() < (nTimeFirstKey - 7200)))
-            pindex = chainActive.Next(pindex);
+        //while (pindex && nTimeFirstKey && (pindex->GetBlockTime() < (nTimeFirstKey - 7200)))
+        //    pindex = chainActive.Next(pindex);
 
         ShowProgress(_("Rescanning..."), 0); // show rescan progress in GUI as dialog or on splashscreen, if -rescan on startup
         double dProgressStart = Checkpoints::GuessVerificationProgress(chainParams.Checkpoints(), pindex, false);

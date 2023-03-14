@@ -560,7 +560,7 @@ CNotaryEvidence::EStates CNotaryEvidence::CheckSignatureConfirmation(const uint2
 
                 CIdentity sigIdentity;
                 // TODO: POST HARDENING - height from alternate chain was used
-                // initially on testnet, remove this if there is ever a testnet reset
+                // initially on testnet, remove this if there is ever a testnet reset after v0.9.9
                 // be sure to initialize sigIdentity when removing
                 if (IsVerusActive() && !IsVerusMainnetActive() && checkHeight > 2500 && checkHeight < 2800)
                 {
@@ -7568,6 +7568,8 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
 
         // add additional evidence
         CCrossChainProof challengeProof(CCrossChainProof::VERSION_CURRENT);
+        std::vector<CTxOut> evidenceOutputs;
+
         challengeProof << CEvidenceData(CNotaryEvidence::NotarizationTipKey(),
                                         ::AsVector(CPrimaryProofDescriptor(std::vector<CUTXORef>({prunedData.vtx[bestFork.back()].first}))));
         mergedEvidence.evidence << challengeProof;
@@ -7652,8 +7654,27 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                     mergedEvidence.MergeEvidence(ne, true, true);
 
                     CScript evidenceScript = MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &mergedEvidence));
-                    of.evidenceOutputs.push_back(txBuilder.mtx.vout.size());
-                    txBuilder.AddTransparentOutput(evidenceScript, CNotaryEvidence::DEFAULT_OUTPUT_VALUE);
+
+                    // the value should be considered for reduction
+                    if (evidenceScript.size() >= CScript::MAX_SCRIPT_ELEMENT_SIZE)
+                    {
+                        CNotaryEvidence emptyEvidence;
+                        int baseOverhead = MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &emptyEvidence)).size() + 128;
+                        auto evidenceVec = mergedEvidence.BreakApart(CScript::MAX_SCRIPT_ELEMENT_SIZE - baseOverhead);
+                        if (!evidenceVec.size())
+                        {
+                            LogPrintf("%s: failed to package evidence for notarization of system %s\n", __func__, EncodeDestination(CIdentityID(cnd.vtx[0].second.currencyID)).c_str());
+                            return false;
+                        }
+                        for (auto &oneProof : evidenceVec)
+                        {
+                            evidenceOutputs.push_back(CTxOut(CNotaryEvidence::DEFAULT_OUTPUT_VALUE, MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &oneProof))));
+                        }
+                    }
+                    else
+                    {
+                        evidenceOutputs.push_back(CTxOut(CNotaryEvidence::DEFAULT_OUTPUT_VALUE, evidenceScript));
+                    }
                     retVal = true;
                 }
             }
@@ -7669,7 +7690,8 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
         if (confirmationResult != CNotaryEvidence::EStates::STATE_CONFIRMED &&
             confirmationResult != CNotaryEvidence::EStates::STATE_REJECTED &&
             pNotaryCurrency->notarizationProtocol == pNotaryCurrency->NOTARIZATION_AUTO &&
-            pNotaryCurrency->proofProtocol == pNotaryCurrency->PROOF_PBAASMMR) // not confirmed or rejected - see if we can auto-confirm
+            pNotaryCurrency->proofProtocol == pNotaryCurrency->PROOF_PBAASMMR &&
+            chainActive.LastTip()->nTime >= PBAAS_TESTFORK_TIME) // not confirmed or rejected - see if we can auto-confirm
         {
             idx = confirmIfAuto;
             attemptAutoConfirm = true;
@@ -7681,7 +7703,6 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
         {
             std::set<COutPoint> inputSet;
             std::vector<CInputDescriptor> nonEvidenceSpends;
-
 
             for (auto &oneInput : spendsToClose[idx])
             {
@@ -7736,8 +7757,7 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
             tipData << CEvidenceData(CNotaryEvidence::NotarizationTipKey(),
                                             ::AsVector(CPrimaryProofDescriptor(std::vector<CUTXORef>({cnd.vtx[bestFork.back()].first}))));
             ne.evidence << tipData;
-            of.evidenceOutputs.push_back(txBuilder.mtx.vout.size());
-            txBuilder.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &ne)), 0);
+            evidenceOutputs.push_back(CTxOut(CNotaryEvidence::DEFAULT_OUTPUT_VALUE, MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &ne))));
 
             of.SetConfirmed();
 
@@ -7874,16 +7894,41 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                 }
             }
 
+            for (int loop = 1; loop <= evidenceOutputs.size(); loop++)
+            {
+                of.evidenceOutputs.push_back(txBuilder.mtx.vout.size() + loop);
+            }
+
             retVal = true;
             cp = CCinit(&CC, EVAL_FINALIZE_NOTARIZATION);
             dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
 
             CScript finalizeScript = MakeMofNCCScript(CConditionObj<CObjectFinalization>(EVAL_FINALIZE_NOTARIZATION, dests, 1, &of));
             txBuilder.AddTransparentOutput(finalizeScript, 0);
+
+            for (auto &oneOut : evidenceOutputs)
+            {
+                txBuilder.AddTransparentOutput(oneOut.scriptPubKey, oneOut.nValue);
+            }
             txBuilders.push_back(txBuilder);
         }
-        else if (txBuilder.mtx.vout.size())
+        else if (txBuilder.mtx.vout.size() || (evidenceOutputs.size() && of.IsValid()))
         {
+            cp = CCinit(&CC, EVAL_FINALIZE_NOTARIZATION);
+            dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
+
+            for (int loop = 1; loop <= evidenceOutputs.size(); loop++)
+            {
+                of.evidenceOutputs.push_back(txBuilder.mtx.vout.size() + loop);
+            }
+
+            CScript finalizeScript = MakeMofNCCScript(CConditionObj<CObjectFinalization>(EVAL_FINALIZE_NOTARIZATION, dests, 1, &of));
+            txBuilder.AddTransparentOutput(finalizeScript, 0);
+
+            for (auto &oneOut : evidenceOutputs)
+            {
+                txBuilder.AddTransparentOutput(oneOut.scriptPubKey, oneOut.nValue);
+            }
             txBuilders.push_back(txBuilder);
         }
         break;
@@ -8088,8 +8133,11 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
         !(crosschainCND = CChainNotarizationData(result, true, &blockHashes, &counterEvidence, &evidence)).IsValid() ||
         (!externalSystem.chainDefinition.IsGateway() && !crosschainCND.IsConfirmed()))
     {
-        LogPrintf("Unable to get notarization data from %s\n", EncodeDestination(CIdentityID(systemID)).c_str());
-        printf("Unable to get notarization data from %s\n", EncodeDestination(CIdentityID(systemID)).c_str());
+        if (LogAcceptCategory("notarization"))
+        {
+            LogPrintf("Unable to get notarization data from %s\n", EncodeDestination(CIdentityID(systemID)).c_str());
+            printf("Unable to get notarization data from %s\n", EncodeDestination(CIdentityID(systemID)).c_str());
+        }
         return retVal;
     }
 
@@ -8404,8 +8452,11 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                    ConnectedChains.ThisChain().launchSystemID == externalSystem.chainDefinition.GetID()) ||
                    ::AsVector(newConfirmedNotarization) == ::AsVector(cnd.vtx[cnd.lastConfirmed].second)))
             {
-                LogPrintf("Unable to get notarization data from %s\n", EncodeDestination(CIdentityID(systemID)).c_str());
-                printf("Unable to get notarization data from %s\n", EncodeDestination(CIdentityID(systemID)).c_str());
+                if (LogAcceptCategory("notarization"))
+                {
+                    LogPrintf("Unable to get notarization data from %s\n", EncodeDestination(CIdentityID(systemID)).c_str());
+                    printf("Unable to get notarization data from %s\n", EncodeDestination(CIdentityID(systemID)).c_str());
+                }
                 return retVal;
             }
             earnedNotarizationIndexEntry.first.blockHeight = 1;
@@ -9760,7 +9811,7 @@ bool PreCheckNotaryEvidence(const CTransaction &tx, int32_t outNum, CValidationS
             COptCCParams multiP;
             CNotaryEvidence multiEvidence;
             int multiStart = (outNum - ((CChainObject<CEvidenceData> *)(currentEvidence.evidence.chainObjects[0]))->object.md.index);
-            if (multiStart > 0 &&
+            if (multiStart > 0 && // TODO: HARDENING - put into next consensus update ">="
                 tx.vout[multiStart].scriptPubKey.IsPayToCryptoCondition(multiP) &&
                 multiP.IsValid() &&
                 multiP.evalCode == EVAL_NOTARY_EVIDENCE &&

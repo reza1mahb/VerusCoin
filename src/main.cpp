@@ -1434,6 +1434,11 @@ bool ContextualCheckTransaction(
                      chainActive[std::min((uint32_t)chainActive.Height(), (uint32_t)nHeight)]->nTime > PBAAS_TESTFORK_TIME) &&
                     p.AsVector().size() >= CScript::MAX_SCRIPT_ELEMENT_SIZE)
                 {
+                    if (LogAcceptCategory("notarization"))
+                    {
+                        printf("%s: Script too large, max=%d, size=%d\n", __func__, CScript::MAX_SCRIPT_ELEMENT_SIZE, (int)p.AsVector().size());
+                        LogPrintf("%s: Script too large, max=%d, size=%d\n", __func__, CScript::MAX_SCRIPT_ELEMENT_SIZE, (int)p.AsVector().size());
+                    }
                     return state.DoS(100, error("ContextualCheckTransaction(): smart transaction params exceed maximum size"), REJECT_INVALID, "bad-txns-script-element-too-large");
                 }
                 if (!CC.contextualprecheck(tx, i, state, nHeight))

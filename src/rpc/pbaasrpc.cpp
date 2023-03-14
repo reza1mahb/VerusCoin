@@ -3601,7 +3601,7 @@ bool GetNotarizationData(const uint160 &currencyID,
             printf("No confirmed notarization for %s, node may need to reindex\n", EncodeDestination(CIdentityID(currencyID)).c_str());
             return false;
         }
-        if (chainDef.systemID == ASSETCHAINS_CHAINID)
+        if (chainDef.SystemOrGatewayID() == ASSETCHAINS_CHAINID)
         {
             if (pCounterEvidence)
             {
@@ -3611,14 +3611,21 @@ bool GetNotarizationData(const uint160 &currencyID,
             {
                 pEvidence->resize(notarizationData.vtx.size());
             }
-            if (!optionalTxOut)
+            CTransaction returnTx;
+            uint256 blkHash;
+            LOCK(mempool.cs);
+            if (!std::get<1>(lastFinalized).GetOutputTransaction(returnTx, blkHash))
             {
-                notarizationData.vtx.push_back(std::make_pair(std::get<1>(lastFinalized), std::get<2>(lastFinalized)));
-                notarizationData.lastConfirmed = 0;
-                notarizationData.forks.push_back(std::vector<int>({0}));
-                notarizationData.bestChain = 0;
-                return true;
+                LogPrintf("Cannot retrieve notarization for %s, node may need to reindex\n", EncodeDestination(CIdentityID(currencyID)).c_str());
+                printf("Cannot retrieve notarization for %s, node may need to reindex\n", EncodeDestination(CIdentityID(currencyID)).c_str());
+                return false;
             }
+            optionalTxOut->push_back(std::make_pair(returnTx, blkHash));
+            notarizationData.vtx.push_back(std::make_pair(std::get<1>(lastFinalized), std::get<2>(lastFinalized)));
+            notarizationData.lastConfirmed = 0;
+            notarizationData.forks.push_back(std::vector<int>({0}));
+            notarizationData.bestChain = 0;
+            return true;
         }
         CTransaction oneNTx;
         uint256 ntxBlockHash;
@@ -3649,8 +3656,17 @@ bool GetNotarizationData(const uint160 &currencyID,
         }
 
         // if from this system, we're done
-        if (chainDef.systemID == ASSETCHAINS_CHAINID)
+        if (chainDef.SystemOrGatewayID() == ASSETCHAINS_CHAINID)
         {
+            if (pCounterEvidence)
+            {
+                pCounterEvidence->resize(notarizationData.vtx.size());
+            }
+            if (pEvidence)
+            {
+                pEvidence->resize(notarizationData.vtx.size());
+            }
+            optionalTxOut->resize(notarizationData.vtx.size());
             return true;
         }
 
@@ -3670,6 +3686,7 @@ bool GetNotarizationData(const uint160 &currencyID,
             std::make_heap(pendingFinalizations.begin(), pendingFinalizations.end(), indexComparer);
 
             std::multimap<CUTXORef, std::pair<CUTXORef, CPBaaSNotarization>> notarizationReferences;
+            std::set<CUTXORef> consideredNotarizations;
             std::map<CUTXORef, std::pair<CTransaction, uint256>> referencedTxes;
 
             CTransaction nTx;
@@ -3722,6 +3739,12 @@ bool GetNotarizationData(const uint160 &currencyID,
                 {
                     f.output.hash = it->first.txhash;
                 }
+
+                if (consideredNotarizations.count(f.output))
+                {
+                    continue;
+                }
+                consideredNotarizations.insert(f.output);
 
                 notarizationReferences.insert(std::make_pair(std::get<2>(priorNotarization), std::make_pair(f.output, n)));
                 if (optionalTxOut)
@@ -3829,6 +3852,11 @@ bool GetNotarizationData(const uint160 &currencyID,
                     (*pEvidence)[i].push_back(std::make_tuple(oneEItem.first, oneEItem.second));
                 }
             }
+        }
+        // in case we did not fill this out, resize it
+        if (pCounterEvidence)
+        {
+            pCounterEvidence->resize(notarizationData.vtx.size());
         }
     }
     else if (pCounterEvidence)

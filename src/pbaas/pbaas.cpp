@@ -550,8 +550,8 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                                     }
 
                                     if (!priorCcx.IsValid() ||
-                                        priorImport.exportTxId != priorExportTx.GetHash() ||
-                                        priorImport.exportTxOutNum != exportTxOut ||
+                                        (!(priorImport.IsInitialLaunchImport() && priorImport.sourceSystemHeight == priorCcx.sourceHeightEnd) &&
+                                         (priorImport.exportTxId != priorExportTx.GetHash() || priorImport.exportTxOutNum != exportTxOut)) ||
                                         (((priorCcx.sourceHeightEnd + 1) != ccx.sourceHeightStart) &&
                                          ((priorCcx.sourceHeightEnd + 1) != (ccx.sourceHeightEnd + 1))))
                                     {
@@ -4039,8 +4039,9 @@ bool CConnectedChains::CheckVerusPBaaSAvailable(UniValue &chainInfoUni, UniValue
     if (chainInfoUni.isObject() && chainDefUni.isObject())
     {
         std::string versionStr = uni_get_str(find_value(chainInfoUni, "VRSCversion"));
-        if ((GetVerusVersion() & 0xffff0000) == (ParseVersion(versionStr) & 0xffff0000) &&
-             uni_get_str(find_value(chainInfoUni, "chainid")) == EncodeDestination(CIdentityID(ConnectedChains.FirstNotaryChain().GetID())))
+        if ((IsVerusActive() && !IsVerusMainnetActive() && GetTime() < PBAAS_TESTFORK_TIME) ||
+            (((GetVerusVersion() & 0xffff0000) == (ParseVersion(versionStr) & 0xffff0000)) &&
+             uni_get_str(find_value(chainInfoUni, "chainid")) == EncodeDestination(CIdentityID(ConnectedChains.FirstNotaryChain().GetID()))))
         {
             LOCK(cs_mergemining);
             CCurrencyDefinition chainDef(chainDefUni);
