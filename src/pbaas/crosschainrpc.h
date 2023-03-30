@@ -28,6 +28,11 @@ static const int DEFAULT_RPC_TIMEOUT=900;
 static const uint32_t PBAAS_VERSION = 1;
 static const uint32_t PBAAS_VERSION_INVALID = 0;
 
+extern uint32_t PBAAS_TESTFORK_TIME;
+extern const uint32_t PBAAS_PREMAINNET_ACTIVATION;
+
+extern std::string PBAAS_TEST_ETH_CONTRACT;
+
 class CTransaction;
 class CScript;
 class CIdentity;
@@ -266,15 +271,14 @@ public:
         return 0;
     }
 
+    void SetAuxDest(const CTransferDestination &auxDest, int destNum);
+    CTransferDestination GetAuxDest(int destNum) const;
+    bool EraseAuxDest(int destNum);
     void ClearAuxDests()
     {
         auxDests.clear();
         type &= ~FLAG_DEST_AUX;
     }
-
-    CTransferDestination GetAuxDest(int destNum) const;
-
-    void SetAuxDest(const CTransferDestination &auxDest, int destNum);
 
     void SetGatewayLeg(const uint160 &GatewayID=uint160(), int64_t Fees=0, const uint160 &vdxfCode=uint160())
     {
@@ -463,17 +467,26 @@ public:
         MAX_STARTUP_NODES = 5,
         DEFAULT_START_TARGET = 0x1e01e1e1,
         MAX_CURRENCY_DEFINITION_EXPORTS_PER_BLOCK = 20,
-        MAX_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 20,
-        MAX_TRANSFER_EXPORTS_PER_BLOCK = 200,
+        MAX_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 100,
+        MAX_TRANSFER_EXPORTS_PER_BLOCK = 1000,
+        MAX_TRANSFER_EXPORTS_SIZE_PER_BLOCK = 400000,
         MAX_ETH_CURRENCY_DEFINITION_EXPORTS_PER_BLOCK = 1,
         MAX_ETH_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 0,
         MAX_ETH_TRANSFER_EXPORTS_PER_BLOCK = 50,
+        MAX_ETH_TRANSFER_EXPORTS_SIZE_PER_BLOCK = 100000,
         DEFAULT_BLOCK_NOTARIZATION_TIME = 600,      // default target time for block notarizations
-        MIN_BLOCK_NOTARIZATION_BLOCKS = 2,          // minimum target blocks for notarization period
+        MIN_BLOCK_NOTARIZATION_PERIOD = 5,          // minimum target blocks for notarization period
         MAX_NOTARIZATION_CONVERSION_PRICING_INTERVAL = 100,  // there must be a notarization with conversion at least 100 blocks before reserve transfer
         DEFAULT_BLOCKTIME_TARGET = 60,              // default block time target for difficulty adjustment, in seconds
+        MIN_BLOCKTIME_TARGET = 10,                  // min 10 seconds in first version of PBaaS
+        MAX_BLOCKTIME_TARGET = 120,                 // max 2 minutes in first version of PBaaS
         DEFAULT_AVERAGING_WINDOW = 45,              // default target spacing (blocks) for difficulty adjustment
-        BLOCK_NOTARIZATION_MODULO = (DEFAULT_BLOCK_NOTARIZATION_TIME / DEFAULT_BLOCKTIME_TARGET) // default min notarization spacing (10 minutes)
+        MIN_AVERAGING_WINDOW = 20,                  // min averaging window
+        MAX_AVERAGING_WINDOW = 200,                 // max averaging window
+        BLOCK_NOTARIZATION_MODULO = (DEFAULT_BLOCK_NOTARIZATION_TIME / DEFAULT_BLOCKTIME_TARGET), // default min notarization spacing (10 minutes)
+        MIN_EARNED_FOR_AUTO = 4,
+        MIN_BLOCKS_TO_SIGNCONFIRM = 15,
+        MIN_BLOCKS_TO_AUTOCONFIRM = 150,
     };
 
     enum ECurrencyOptions
@@ -809,6 +822,8 @@ public:
         return GetID(Name, Parent);
     }
 
+    uint32_t MagicNumber() const;
+
     std::set<uint160> GetNotarySet() const
     {
         std::set<uint160> notarySet;
@@ -838,10 +853,37 @@ public:
         }
     }
 
-    // minimum blocks to notarize 1.5 x notarization period
-    int32_t GetMinBlocksToNotarize() const
+    inline static int32_t MinBlocksToAutoNotarization(uint32_t notarizationBlockModulo)
     {
-        return blockNotarizationModulo + (blockNotarizationModulo >> 1);
+        return std::max((uint32_t)(notarizationBlockModulo * MIN_EARNED_FOR_AUTO), (uint32_t)MIN_BLOCKS_TO_AUTOCONFIRM);
+    }
+
+    inline static int32_t MinBlocksToSignedNotarization(uint32_t notarizationBlockModulo)
+    {
+        return std::max(notarizationBlockModulo + (notarizationBlockModulo >> 1), (uint32_t)MIN_BLOCKS_TO_SIGNCONFIRM);
+    }
+
+    inline static int32_t MinBlocksToStartNotarization(uint32_t notarizationBlockModulo)
+    {
+        return ((MinBlocksToSignedNotarization(notarizationBlockModulo) << 1) + 1);
+    }
+
+    // we may sign and confirm a notarization this many blocks after it has been posted
+    // if when confirming it, it has passed all necessary challenges and is signed by
+    // required notary witnesses
+    int32_t GetMinBlocksToSignNotarize() const
+    {
+        return MinBlocksToSignedNotarization(blockNotarizationModulo);
+    }
+
+    int32_t GetMinBlocksToAutoNotarize() const
+    {
+        return MinBlocksToAutoNotarization(blockNotarizationModulo);
+    }
+
+    int32_t GetMinBlocksToStartNotarization() const
+    {
+        return MinBlocksToStartNotarization(blockNotarizationModulo);
     }
 
     uint160 GatewayConverterID() const
@@ -875,6 +917,11 @@ public:
     int32_t MaxTransferExportCount() const
     {
         return proofProtocol == PROOF_ETHNOTARIZATION ? MAX_ETH_TRANSFER_EXPORTS_PER_BLOCK : MAX_TRANSFER_EXPORTS_PER_BLOCK;
+    }
+
+    int32_t MaxTransferExportSize() const
+    {
+        return proofProtocol == PROOF_ETHNOTARIZATION ? MAX_ETH_TRANSFER_EXPORTS_SIZE_PER_BLOCK : MAX_TRANSFER_EXPORTS_SIZE_PER_BLOCK;
     }
 
     int32_t MaxCurrencyDefinitionExportCount() const
@@ -1059,7 +1106,7 @@ public:
     bool IsValid() const
     {
         return (nVersion != PBAAS_VERSION_INVALID) &&
-                // TODO: HARDENING - remove this comment at next reset before PBaaS mainnet (!notaries.size() || minNotariesConfirm > (notaries.size() >> 1)) &&
+                (!notaries.size() || minNotariesConfirm > (notaries.size() >> 1)) &&
                 !(options & ~OPTIONS_FLAG_MASK) &&
                 idReferralLevels <= MAX_ID_REFERRAL_LEVELS &&
                 name.size() > 0 &&
@@ -1474,7 +1521,7 @@ public:
     uint256 compactPower;                   // compact power (or external proxy) of the block height notarization to compare
     int64_t gasPrice;                       // Ethereum protocol gas price
 
-    CProofRoot(int Type=TYPE_PBAAS, int Version=VERSION_CURRENT) : type(Type), version(Version), rootHeight(0) {}
+    CProofRoot(int Type=TYPE_PBAAS, int Version=VERSION_INVALID) : type(Type), version(Version), rootHeight(0) {}
     CProofRoot(const UniValue &uni);
     CProofRoot(const uint160 &sysID,
                 uint32_t nHeight,
@@ -1517,6 +1564,7 @@ public:
 
     friend bool operator==(const CProofRoot &op1, const CProofRoot &op2);
     friend bool operator!=(const CProofRoot &op1, const CProofRoot &op2);
+    friend bool operator<(const CProofRoot &op1, const CProofRoot &op2);
 
     UniValue ToUniValue() const;
 };
@@ -1622,6 +1670,7 @@ public:
     }
 
     int GetType() const { return SER_GETHASH; }
+    CCurrencyDefinition::EHashTypes GetHashType() const { return nativeHashType; }
     int GetVersion() const { return PROTOCOL_VERSION; }
 
     template<typename T>

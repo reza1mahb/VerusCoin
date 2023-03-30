@@ -51,7 +51,6 @@ extern string PBAAS_USERPASS;
 extern int32_t PBAAS_PORT;
 extern std::string VERUS_CHAINNAME;
 
-
 //
 // Exception thrown on connection error.  This error is used to determine
 // when to wait if -rpcwait is given.
@@ -224,29 +223,29 @@ UniValue RPCCallRoot(const string& strMethod, const UniValue& params, int timeou
     {
         return RPCCall(strMethod, params, PBAAS_USERPASS, PBAAS_PORT, PBAAS_HOST);
     }
-    else if (_IsVerusActive() &&
-             ReadConfigFile("veth", settings, settingsmulti))
+    else if ((_IsVerusActive() &&
+              ReadConfigFile("veth", settings, settingsmulti)) ||
+             (!_IsVerusActive() &&
+              ReadConfigFile(PBAAS_TESTMODE ? "vrsctest" : "VRSC", settings, settingsmulti)))
     {
         // the Ethereum bridge, "VETH", serves as the root currency to VRSC and for Rinkeby to VRSCTEST
-        PBAAS_USERPASS = settingsmulti.find("-rpcuser")->second[0] + ":" + settingsmulti.find("-rpcpassword")->second[0];
-        PBAAS_PORT = atoi(settingsmulti.find("-rpcport")->second[0]);
-        PBAAS_HOST = settingsmulti.find("-rpchost")->second[0];
-        if (!PBAAS_HOST.size())
+        auto userIt = settingsmulti.find("-rpcuser");
+        auto passIt = settingsmulti.find("-rpcpassword");
+        auto portIt = settingsmulti.find("-rpcport");
+        auto hostIt = settingsmulti.find("-rpchost");
+        if (userIt != settingsmulti.end() &&
+            passIt != settingsmulti.end() &&
+            portIt != settingsmulti.end())
         {
-            PBAAS_HOST = "127.0.0.1";
+            PBAAS_USERPASS = userIt->second[0] + ":" + passIt->second[0];
+            PBAAS_PORT = atoi(portIt->second[0]);
+            PBAAS_HOST = hostIt == settingsmulti.end() ? hostIt->second[0] : "127.0.0.1";
+            if (!PBAAS_HOST.size())
+            {
+                PBAAS_HOST = "127.0.0.1";
+            }
+            return RPCCall(strMethod, params, credentials, port, host, timeout);
         }
-        return RPCCall(strMethod, params, credentials, port, host, timeout);
-    }
-    else if (ReadConfigFile(PBAAS_TESTMODE ? "vrsctest" : "VRSC", settings, settingsmulti))
-    {
-        PBAAS_USERPASS = settingsmulti.find("-rpcuser")->second[0] + ":" + settingsmulti.find("-rpcpassword")->second[0];
-        PBAAS_PORT = atoi(settingsmulti.find("-rpcport")->second[0]);
-        PBAAS_HOST = settingsmulti.find("-rpchost")->second[0];
-        if (!PBAAS_HOST.size())
-        {
-            PBAAS_HOST = "127.0.0.1";
-        }
-        return RPCCall(strMethod, params, credentials, port, host, timeout);
     }
     return UniValue(UniValue::VNULL);
 }
@@ -473,6 +472,7 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(co
         idKeys.insert(GetDestinationID(oneKey));
     }
     uint256 signatureHash = IdentitySignatureHash(vdxfCodes, vdxfCodeNames, statements, systemID, blockHeight, signingID.GetID(), prefixString, msgHash);
+
     for (auto &oneSig : signatures)
     {
         if (oneSig.size() != ECDSA_RECOVERABLE_SIZE)
@@ -487,6 +487,45 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(co
 
         if (!idKeys.count(checkKeyID))
         {
+            if (LogAcceptCategory("notarysignatures"))
+            {
+                printf("Invalid signature - recovered %s\nfrom signature %s\nfor hash %s\nexpected: %s\nidentity: %s\n", EncodeDestination(CKeyID(checkKeyID)).c_str(), EncodeBase64(std::string(oneSig.begin(), oneSig.end())).c_str(), signatureHash.GetHex().c_str(), idKeys.begin() == idKeys.end() ? "empty" : EncodeDestination(CKeyID(*idKeys.begin())).c_str(), signingID.ToUniValue().write(1,2).c_str());
+                LogPrintf("Invalid signature - recovered %s\nfrom signature %s\nfor hash %s\nexpected: %s\nidentity: %s\n", EncodeDestination(CKeyID(checkKeyID)).c_str(), EncodeBase64(std::string(oneSig.begin(), oneSig.end())).c_str(), signatureHash.GetHex().c_str(), idKeys.begin() == idKeys.end() ? "empty" : EncodeDestination(CKeyID(*idKeys.begin())).c_str(), signingID.ToUniValue().write(1,2).c_str());
+
+                UniValue vdxfCodesUni(UniValue::VARR);
+                UniValue vdxfCodeNamesUni(UniValue::VARR);
+                UniValue statementsUni(UniValue::VARR);
+                for (auto &oneItem : vdxfCodes)
+                {
+                    vdxfCodesUni.push_back(EncodeDestination(CIdentityID(oneItem)));
+                }
+                for (auto &oneItem : vdxfCodeNames)
+                {
+                    vdxfCodeNamesUni.push_back(oneItem);
+                }
+                for (auto &oneItem : statements)
+                {
+                    statementsUni.push_back(oneItem.GetHex());
+                }
+                printf("Ready to check signature on system: %s\nvdxfCodes: %s\nvdxfCodeNames: %s\nstatements: %s\nblockHeight: %u\nsigningID.name: %s\nprefixString: %s\nmsgHash: %s\n",
+                        EncodeDestination(CIdentityID(systemID)).c_str(),
+                        vdxfCodesUni.write().c_str(),
+                        vdxfCodeNamesUni.write().c_str(),
+                        statementsUni.write().c_str(),
+                        blockHeight,
+                        signingID.name.c_str(),
+                        prefixString.c_str(),
+                        msgHash.GetHex().c_str());
+                LogPrintf("Ready to check signature on system: %s\nvdxfCodes: %s\nvdxfCodeNames: %s\nstatements: %s\nblockHeight: %u\nsigningID.name: %s\nprefixString: %s\nmsgHash: %s\n",
+                        EncodeDestination(CIdentityID(systemID)).c_str(),
+                        vdxfCodesUni.write().c_str(),
+                        vdxfCodeNamesUni.write().c_str(),
+                        statementsUni.write().c_str(),
+                        blockHeight,
+                        signingID.name.c_str(),
+                        prefixString.c_str(),
+                        msgHash.GetHex().c_str());
+            }
             return SIGNATURE_INVALID;
         }
 
@@ -495,6 +534,11 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(co
             pDupSigs->push_back(oneSig);
         }
         keys.insert(checkKeyID);
+        if (LogAcceptCategory("notarysignatures") && LogAcceptCategory("verbose"))
+        {
+            printf("Signature OK - recovered %s\nfrom signature %s\nfor hash %s\nexpected: %s\nidentity: %s\n", EncodeDestination(CKeyID(checkKeyID)).c_str(), EncodeBase64(std::string(oneSig.begin(), oneSig.end())).c_str(), signatureHash.GetHex().c_str(), idKeys.begin() == idKeys.end() ? "empty" : EncodeDestination(CKeyID(*idKeys.begin())).c_str(), signingID.ToUniValue().write(1,2).c_str());
+            LogPrintf("Signature OK - recovered %s\nfrom signature %s\nfor hash %s\nexpected: %s\nidentity: %s\n", EncodeDestination(CKeyID(checkKeyID)).c_str(), EncodeBase64(std::string(oneSig.begin(), oneSig.end())).c_str(), signatureHash.GetHex().c_str(), idKeys.begin() == idKeys.end() ? "empty" : EncodeDestination(CKeyID(*idKeys.begin())).c_str(), signingID.ToUniValue().write(1,2).c_str());
+        }
     }
     if (keys.size() >= signingID.minSigs)
     {
@@ -513,7 +557,7 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(co
 CTransferDestination CTransferDestination::GetAuxDest(int destNum) const
 {
     CTransferDestination retVal;
-    if (destNum < auxDests.size())
+    if (destNum >= 0 && destNum < auxDests.size())
     {
         ::FromVector(auxDests[destNum], retVal);
         if (retVal.type & FLAG_DEST_AUX || retVal.auxDests.size())
@@ -538,6 +582,11 @@ CTransferDestination CTransferDestination::GetAuxDest(int destNum) const
 
 void CTransferDestination::SetAuxDest(const CTransferDestination &auxDest, int destNum)
 {
+    if (auxDests.size() < destNum)
+    {
+        LogPrintf("%s: Invalid auxDest index %d. Cannot add more than one to auxDests at a time.\n", __func__, destNum);
+        assert(false);
+    }
     if (auxDests.size() == destNum)
     {
         auxDests.push_back(::AsVector(auxDest));
@@ -552,11 +601,25 @@ void CTransferDestination::SetAuxDest(const CTransferDestination &auxDest, int d
     }
 }
 
+bool CTransferDestination::EraseAuxDest(int destNum)
+{
+    if (auxDests.size() <= destNum)
+    {
+        LogPrint("notarization", "%s: Attempt to erase invalid auxDest index %d\n", __func__, destNum);
+        return false;
+    }
+    auxDests.erase(auxDests.begin() + destNum);
+    if (!auxDests.size())
+    {
+        type &= ~FLAG_DEST_AUX;
+    }
+    return true;
+}
 
 uint160 DecodeCurrencyName(std::string currencyStr)
 {
     uint160 retVal;
-    currencyStr = TrimSpaces(currencyStr);
+    currencyStr = TrimSpaces(currencyStr, true);
     if (!currencyStr.size())
     {
         return retVal;
@@ -626,7 +689,7 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
             }
         }
 
-        name = CleanName(name, parent);
+        name = CleanName(name, parent, true);
 
         std::string systemIDStr = uni_get_str(find_value(obj, "systemid"));
         if (systemIDStr != "")
@@ -706,26 +769,19 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
         }
 
         notarizationProtocol = (ENotarizationProtocol)uni_get_int(find_value(obj, "notarizationprotocol"), (int32_t)NOTARIZATION_AUTO);
-        if (notarizationProtocol != NOTARIZATION_AUTO && notarizationProtocol != NOTARIZATION_NOTARY_CONFIRM)
+        if (notarizationProtocol != NOTARIZATION_AUTO &&
+            notarizationProtocol != NOTARIZATION_NOTARY_CONFIRM &&
+            notarizationProtocol != NOTARIZATION_NOTARY_CHAINID)
         {
-            LogPrintf("%s: notarization protocol for PBaaS chains must be %d (NOTARIZATION_AUTO) or %d (NOTARIZATION_NOTARY_CONFIRM)\n", __func__, (int)NOTARIZATION_NOTARY_CONFIRM);
-            nVersion = PBAAS_VERSION_INVALID;
-            return;
-        }
-        proofProtocol = (EProofProtocol)uni_get_int(find_value(obj, "proofprotocol"), (int32_t)PROOF_PBAASMMR);
-        if (proofProtocol != PROOF_PBAASMMR && proofProtocol != PROOF_CHAINID && proofProtocol != PROOF_ETHNOTARIZATION)
-        {
-            LogPrintf("%s: proofprotocol must be %d, %d, or %d\n", __func__, (int)PROOF_PBAASMMR, (int)PROOF_CHAINID, (int)PROOF_ETHNOTARIZATION);
+            LogPrintf("%s: notarization protocol for PBaaS chains must be %d (NOTARIZATION_AUTO), %d (NOTARIZATION_NOTARY_CONFIRM), or  %d (NOTARIZATION_NOTARY_CHAINID)\n", __func__, (int)NOTARIZATION_AUTO, (int)NOTARIZATION_NOTARY_CONFIRM, (int)NOTARIZATION_NOTARY_CHAINID);
             nVersion = PBAAS_VERSION_INVALID;
             return;
         }
 
-        // TODO: HARDENING - ensure that it makes sense for a chain to have PROOF_CHAINID still or disallow
-        // to enable it, we will need to ensure that all imports and notarizations are spendable to the chain ID and are
-        // considered valid by definition
-        if (proofProtocol == PROOF_CHAINID && IsPBaaSChain())
+        proofProtocol = (EProofProtocol)uni_get_int(find_value(obj, "proofprotocol"), (int32_t)PROOF_PBAASMMR);
+        if (proofProtocol != PROOF_PBAASMMR && proofProtocol != PROOF_CHAINID && proofProtocol != PROOF_ETHNOTARIZATION)
         {
-            LogPrintf("%s: proofprotocol %d not yet implemented\n", __func__, (int)PROOF_CHAINID);
+            LogPrintf("%s: proofprotocol must be %d, %d, or %d\n", __func__, (int)PROOF_PBAASMMR, (int)PROOF_CHAINID, (int)PROOF_ETHNOTARIZATION);
             nVersion = PBAAS_VERSION_INVALID;
             return;
         }
@@ -746,6 +802,17 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
         else
         {
             launchSystemID = parent;
+        }
+
+        // PROOF_CHAINID not supported on this version of PBaaS, but if we didn't make it,
+        // don't disallow it being imported from another chain/system
+        if ((systemID == ASSETCHAINS_CHAINID || launchSystemID == ASSETCHAINS_CHAINID) &&
+             proofProtocol == PROOF_CHAINID &&
+             IsPBaaSChain())
+        {
+            LogPrintf("%s: proofprotocol %d as a PBaaS chain is not yet implemented in this version of Verus PBaaS\n", __func__, (int)PROOF_CHAINID);
+            nVersion = PBAAS_VERSION_INVALID;
+            return;
         }
 
         startBlock = (uint32_t)uni_get_int64(find_value(obj, "startblock"));
@@ -1021,6 +1088,10 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
 
         UniValue notaryArr = find_value(obj, "notaries");
         minNotariesConfirm = 0;
+        if (notarizationProtocol == NOTARIZATION_NOTARY_CHAINID)
+        {
+            notaries.push_back(GetID());
+        }
         if (notaryArr.isArray())
         {
             for (int i = 0; i < notaryArr.size(); i++)
@@ -1102,7 +1173,21 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
             blockTime = uni_get_int64(find_value(obj, "blocktime"), DEFAULT_BLOCKTIME_TARGET);
             powAveragingWindow = uni_get_int64(find_value(obj, "powaveragingwindow"), DEFAULT_AVERAGING_WINDOW);
             blockNotarizationModulo = uni_get_int64(find_value(obj, "notarizationperiod"),
-                                                    std::max((int64_t)(DEFAULT_BLOCK_NOTARIZATION_TIME / blockTime), (int64_t)MIN_BLOCK_NOTARIZATION_BLOCKS));
+                                                    std::max((int64_t)(DEFAULT_BLOCK_NOTARIZATION_TIME / blockTime), (int64_t)MIN_BLOCK_NOTARIZATION_PERIOD));
+
+            if (powAveragingWindow < MIN_AVERAGING_WINDOW || powAveragingWindow > MAX_AVERAGING_WINDOW)
+            {
+                LogPrintf("%s: powaveragingwindow: %d out of range %d - %d\n", __func__, powAveragingWindow, MIN_AVERAGING_WINDOW, MAX_AVERAGING_WINDOW);
+                nVersion = PBAAS_VERSION_INVALID;
+                return;
+            }
+
+            if (blockTime < MIN_BLOCKTIME_TARGET || blockTime > MAX_BLOCKTIME_TARGET)
+            {
+                LogPrintf("%s: blocktime: %d out of range %d - %d\n", __func__, blockTime, MIN_BLOCKTIME_TARGET, MAX_BLOCKTIME_TARGET);
+                nVersion = PBAAS_VERSION_INVALID;
+                return;
+            }
 
             for (auto era : vEras)
             {
@@ -1145,7 +1230,7 @@ CCurrencyDefinition::CCurrencyDefinition(const std::string &currencyName, bool t
     powAveragingWindow(DEFAULT_AVERAGING_WINDOW),
     blockNotarizationModulo(BLOCK_NOTARIZATION_MODULO)
 {
-    name = boost::to_upper_copy(CleanName(currencyName, parent));
+    name = boost::to_upper_copy(CleanName(currencyName, parent, true));
     if (parent.IsNull())
     {
         UniValue uniCurrency(UniValue::VOBJ);
@@ -1201,9 +1286,9 @@ CCurrencyDefinition::CCurrencyDefinition(const std::string &currencyName, bool t
 
             UniValue uniEras(UniValue::VARR);
             UniValue uniEra1(UniValue::VOBJ);
-            uniEra1.pushKV("reward", 1200000000);
+            uniEra1.pushKV("reward", 600000000);
             uniEra1.pushKV("decay", 0);
-            uniEra1.pushKV("halving", 76001);
+            uniEra1.pushKV("halving", 1051920);
             uniEra1.pushKV("eraend", 0);
             uniEras.push_back(uniEra1);
 

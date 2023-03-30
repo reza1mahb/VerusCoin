@@ -110,9 +110,15 @@ UniValue getinfo(const UniValue& params, bool fHelp)
     //fprintf(stderr,"after notarized_height %u\n",(uint32_t)time(NULL));
 
     UniValue obj(UniValue::VOBJ);
+    obj.push_back(Pair("VRSCversion", VERUS_VERSION));
     obj.push_back(Pair("version", CLIENT_VERSION));
     obj.push_back(Pair("protocolversion", PROTOCOL_VERSION));
-    obj.push_back(Pair("VRSCversion", VERUS_VERSION));
+    obj.push_back(Pair("chainid", EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID))));
+    if (ConnectedChains.FirstNotaryChain().IsValid())
+    {
+        obj.push_back(Pair("notarychainid", EncodeDestination(CIdentityID(ConnectedChains.FirstNotaryChain().GetID()))));
+    }
+    obj.push_back(Pair("name", ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID)));
     obj.push_back(Pair("notarized", notarized_height));
     obj.push_back(Pair("prevMoMheight", prevMoMheight));
     obj.push_back(Pair("notarizedhash", notarized_hash.ToString()));
@@ -183,13 +189,16 @@ UniValue getinfo(const UniValue& params, bool fHelp)
     }
     if ( ASSETCHAINS_CC != 0 )
         obj.push_back(Pair("CCid",        (int)ASSETCHAINS_CC));
-    obj.push_back(Pair("name",        ASSETCHAINS_SYMBOL[0] == 0 ? "KMD" : ASSETCHAINS_SYMBOL));
     if ( ASSETCHAINS_SYMBOL[0] != 0 )
     {
         //obj.push_back(Pair("name",        ASSETCHAINS_SYMBOL));
         obj.push_back(Pair("p2pport",        ASSETCHAINS_P2PPORT));
         obj.push_back(Pair("rpcport",        ASSETCHAINS_RPCPORT));
-        obj.push_back(Pair("magic",        (int)ASSETCHAINS_MAGIC));
+        obj.push_back(Pair("magic",          (int)ASSETCHAINS_MAGIC));
+        if (LogAcceptCategory("magicnumber"))
+        {
+            obj.push_back(Pair("calculatedmagic",(int)ConnectedChains.ThisChain().MagicNumber()));
+        }
 
         obj.push_back(Pair("premine",        ASSETCHAINS_SUPPLY));
 
@@ -495,6 +504,7 @@ UniValue validateaddress(const UniValue& params, bool fHelp)
 #ifdef ENABLE_WALLET
         isminetype mine = pwalletMain ? IsMine(*pwalletMain, dest) : ISMINE_NO;
         ret.push_back(Pair("ismine", (mine & ISMINE_SPENDABLE) ? true : false));
+        ret.push_back(Pair("issharedownership", (mine & ISMINE_SHARED) ? true : false));
         ret.push_back(Pair("iswatchonly", (mine & ISMINE_WATCH_ONLY) ? true: false));
         UniValue detail = boost::apply_visitor(DescribeAddressVisitor(), dest);
         ret.pushKVs(detail);
@@ -1710,7 +1720,7 @@ bool getAddressesFromParams(const UniValue& params, std::vector<std::pair<uint16
             addresses.push_back(std::make_pair(hashBytes, type));
         }
     } else {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid addresse");
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
     return true;
@@ -2576,6 +2586,45 @@ UniValue getspentinfo(const UniValue& params, bool fHelp)
     return obj;
 }
 
+UniValue processupgradedata(const UniValue& params, bool fHelp)
+{
+
+    if (fHelp || params.size() != 1 || !params[0].isObject())
+        throw runtime_error(
+            "processupgradedata {upgradedata}\n"
+            "\nReturns the txid and index where an output is spent.\n"
+            "\nArguments:\n"
+            "{\n"
+            "  \"upgradeid\"                (string) The VDXF key identifier\n"
+            "  \"minimumdaemonversion\"     (string) The minimum version required for the upgrade\n"
+            "  \"activationheight\"         (number) The block height to activate\n"
+            "  \"activationtime\"           (number) Epoch time to activate, depending on upgrade\n"
+            "}\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"txid\"  (string) The transaction id\n"
+            "  \"index\"  (number) The spending input index\n"
+            "  ,...\n"
+            "}\n"
+            "\nExamples:\n"
+            + HelpExampleCli("processupgradedata", "'{\"txid\": \"0437cd7f8525ceed2324359c2d0ba26006d92d856a9c20fa0241106ee5a597c9\", \"index\": 0}'")
+            + HelpExampleRpc("processupgradedata", "{\"txid\": \"0437cd7f8525ceed2324359c2d0ba26006d92d856a9c20fa0241106ee5a597c9\", \"index\": 0}")
+        );
+
+    CUpgradeDescriptor upgradeDescr(params[0]);
+
+    if (!upgradeDescr.IsValid())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid upgrade descriptor");
+    }
+
+    UniValue retVal = upgradeDescr.ToUniValue();
+    auto vch = upgradeDescr.AsVector();
+    retVal.pushKV("hex", HexBytes(&(vch[0]), vch.size()));
+    return retVal;
+}
+
+
 static const CRPCCommand commands[] =
 { //  category              name                      actor (function)         okSafeMode
   //  --------------------- ------------------------  -----------------------  ----------
@@ -2598,6 +2647,7 @@ static const CRPCCommand commands[] =
     { "addressindex",       "getaddressutxos",        &getaddressutxos,        false }, /* insight explorer */
     { "addressindex",       "getaddressmempool",      &getaddressmempool,      true  }, /* insight explorer */
     { "blockchain",         "getspentinfo",           &getspentinfo,           false }, /* insight explorer */
+    { "blockchain",         "processupgradedata",     &processupgradedata,     true },
     // END insightexplorer
 
     /* Not shown in help */

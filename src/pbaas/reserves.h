@@ -20,7 +20,7 @@
 #include "librustzcash.h"
 #include "pubkey.h"
 #include "amount.h"
-#include <map>
+#include "lrucache.h"
 
 #ifndef SATOSHIDEN
 #define SATOSHIDEN ((uint64_t)100000000L)
@@ -276,7 +276,7 @@ public:
 
     CCurrencyValueMap TotalTransferFee() const;
     CCurrencyValueMap ConversionFee() const;
-    CCurrencyValueMap CalculateFee(uint32_t flags, CAmount transferTotal) const;
+    CCurrencyValueMap CalculateFee() const;
     CCurrencyValueMap TotalCurrencyOut() const;
 
     static CAmount CalculateTransferFee(const CTransferDestination &destination, uint32_t flags=VALID);
@@ -861,7 +861,9 @@ public:
                        int32_t &evidenceOutStart,
                        int32_t &evidenceOutEnd,
                        std::vector<CReserveTransfer> &reserveTransfers,
-                       CValidationState &state) const;
+                       CValidationState &state,
+                       bool deepCheck=false) const;
+
     bool GetImportInfo(const CTransaction &importTx,
                        uint32_t nHeight,
                        int numImportOut,
@@ -872,7 +874,8 @@ public:
                        int32_t &importNotarizationOut,
                        int32_t &evidenceOutStart,
                        int32_t &evidenceOutEnd,
-                       std::vector<CReserveTransfer> &reserveTransfers) const;
+                       std::vector<CReserveTransfer> &reserveTransfers,
+                       bool deepCheck=false) const;
 
     // ensures that all import rules were properly followed to create
     // the import inputs and outputs on this transaction
@@ -927,6 +930,15 @@ public:
         FLAG_POSTLAUNCH = 0x80,                 // set post launch
         FLAG_SYSTEMTHREAD = 0x100               // export that is there to ensure continuous export thread only
     };
+
+    /*
+    int32_t &nextOutput,
+    CPBaaSNotarization &exportNotarization,
+    std::vector<CReserveTransfer> &reserveTransfers,
+    CCurrencyDefinition::EProofProtocol hashType
+    */
+    static LRUCache<CUTXORef, std::tuple<int, CPBaaSNotarization, std::vector<CReserveTransfer>, CCurrencyDefinition::EProofProtocol>>
+        exportInfoCache;
 
     uint16_t nVersion;                          // current version
     uint16_t flags;                             // controls serialization and active state
@@ -1346,6 +1358,7 @@ public:
     CAmount NativeToReserve(CAmount nativeAmount, int32_t reserveIndex=0) const;
     static CAmount NativeToReserveRaw(CAmount nativeAmount, const cpp_dec_float_50 &exchangeRate);
     static CAmount NativeToReserveRaw(CAmount nativeAmount, CAmount exchangeRate);
+    static CAmount NativeGasToReserveRaw(CAmount nativeAmount, CAmount exchangeRate);
     CCurrencyValueMap NativeToReserveRaw(const std::vector<CAmount> &, const std::vector<CAmount> &exchangeRates) const;
     CCurrencyValueMap NativeToReserveRaw(const std::vector<CAmount> &, const std::vector<cpp_dec_float_50> &exchangeRates) const;
 
@@ -1521,6 +1534,8 @@ public:
 
     CCoinbaseCurrencyState(const CTransaction &tx, int *pOutIdx=NULL);
 
+    bool ValidateConversionLimits() const;
+
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
@@ -1660,6 +1675,7 @@ public:
 
     int64_t TargetConversionPrice(const uint160 &sourceCurrencyID, const uint160 &targetCurrencyID) const;
     CCurrencyValueMap TargetConversionPrices(const uint160 &targetCurrencyID) const;
+    CCurrencyValueMap TargetLastConversionPrices(const uint160 &targetCurrencyID) const;
     CCurrencyValueMap TargetConversionPricesReverse(const uint160 &targetCurrencyID, bool addFeePct=false) const;
 };
 
@@ -1690,10 +1706,10 @@ public:
         IS_RESERVE=4,                           // if set, this transaction affects reserves and/or price if mined
         IS_RESERVETRANSFER=8,                   // is this a reserve/exchange transaction?
         IS_LIMIT=0x10,                          // if reserve exchange, is it a limit order?
-        IS_FILLORKILL=0x20,                     // If set, this can expire
+        IS_FILLORKILL=0x20,                     // If set, this can expire, but the tx goes in as a refund (not supported yet in PBaaS 1.0)
         IS_FILLORKILLFAIL=0x40,                 // If set, this is an expired fill or kill in a valid tx
-        IS_IMPORT=0x80,                         // If set, this is an expired fill or kill in a valid tx
-        IS_EXPORT=0x100,                        // If set, this is an expired fill or kill in a valid tx
+        IS_IMPORT=0x80,                         // non-supplemental export
+        IS_EXPORT=0x100,                        // import
         IS_IDENTITY=0x200,                      // If set, this is an identity definition or update
         IS_IDENTITY_DEFINITION=0x400,           // If set, this is an identity definition
         IS_HIGH_FEE=0x800,                      // If set, this may have "absurdly high fees"
@@ -1803,7 +1819,8 @@ public:
                                          CCoinbaseCurrencyState *pNewCurrencyState=nullptr,
                                          const CTransferDestination &feeRecipient=CTransferDestination(),
                                          const CTransferDestination &blockNotarizer=CTransferDestination(),
-                                         const uint256 &entropy=uint256());
+                                         const uint256 &entropy=uint256(),
+                                         bool finalValidityCheck=false);
 };
 
 struct CCcontract_info;

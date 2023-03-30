@@ -306,7 +306,7 @@ UniValue CCurrencyDefinition::ToUniValue() const
         for (auto &onePreAllocation : preAllocation)
         {
             UniValue onePreAlloc(UniValue::VOBJ);
-            onePreAlloc.push_back(Pair(onePreAllocation.first.IsNull() ? "blockoneminer" : EncodeDestination(CIdentityID(onePreAllocation.first)), 
+            onePreAlloc.push_back(Pair(onePreAllocation.first.IsNull() ? "blockoneminer" : EncodeDestination(CIdentityID(onePreAllocation.first)),
                                        ValueFromAmount(onePreAllocation.second)));
             preAllocationArr.push_back(onePreAlloc);
         }
@@ -557,8 +557,8 @@ CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmoun
     return nativeOut;
 }
 
-CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts, 
-                                              const std::vector<uint160> &currencies, 
+CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts,
+                                              const std::vector<uint160> &currencies,
                                               const std::vector<cpp_dec_float_50> &exchangeRates)
 {
     CAmount nativeOut = 0;
@@ -573,8 +573,8 @@ CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmoun
     return nativeOut;
 }
 
-CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts, 
-                                           const std::vector<uint160> &currencies, 
+CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts,
+                                           const std::vector<uint160> &currencies,
                                            const std::vector<CAmount> &exchangeRates)
 {
     CAmount nativeOut = 0;
@@ -614,6 +614,28 @@ CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, CAmount exchang
     static arith_uint256 bigSatoshi(SATOSHIDEN);
     arith_uint256 bigAmount(nativeAmount);
     arith_uint256 bigReserves = (bigAmount * exchangeRate) / bigSatoshi;
+    int64_t retVal = bigReserves.GetLow64();
+    if ((bigReserves - retVal) == 0)
+    {
+        return retVal;
+    }
+    else
+    {
+        // return -1 on overflow
+        return -1;
+    }
+}
+
+CAmount CCurrencyState::NativeGasToReserveRaw(CAmount nativeAmount, CAmount exchangeRate)
+{
+    if (!exchangeRate)
+    {
+        return nativeAmount;
+    }
+    exchangeRate = exchangeRate / (SATOSHIDEN / 100);
+    static arith_uint256 bigSatoshiX1000(SATOSHIDEN * 1000);
+    arith_uint256 bigAmount(nativeAmount);
+    arith_uint256 bigReserves = (bigAmount * exchangeRate) / bigSatoshiX1000;
     int64_t retVal = bigReserves.GetLow64();
     if ((bigReserves - retVal) == 0)
     {
@@ -742,7 +764,7 @@ bool CPBaaSNotarization::SetMirror(bool setTrue)
         currencyStates.count(currencyID) ||
         !(proofRoots.begin()->first == ASSETCHAINS_CHAINID || (++proofRoots.begin())->first == ASSETCHAINS_CHAINID))
     {
-        LogPrintf("%s: invalid earned notarization for acceptance\n", __func__);
+        LogPrint("notarization", "%s: invalid earned notarization for acceptance\n", __func__);
         return false;
     }
 
@@ -751,7 +773,7 @@ bool CPBaaSNotarization::SetMirror(bool setTrue)
 
     if (currencyID != ASSETCHAINS_CHAINID && !currencyStates.count(ASSETCHAINS_CHAINID))
     {
-        LogPrintf("%s: notarization for acceptance must include both currency states\n", __func__);
+        LogPrint("notarization", "%s: notarization for acceptance must include both currency states\n", __func__);
         return false;
     }
 
@@ -784,6 +806,7 @@ bool CPBaaSNotarization::SetMirror(bool setTrue)
     else
     {
         flags &= ~FLAG_ACCEPTED_MIRROR;
+        proposer.ClearAuxDests();
     }
     return true;
 }
@@ -1121,14 +1144,14 @@ CUTXORef::CUTXORef(const UniValue &uni)
 UniValue CObjectFinalization::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
-    ret.push_back(Pair("finalizationtype", (FinalizationType() == FINALIZE_NOTARIZATION) ? 
-                                                "finalizenotarization" : FinalizationType() == FINALIZE_EXPORT ? 
-                                                "finalizeexport" : "invalid"));
-    ret.push_back(Pair("status", IsConfirmed() ? 
-                                    "confirmed" : 
-                                    IsRejected() ? 
-                                        "rejected" : 
-                                        "pending"));
+    ret.push_back(Pair("finalizationtype", finalizationType));
+    ret.push_back(Pair("status", IsConfirmed() ?
+                                    "confirmed" :
+                                    IsRejected() ?
+                                        "rejected" :
+                                        IsChallenge() ?
+                                            "challenge" :
+                                            "pending"));
     if (evidenceInputs.size())
     {
         UniValue inputsUni(UniValue::VARR);

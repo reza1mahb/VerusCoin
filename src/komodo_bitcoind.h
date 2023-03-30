@@ -167,7 +167,7 @@ try_again:
     curl_handle = curl_easy_init();
     init_string(&s);
     headers = curl_slist_append(0,"Expect:");
-    
+
     curl_easy_setopt(curl_handle,CURLOPT_USERAGENT,"mozilla/4.0");//"Mozilla/4.0 (compatible; )");
     curl_easy_setopt(curl_handle,CURLOPT_HTTPHEADER,	headers);
     curl_easy_setopt(curl_handle,CURLOPT_URL,		url);
@@ -196,7 +196,7 @@ try_again:
                 bracket0 = (char *)"[";
                 bracket1 = (char *)"]";
             }
-            
+
             databuf = (char *)malloc(256 + strlen(command) + strlen(params));
             sprintf(databuf,"{\"id\":\"jl777\",\"method\":\"%s\",\"params\":%s%s%s}",command,bracket0,params,bracket1);
             //printf("url.(%s) userpass.(%s) databuf.(%s)\n",url,userpass,databuf);
@@ -236,7 +236,7 @@ try_again:
         free(s.ptr);
         sleep((1<<numretries));
         goto try_again;
-        
+
     }
     else
     {
@@ -522,7 +522,7 @@ int32_t komodo_verifynotarization(char *symbol,char *dest,int32_t height,int32_t
  }
  return(hash);
  }
- 
+
  uint256 _komodo_getblockhash(int32_t height);*/
 
 uint64_t komodo_seed(int32_t height)
@@ -1092,9 +1092,9 @@ int32_t komodo_validate_interest(const CTransaction &tx,int32_t txheight,uint32_
 
 /*
  komodo_checkPOW (fast) is called early in the process and should only refer to data immediately available. it is a filter to prevent bad blocks from going into the local DB. The more blocks we can filter out at this stage, the less junk in the local DB that will just get purged later on.
- 
+
  komodo_checkPOW (slow) is called right before connecting blocks so all prior blocks can be assumed to be there and all checks must pass
- 
+
  commission must be in coinbase.vout[1] and must be >= 10000 sats
  PoS stake must be without txfee and in the last tx in the block at vout[0]
  */
@@ -1513,7 +1513,7 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                 }
                 if (height >= exploitMitigationStartHeight && height < stakingBackOnHeight)
                 {
-                    // there were no staking blocks on mainnet between 
+                    // there were no staking blocks on mainnet between
                     if (height >= fullCheckHeight && height < stakingBackOnHeight)
                     {
                         validHash = false;
@@ -1548,7 +1548,9 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                         for (int i = 0; validHash && i < pblock->vtx[0].vout.size(); i++)
                         {
                             validHash = false;
-                            if (pblock->vtx[0].vout[i].scriptPubKey.IsInstantSpendOrUnspendable() || ValidateMatchingStake(pblock->vtx[0], i, pblock->vtx[txn_count-1], validHash, slowflag) && !validHash)
+                            if (pblock->vtx[0].vout[i].scriptPubKey.IsInstantSpendOrUnspendable() ||
+                                (!pblock->vtx[0].vout[i].nValue && pblock->vtx[0].vout[i].ReserveOutValue() == CCurrencyValueMap()) ||
+                                ValidateMatchingStake(pblock->vtx[0], i, pblock->vtx[txn_count-1], validHash, slowflag) && !validHash)
                             {
                                 if ((p.prevHash == pblock->hashPrevBlock) && (int32_t)p.blkHeight == height)
                                 {
@@ -1576,7 +1578,7 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                 {
                     LogPrintf("block %s - no past block found\n",blkHash.ToString().c_str());
                 }
-                else 
+                else
 #ifndef KOMODO_ZCASH
                 if (!GetTransaction(txid, tx, Params().GetConsensus(), blkHash, true))
 #else
@@ -1603,7 +1605,7 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                     {
                         BlockMap::const_iterator it = mapBlockIndex.find(blkHash);
                         if ((it == mapBlockIndex.end()) ||
-                            !(pastBlockIndex = it->second) || 
+                            !(pastBlockIndex = it->second) ||
                             (height - pastBlockIndex->GetHeight()) < VERUS_MIN_STAKEAGE)
                         {
                             fprintf(stderr,"ERROR: invalid PoS block %s - stake source too new or not found\n",blkHash.ToString().c_str());
@@ -1650,7 +1652,7 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                                 std::vector<CTxDestination> destinations;
                                 txnouttype outType;
                                 int nRequired;
-                                if (nonceOK && 
+                                if (nonceOK &&
                                     ExtractDestinations(stakeTx.vout[0].scriptPubKey, outType, destinations, nRequired) &&
                                     destinations.size() &&
                                     ValidateStakeTransaction(stakeTx, sp, true) &&
@@ -1706,7 +1708,7 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                                                 !oneOut.scriptPubKey.IsInstantSpendOrUnspendable())
                                             {
                                                 std::vector<CTxDestination> oneOutDests;
-                                                if (!ExtractDestinations(oneOut.scriptPubKey, cbType, oneOutDests, numRequired) || 
+                                                if (!ExtractDestinations(oneOut.scriptPubKey, cbType, oneOutDests, numRequired) ||
                                                     numRequired > 1)
                                                 {
                                                     printf("ERROR: in staking block %s - invalid coinbase output\n", blkHash.ToString().c_str());
@@ -1718,8 +1720,8 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                                                 // are either reserve transfers (TODO) or stakeguard outputs
                                                 if (cbType == TX_CRYPTOCONDITION)
                                                 {
-                                                    // first validate our destinations, if the output is reserve transfer, 
-                                                    // the stake tx must be a reserve deposit to the same reserve currency, 
+                                                    // first validate our destinations, if the output is reserve transfer,
+                                                    // the stake tx must be a reserve deposit to the same reserve currency,
                                                     // or it is not valid
                                                     // we validate a bit differently, otherwise, it must be a spendable output
                                                     COptCCParams p;
@@ -1746,7 +1748,9 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                                                         outVal.valueMap[ASSETCHAINS_CHAINID] += oneOut.nValue;
                                                         cbOutputs[p.vKeys[0]] += outVal;
                                                     }
-                                                    else if (!oneOut.scriptPubKey.IsInstantSpendOrUnspendable())
+                                                    else if (!oneOut.scriptPubKey.IsInstantSpendOrUnspendable() ||
+                                                             oneOut.nValue ||
+                                                             oneOut.ReserveOutValue() > CCurrencyValueMap())
                                                     {
                                                         printf("%s: ERROR: in staking block %s - invalid coinbase output type\n", __func__, blkHash.ToString().c_str());
                                                         LogPrintf("%s: ERROR: in staking block %s - invalid coinbase output type\n", __func__, blkHash.ToString().c_str());
@@ -1768,7 +1772,7 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                                         //    a) the same destination(s) as the output of the stake transaction, or
                                         //    b) the specified delegate in the stake transaction
                                         // 2) Where the stake transaction spends a reserve deposit it is the same, except (TODO):
-                                        //    a) coinbase output must send all applicable reserve currency fees to currency reserve 
+                                        //    a) coinbase output must send all applicable reserve currency fees to currency reserve
                                         //       deposits, if the currency is a reserve currency. For example, if the currency for which
                                         //       the staker is staking a block uses BTC, ETH, USD, and VRSC as reserves, the staker/miner
                                         //       keeps all block rewards and all fees, except the fees (block reward excluded) earned in
@@ -1777,11 +1781,11 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                                         // 3) no other recipient than specified may be on the non-instant spend coinbase outputs
                                     }
                                     else if (CScriptExt::ExtractVoutDestination(pblock->vtx[0], 0, cbaddress) &&
-                                             (destaddress.which() == COptCCParams::ADDRTYPE_PK || 
+                                             (destaddress.which() == COptCCParams::ADDRTYPE_PK ||
                                               destaddress.which() == COptCCParams::ADDRTYPE_PKH) &&
-                                             (destinations[0].which() == COptCCParams::ADDRTYPE_PK || 
+                                             (destinations[0].which() == COptCCParams::ADDRTYPE_PK ||
                                               destinations[0].which() == COptCCParams::ADDRTYPE_PKH) &&
-                                             (cbaddress.which() == COptCCParams::ADDRTYPE_PK || 
+                                             (cbaddress.which() == COptCCParams::ADDRTYPE_PK ||
                                               cbaddress.which() == COptCCParams::ADDRTYPE_PKH))
                                     {
                                         uint160 voutDestID = GetDestinationID(destinations[0]);
@@ -1802,9 +1806,9 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                                                     // solve all outputs to check that non-instantspend destinations all go only to the pk
                                                     // specified in the stake params
                                                     if ((!supportInstantSpend || !vout.scriptPubKey.IsInstantSpend()) &&
-                                                        (!Solver(vout.scriptPubKey, tp, vvch) || 
-                                                        tp != TX_CRYPTOCONDITION || 
-                                                        vvch.size() < 2 || 
+                                                        (!Solver(vout.scriptPubKey, tp, vvch) ||
+                                                        tp != TX_CRYPTOCONDITION ||
+                                                        vvch.size() < 2 ||
                                                         sp.pk != CPubKey(vvch[0])))
                                                     {
                                                         isPOS = false;
@@ -1831,7 +1835,7 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                         // improved logging
                         if ((newPOSEnforcement && posHash != hash))
                         {
-                            LogPrint("pos", "%s: conflicting hash values between GetRawVerusPOSHash (%s/%s) and GetVerusPOSHash (%s)\n", 
+                            LogPrint("pos", "%s: conflicting hash values between GetRawVerusPOSHash (%s/%s) and GetVerusPOSHash (%s)\n",
                                         __func__,
                                         rawHash.GetHex().c_str(),
                                         ArithToUint256(posHash).GetHex().c_str(),
@@ -1927,7 +1931,7 @@ int32_t komodo_checkPOW(int32_t slowflag,CBlock *pblock,int32_t height)
     {
         printf("Insufficient hash result and not PoS block\n");
     }
-    
+
     return -1;
 }
 
@@ -2146,7 +2150,7 @@ bool GetCoinSupply(int64_t &transparentSupply, int64_t *pzsupply, int64_t *pimma
                     }
                 }
             }
-            
+
             transparentSupply += pIndex->newcoins;
             zfunds += pIndex->zfunds;
         }

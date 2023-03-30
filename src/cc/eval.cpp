@@ -125,7 +125,7 @@ bool Eval::Dispatch(const CC *cond, const CTransaction &txTo, unsigned int nIn, 
             return(ProcessCC(cp,this, vparams, txTo, nIn, fulfilled));
             break;
     }
-    return Invalid("invalid-code, dont forget to add EVAL_NEWCC to Eval::Dispatch");
+    return Invalid("invalid smart transaction code");
 }
 
 

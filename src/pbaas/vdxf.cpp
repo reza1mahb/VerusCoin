@@ -10,6 +10,8 @@
 
 #include "vdxf.h"
 #include "crosschainrpc.h"
+#include "utf8.h"
+#include "util.h"
 
 std::string CVDXF::DATA_KEY_SEPARATOR = "::";
 
@@ -50,9 +52,129 @@ std::string TrimTrailing(const std::string &Name, unsigned char ch)
     return nameCopy;
 }
 
-std::string TrimSpaces(const std::string &Name)
+std::string TrimSpaces(const std::string &Name, bool removeDuals, const std::string &_invalidChars)
 {
-    return TrimTrailing(TrimLeading(Name, ' '), ' ');
+    std::string invalidChars = _invalidChars;
+    if (removeDuals)
+    {
+        invalidChars += "\n\t\r\b\t\v\f\x1B";
+    }
+    if (utf8valid(Name.c_str()) != 0)
+    {
+        return "";
+    }
+    std::string noDuals = removeDuals ?
+        std::string(u8"\u0020\u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u200C\u200D\u202F\u205F\u3000") :
+        " ";
+    std::vector<int> allDuals;
+    std::vector<int> toRemove;
+
+    int len = utf8len(Name.c_str());
+    const char *nextChar = Name.c_str();
+    for (int i = 0; i < len; i++)
+    {
+        utf8_int32_t outPoint;
+        utf8_int32_t invalidPoint;
+        nextChar = utf8codepoint(nextChar, &outPoint);
+
+        if (utf8chr(invalidChars.c_str(), outPoint))
+        {
+            toRemove.push_back(i);
+            allDuals.push_back(i);
+            continue;
+        }
+
+        char *dualCharPos = utf8chr(noDuals.c_str(), outPoint);
+
+        if ((removeDuals ||
+             (i == allDuals.size() ||
+              i == (len - 1))) &&
+             dualCharPos)
+        {
+            bool wasLastDual = allDuals.size() && allDuals.back() == (i - 1);
+            if (i == allDuals.size() ||
+                i == (len - 1) ||
+                (removeDuals && wasLastDual))
+            {
+                toRemove.push_back(i);
+            }
+            allDuals.push_back(i);
+            if (i &&
+                i == (Name.size() - 1) &&
+                wasLastDual)
+            {
+                int toRemoveIdx = toRemove.size() - 1;
+                int nextDual = 0;
+                for (auto dualIt = allDuals.rbegin(); dualIt != allDuals.rend(); dualIt++)
+                {
+                    if (nextDual && *dualIt != (nextDual - 1))
+                    {
+                        break;
+                    }
+                    if (toRemoveIdx < 0 || toRemove[toRemoveIdx] != *dualIt)
+                    {
+                        toRemove.insert(toRemove.begin() + ++toRemoveIdx, *dualIt);
+                    }
+                    toRemoveIdx--;
+                }
+            }
+        }
+    }
+
+    // now, reconstruct the string char by char, but skip the ones to remove
+    if (toRemove.size())
+    {
+        std::string nameCopy;
+        int toRemoveIdx = 0;
+
+        nextChar = Name.c_str();
+        for (int i = 0; i < len; i++)
+        {
+            utf8_int32_t outPoint;
+            nextChar = utf8codepoint(nextChar, &outPoint);
+
+            if (toRemoveIdx < toRemove.size() && i++ == toRemove[toRemoveIdx])
+            {
+                toRemoveIdx++;
+                continue;
+            }
+            char tmpCodePointStr[5] = {0};
+            if (!utf8catcodepoint(tmpCodePointStr, outPoint, 5))
+            {
+                LogPrintf("%s: Invalid name string: %s\n", __func__, Name.c_str());
+            }
+            nameCopy += std::string(tmpCodePointStr);
+        }
+        return nameCopy;
+    }
+    else
+    {
+        return Name;
+    }
+}
+
+bool CVDXF::HasExplicitParent(const std::string &Name)
+{
+    std::string ChainOut;
+    bool hasExplicitParent = false;
+
+    std::string nameCopy = Name;
+
+    std::vector<std::string> retNames;
+    boost::split(retNames, nameCopy, boost::is_any_of("@"));
+    if (!retNames.size() || retNames.size() > 2)
+    {
+        return false;
+    }
+
+    nameCopy = retNames[0];
+    boost::split(retNames, nameCopy, boost::is_any_of("."));
+
+    if (retNames.size() && retNames.back().empty())
+    {
+        return true;
+    }
+    return false;
 }
 
 // this will add the current Verus chain name to subnames if it is not present
@@ -60,22 +182,10 @@ std::string TrimSpaces(const std::string &Name)
 std::vector<std::string> CVDXF::ParseSubNames(const std::string &Name, std::string &ChainOut, bool displayfilter, bool addVerus)
 {
     std::string nameCopy = Name;
-    std::string invalidChars = "\\/:*?\"<>|";
-    if (displayfilter)
-    {
-        invalidChars += "\n\t\r\b\t\v\f\x1B";
-    }
-    for (int i = 0; i < nameCopy.size(); i++)
-    {
-        if (invalidChars.find(nameCopy[i]) != std::string::npos)
-        {
-            return std::vector<std::string>();
-        }
-    }
 
     std::vector<std::string> retNames;
     boost::split(retNames, nameCopy, boost::is_any_of("@"));
-    if (!retNames.size() || retNames.size() > 2)
+    if (!retNames.size() || retNames.size() > 2 || (retNames.size() > 1 && TrimSpaces(retNames[1]) != retNames[1]))
     {
         return std::vector<std::string>();
     }
@@ -137,7 +247,7 @@ std::vector<std::string> CVDXF::ParseSubNames(const std::string &Name, std::stri
             retNames[i] = std::string(retNames[i], 0, (KOMODO_ASSETCHAIN_MAXLEN - 1));
         }
         // spaces are allowed, but no sub-name can have leading or trailing spaces
-        if (!retNames[i].size() || retNames[i] != TrimTrailing(TrimLeading(retNames[i], ' '), ' '))
+        if (!retNames[i].size() || retNames[i] != TrimSpaces(retNames[i], displayfilter))
         {
             return std::vector<std::string>();
         }
@@ -150,7 +260,7 @@ std::vector<std::string> CVDXF::ParseSubNames(const std::string &Name, std::stri
 std::string CVDXF::CleanName(const std::string &Name, uint160 &Parent, bool displayfilter)
 {
     std::string chainName;
-    std::vector<std::string> subNames = ParseSubNames(Name, chainName);
+    std::vector<std::string> subNames = ParseSubNames(Name, chainName, displayfilter);
 
     if (!subNames.size())
     {
@@ -158,6 +268,7 @@ std::string CVDXF::CleanName(const std::string &Name, uint160 &Parent, bool disp
     }
 
     if (!Parent.IsNull() &&
+        subNames.size() > 1 &&
         boost::to_lower_copy(subNames.back()) == boost::to_lower_copy(VERUS_CHAINNAME))
     {
         subNames.pop_back();

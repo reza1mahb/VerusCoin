@@ -78,6 +78,8 @@ using namespace std;
 extern void ThreadSendAlert();
 extern int32_t KOMODO_LOADINGBLOCKS;
 extern bool VERUS_MINTBLOCKS;
+extern CTxDestination VERUS_DEFAULT_ARBADDRESS;
+extern std::vector<uint160> VERUS_ARBITRAGE_CURRENCIES;
 extern std::string VERUS_DEFAULT_ZADDR;
 
 ZCJoinSplit* pzcashParams = NULL;
@@ -175,6 +177,7 @@ public:
 static CCoinsViewDB *pcoinsdbview = NULL;
 static CCoinsViewErrorCatcher *pcoinscatcher = NULL;
 static boost::scoped_ptr<ECCVerifyHandle> globalVerifyHandle;
+uint160 ValidateCurrencyName(std::string currencyStr, bool ensureCurrencyValid=false, CCurrencyDefinition *pCurrencyDef=NULL);
 
 void Interrupt(boost::thread_group& threadGroup)
 {
@@ -383,6 +386,8 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-addressindex", strprintf(_("Maintain a full address index, used to query for the balance, txids and unspent outputs for addresses (default: %u)"), DEFAULT_ADDRESSINDEX));
     strUsage += HelpMessageOpt("-timestampindex", strprintf(_("Maintain a timestamp index for block hashes, used to query blocks hashes by a range of timestamps (default: %u)"), DEFAULT_TIMESTAMPINDEX));
     strUsage += HelpMessageOpt("-spentindex", strprintf(_("Maintain a full spent index, used to query the spending txid and input index for an outpoint (default: %u)"), DEFAULT_SPENTINDEX));
+    strUsage += HelpMessageOpt("-alwayssubmitnotarizations", strprintf(_("Submit notarizations to notary chain whenevever merge mining/staking and eligible (default = %u, only as needed)"), DEFAULT_SPENTINDEX));
+    strUsage += HelpMessageOpt("-allowdelayednotarizations", strprintf(_("Do not notarize in order to prevent slower notarizations (default = %u, notarize to prevent slowing down)"), DEFAULT_SPENTINDEX));
     strUsage += HelpMessageGroup(_("Connection options:"));
     strUsage += HelpMessageOpt("-addnode=<ip>", _("Add a node to connect to and attempt to keep the connection open"));
     strUsage += HelpMessageOpt("-banscore=<n>", strprintf(_("Threshold for disconnecting misbehaving peers (default: %u)"), 100));
@@ -505,10 +510,13 @@ std::string HelpMessage(HelpMessageMode mode)
         strUsage += HelpMessageOpt("-regtest", "Enter regression test mode, which uses a special chain in which blocks can be solved instantly. "
             "This is intended for regression testing tools and app development.");
     }
+
     // strUsage += HelpMessageOpt("-shrinkdebugfile", _("Shrink debug.log file on client startup (default: 1 when no -debug)"));
     strUsage += HelpMessageOpt("-mineraddress=<address>", _("Mining rewards will go to this address"));
     strUsage += HelpMessageOpt("-pubkey=<hexpubkey>", _("If set, mining and staking rewards will go to this address by default"));
     strUsage += HelpMessageOpt("-defaultid=<i-address>", _("VerusID used for default change out and staking reward recipient"));
+    strUsage += HelpMessageOpt("-notaryid=<i-address>", _("VerusID used for PBaaS and Ethereum cross-chain notarization"));
+    strUsage += HelpMessageOpt("-notificationoracle=<i-address>", strprintf(_("VerusID monitored for network alerts, triggers, and signals. Current default is \"%s\" for Verus and the chain ID for PBaaS chains"), PBAAS_DEFAULT_NOTIFICATION_ORACLE.c_str()));
     strUsage += HelpMessageOpt("-defaultzaddr=<sapling-address>", _("sapling address to receive fraud proof rewards and if used with \"-privatechange=1\", z-change address for the sendcurrency command"));
     strUsage += HelpMessageOpt("-cheatcatcher=<sapling-address>", _("same as \"-defaultzaddr\""));
     strUsage += HelpMessageOpt("-privatechange", _("directs all change from sendcurency or z_sendmany APIs to the defaultzaddr set, if it is a valid sapling address"));
@@ -853,7 +861,7 @@ bool AppInitNetworking()
 
     if (!SetupNetworking())
         return InitError("Error: Initializing networking failed");
-    
+
     return true;
 }
 
@@ -975,7 +983,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     //Default tlsenforcement to false
     SoftSetArg("-tlsenforcement","0");
-    
+
     // Make sure enough file descriptors are available
     int nBind = std::max((int)mapArgs.count("-bind") + (int)mapArgs.count("-whitebind"), 1);
     nMaxConnections = GetArg("-maxconnections", DEFAULT_MAX_PEER_CONNECTIONS);
@@ -1267,21 +1275,45 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         }
     }
 
+    MAX_OUR_UTXOS_ID_RESCAN = GetArg("-maxourutxosidrescan", MAX_OUR_UTXOS_ID_RESCAN);
+    MAX_UTXOS_ID_RESCAN = GetArg("-maxutxosidrescan", std::min(MAX_UTXOS_ID_RESCAN, MAX_OUR_UTXOS_ID_RESCAN));
+    ONLY_ADD_WHITELISTED_UTXOS_ID_RESCAN = GetBoolArg("-onlyaddwhitelistidutxos", ONLY_ADD_WHITELISTED_UTXOS_ID_RESCAN);
+    if (ONLY_ADD_WHITELISTED_UTXOS_ID_RESCAN)
+    {
+        MAX_OUR_UTXOS_ID_RESCAN = 0;
+        MAX_UTXOS_ID_RESCAN = 0;
+    }
+
     // get default IDs and addresses
+    auto chainUpgradeOracle = DecodeDestination(GetArg("-notificationoracle", IsVerusActive() ? PBAAS_DEFAULT_NOTIFICATION_ORACLE : EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID))));
+    PBAAS_NOTIFICATION_ORACLE = chainUpgradeOracle.which() == COptCCParams::ADDRTYPE_ID ? CIdentityID(GetDestinationID(chainUpgradeOracle)) : CIdentityID();
     auto notaryIDDest = DecodeDestination(GetArg("-notaryid", ""));
     VERUS_NOTARYID = notaryIDDest.which() == COptCCParams::ADDRTYPE_ID ? CIdentityID(GetDestinationID(notaryIDDest)) : CIdentityID();
     auto defaultIDDest = DecodeDestination(GetArg("-defaultid", VERUS_NOTARYID.IsNull() ? "" : EncodeDestination(notaryIDDest)));
     VERUS_DEFAULTID = defaultIDDest.which() == COptCCParams::ADDRTYPE_ID ? CIdentityID(GetDestinationID(defaultIDDest)) : CIdentityID();
     auto nodeIDDest = DecodeDestination(GetArg("-nodeid", ""));
     VERUS_NODEID = nodeIDDest.which() == COptCCParams::ADDRTYPE_ID ? GetDestinationID(nodeIDDest) : uint160();
-    VERUS_DEFAULT_ZADDR = GetArg("-cheatcatcher", "");
-    VERUS_DEFAULT_ZADDR = GetArg("-defaultzaddr", VERUS_DEFAULT_ZADDR);
-    MAX_OUR_UTXOS_ID_RESCAN = GetArg("-maxourutxosidrescan", MAX_OUR_UTXOS_ID_RESCAN);
-    MAX_UTXOS_ID_RESCAN = GetArg("-maxutxosidrescan", std::min(MAX_UTXOS_ID_RESCAN, MAX_OUR_UTXOS_ID_RESCAN));
+
+    UniValue arbitrageArr(UniValue::VARR);
+    if (arbitrageArr.read(GetArg("-arbitragecurrencies", "")) && arbitrageArr.isArray() && arbitrageArr.size())
+    {
+        for (int i = 0; i < arbitrageArr.size(); i++)
+        {
+            uint160 oneCurID = ValidateCurrencyName(uni_get_str(arbitrageArr[i]), false);
+            if (oneCurID.IsNull())
+            {
+                return InitError(_("If arbitragecurrencies are specified, it must be as an array of currency names"));
+            }
+            VERUS_ARBITRAGE_CURRENCIES.push_back(oneCurID);
+        }
+    }
+    VERUS_DEFAULT_ARBADDRESS = DecodeDestination(GetArg("-arbitrageaddress", ""));
 
     // if we are supposed to catch stake cheaters, there must be a valid sapling parameter, we need it at
     // initialization, and this is the first time we can get it. store the Sapling address here
     extern boost::optional<libzcash::SaplingPaymentAddress> defaultSaplingDest;
+    VERUS_DEFAULT_ZADDR = GetArg("-cheatcatcher", "");
+    VERUS_DEFAULT_ZADDR = GetArg("-defaultzaddr", VERUS_DEFAULT_ZADDR);
     libzcash::PaymentAddress addr = DecodePaymentAddress(VERUS_DEFAULT_ZADDR);
     if (VERUS_DEFAULT_ZADDR.size() > 0 && IsValidPaymentAddress(addr))
     {
@@ -1291,6 +1323,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         }
         catch (...)
         {
+            return InitError(_("Any specified default z-address or cheatcatcher must be a valid Sapling address"));
         }
     }
     VERUS_PRIVATECHANGE = GetBoolArg("-privatechange", false);
@@ -1732,7 +1765,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             fReindex = true;
         }
     }
-    
+
     bool clearWitnessCaches = false;
 
     bool fLoaded = false;
@@ -1835,6 +1868,8 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                     // ETH bridge defined
                     ConnectedChains.ConfigureEthBridge(true);
                 }
+
+                ConnectedChains.CheckOracleUpgrades();
 
                 CChainNotarizationData cnd;
                 if (ConnectedChains.FirstNotaryChain().IsValid())
@@ -2227,7 +2262,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     GenerateBitcoins(gen, GetArg("-genproclimit", -1));
  #endif
 #endif
- 
+
     // Monitor the chain every minute, and alert if we get blocks much quicker or slower than expected.
     CScheduler::Function f = boost::bind(&PartitionCheck, &IsInitialBlockDownload,
                                          boost::ref(cs_main), boost::cref(pindexBestHeader));

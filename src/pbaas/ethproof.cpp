@@ -1,16 +1,16 @@
 /********************************************************************
- * 
- * 
+ *
+ *
  * Distributed under the MIT software license, see the accompanying
  * file COPYING or http://www.opensource.org/licenses/mit-license.php.
- * 
+ *
  */
 #include "utilstrencodings.h"
 #include "uint256.h"
 #include "mmr.h"
 
-/** 
- * Helper functions 
+/**
+ * Helper functions
  * **/
 
 std::string string_to_hex(const std::string& input)
@@ -64,12 +64,12 @@ std::vector<unsigned char> uint64_to_vec(uint64_t input){
     std::vector<unsigned char> temp(8);
     for (int i = 0; i < 8; i++)
          temp[7 - i] = (input >> (i * 8));
-    
+
     for (int i=0; i<8; i++){
         if(temp[0] == 0)
             temp.erase(temp.begin());
-        else 
-            break;    
+        else
+            break;
     }
 
     return temp;
@@ -86,7 +86,7 @@ int matchingNibbleLength(std::vector<unsigned char> nibble1,std::vector<unsigned
 std::vector<unsigned char> toNibbles(std::vector<unsigned char> data){
     //convert the unsigned char to a hex string the hex string back to a vector of unsigned char
     std::string tempString = bytes_to_hex(data);
-    std::vector<unsigned char> output(tempString.begin(),tempString.end());    
+    std::vector<unsigned char> output(tempString.begin(),tempString.end());
     return output;
 }
 
@@ -97,7 +97,7 @@ std::vector<unsigned char> toNibbles(std::string data){
     if(data.length()%2 != 0){
         data = "0" + data;
     }
-    std::vector<unsigned char> output(data.begin(),data.end());    
+    std::vector<unsigned char> output(data.begin(),data.end());
     return output;
 }
 
@@ -113,11 +113,11 @@ TrieNode::nodeType TrieNode::setType(){
 }
 void TrieNode::setKey(){
     if(type != BRANCH && raw[0].size() > 0){
-        std::vector<unsigned char> inProgressKey = toNibbles(raw[0]); 
+        std::vector<unsigned char> inProgressKey = toNibbles(raw[0]);
         int adjustment = 0;
         if (int(inProgressKey[0]) % 2) {
             adjustment = 1;
-        } else {  
+        } else {
             adjustment = 2;
         }
         key = std::vector<unsigned char>(inProgressKey.begin() + adjustment,inProgressKey.end());
@@ -126,7 +126,7 @@ void TrieNode::setKey(){
 void TrieNode::setValue(){
     if(type != BRANCH){
         value = raw[1];
-    } 
+    }
 }
 
 
@@ -177,19 +177,19 @@ RLP::rlpDecoded RLP::decode(std::vector<unsigned char> inputBytes){
     unsigned char firstByte = inputBytes[0];
     rlpDecoded output;
     unsigned int length = 0;
-    
+
     std::vector<unsigned char> innerRemainder;
 
     if(firstByte <= 0x7f) {
-        // the data is a string if the range of the first byte(i.e. prefix) is [0x00, 0x7f], 
+        // the data is a string if the range of the first byte(i.e. prefix) is [0x00, 0x7f],
         //and the string is the first byte itself exactly;
         inProgress.push_back(firstByte);
         output.data.push_back(inProgress);
         inputBytes.erase(inputBytes.begin());
-        output.remainder = inputBytes; 
-        
+        output.remainder = inputBytes;
+
     } else if (firstByte <= 0xb7) {
-        //the data is a string if the range of the first byte is [0x80, 0xb7], and the string whose 
+        //the data is a string if the range of the first byte is [0x80, 0xb7], and the string whose
         //length is equal to the first byte minus 0x80 follows the first byte;
         length = (int)(firstByte - 0x7f);
         if (firstByte == 0x80) {
@@ -208,8 +208,8 @@ RLP::rlpDecoded RLP::decode(std::vector<unsigned char> inputBytes){
         output.remainder = std::vector<unsigned char>(inputBytes.begin()+length,inputBytes.end());
         return output;
     } else if(firstByte <= 0xbf){
-        //the data is a string if the range of the first byte is [0xb8, 0xbf], and the length of the string 
-        //whose length in bytes is equal to the first byte minus 0xb7 follows the first byte, and the string 
+        //the data is a string if the range of the first byte is [0xb8, 0xbf], and the length of the string
+        //whose length in bytes is equal to the first byte minus 0xb7 follows the first byte, and the string
         //follows the length of the string;
         int dataLength = (int)(firstByte - 0xb6);
         //calculate the length from the string and convert the hexbytes to an int
@@ -254,7 +254,7 @@ RLP::rlpDecoded RLP::decode(std::vector<unsigned char> inputBytes){
             throw std::invalid_argument("invalid rlp: total length is larger than the data");
         }
         innerRemainder = std::vector<unsigned char>(inputBytes.begin() + dataLength,inputBytes.begin() + totalLength);
-        
+
         if(innerRemainder.size() == 0){
             throw std::invalid_argument("invalid rlp: List has an invalid length");
         }
@@ -263,14 +263,14 @@ RLP::rlpDecoded RLP::decode(std::vector<unsigned char> inputBytes){
             //loop through the returned data array and push back each element
             for(std::size_t i=0; i<innerRLP.data.size(); ++i)  {
                 decoded.push_back(innerRLP.data[i]);
-            }            
+            }
             innerRemainder = innerRLP.remainder;
         }
         output.data = decoded;
         output.remainder = std::vector<unsigned char>(inputBytes.begin()+length,inputBytes.end());
         return output;
     }
-    
+
     return output;
 
 }
@@ -295,12 +295,12 @@ std::vector<unsigned char> CETHPATRICIABranch::verifyProof(uint256& rootHash,std
         //check to see if the hash of the node matches the expected hash
         CKeccack256Writer writer;
         writer.write((const char *)proof[i].data(), proof[i].size());
-        
+
         if(writer.GetHash() != wantedHash){
             std::string error("Bad proof node: i=");
             error += std::to_string(i);
             throw std::invalid_argument(error);
-        } 
+        }
         //create a trie node
         TrieNode node(rlp.decode(proof[i]).data);
         std::vector<unsigned char> child;
@@ -311,13 +311,13 @@ std::vector<unsigned char> CETHPATRICIABranch::verifyProof(uint256& rootHash,std
                 }
                 return node.value;
             }
-            
+
             int keyIndex = HexDigit(key[0]);
-            
+
             child = node.raw[keyIndex];
             //remove the first nibble of the key as we move up the std::vector
             key = std::vector<unsigned char>(key.begin()+1,key.end());
-            
+
             if(child.size() == 2){
                 //MIGHT NOT NEED TO DECODE THIS HERE
                 //RLP::rlpDecoded decodedEmbeddedNode = rlp.decode(child).data;
@@ -343,11 +343,11 @@ std::vector<unsigned char> CETHPATRICIABranch::verifyProof(uint256& rootHash,std
                 uint256 tmp_child;
                 memcpy(&tmp_child,&child.at(0),child.size());
                 wantedHash = tmp_child;
-            } 
+            }
         } else if(node.type == node.EXTENSION || node.type == node.LEAF){
             if(matchingNibbleLength(node.key,key) != node.key.size()){
                 throw std::invalid_argument(std::string("Key does not match with the proof one (embeddedNode)"));
-            } 
+            }
             child = node.value;
             key = std::vector<unsigned char>(key.begin() + node.key.size(),key.end());
 
@@ -366,19 +366,19 @@ std::vector<unsigned char> CETHPATRICIABranch::verifyProof(uint256& rootHash,std
                 memcpy(&tmp_child,&child.at(0),child.size());
                 wantedHash = tmp_child;
             }
-            
+
         } else {
                 throw std::invalid_argument(std::string("Invalid node type"));
         }
 
-    }            
+    }
     return {0};
 }
 
 
 template<>
-std::vector<unsigned char> CPATRICIABranch<CHashWriter>::verifyAccountProof(){
-    
+std::vector<unsigned char> CPATRICIABranch<CHashWriter>::verifyAccountProof()
+{
     CKeccack256Writer key_hasher;
     key_hasher.write((const char *)(&address), address.size());
     uint256 key_hash = key_hasher.GetHash();
@@ -390,7 +390,7 @@ std::vector<unsigned char> CPATRICIABranch<CHashWriter>::verifyAccountProof(){
         stateroot_hasher.write((const char *)proofdata.proof_branch[0].data(), proofdata.proof_branch[0].size());
 
         //As we dont have the state root from the Notaries, spoof the state root to pass for first RLP loop check
-        stateRoot =  stateroot_hasher.GetHash();       
+        stateRoot =  stateroot_hasher.GetHash();
         return verifyProof(stateRoot,address_hash,proofdata.proof_branch);
     }catch(const std::invalid_argument& e){
 
@@ -427,7 +427,7 @@ uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash){
         {
             throw std::invalid_argument(std::string("RLP Storage Value does not match"));
         }
-    
+
     }catch(const std::invalid_argument& e){
         LogPrintf(" %s\n", e.what());
         memset(&stateRoot,0,stateRoot.size());
@@ -437,7 +437,7 @@ uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash){
     //Storage value has now been cheked that it RLP decodes and matches the storageHash.
 
     //Next check that the Account proof RLP decodes and the account value matches the storage encoded
-    
+
     std::vector<unsigned char> accountValue;
     try{
         accountValue = verifyAccountProof();
@@ -447,8 +447,8 @@ uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash){
         LogPrintf("Account Proof Failed : %s\n", e.what());
         memset(&stateRoot,0,stateRoot.size());
         return stateRoot;
-        
     }
+
     //rlp encode the nonce , account balance , storageRootHash and codeHash
     std::vector<unsigned char> encodedAccount;
     std::vector<unsigned char> storage(storageHash.begin(),storageHash.end());

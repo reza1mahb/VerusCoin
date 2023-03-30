@@ -87,8 +87,8 @@ public:
         std::vector<unsigned char> vch;
         vch.assign(hash.begin(), hash.begin() + 20);
         uint160 checkVal(vch);
-        // TODO: HARDENING - prepare for mainnet support of currencies after Verus Vault activates
-        if (!_IsVerusMainnetActive() && checkVal == CCommitmentHash::AdvancedCommitmentHashKey())
+
+        if (checkVal == CCommitmentHash::AdvancedCommitmentHashKey())
         {
             READWRITE(*(CTokenOutput *)this);
         }
@@ -758,7 +758,33 @@ public:
     static CIdentityID GetID(const std::string &Name, uint160 &parent);
 
     CIdentity LookupIdentity(const std::string &name, uint32_t height=0, uint32_t *pHeightOut=nullptr, CTxIn *pTxIn=nullptr);
-    static CIdentity LookupIdentity(const CIdentityID &nameID, uint32_t height=0, uint32_t *pHeightOut=nullptr, CTxIn *pTxIn=nullptr);
+    static std::vector<std::tuple<CIdentity, uint256, uint32_t, CUTXORef, CPartialTransactionProof>>
+        LookupIdentities(const CIdentityID &nameID,
+                         uint32_t gteHeight=0,
+                         uint32_t lteHeight=0,
+                         bool checkMempool=false,
+                         bool getProofs=false,
+                         uint32_t proofHeight=0,
+                         const std::vector<uint160> &indexKeys=std::vector<uint160>());
+    static std::multimap<uint160, std::tuple<std::vector<unsigned char>, uint256, uint32_t, CUTXORef, CPartialTransactionProof>>
+        GetAggregatedIdentityMultimap(const uint160 &idID,
+                                      uint32_t startHeight=0,
+                                      uint32_t endHeight=0,
+                                      bool checkMempool=false,
+                                      bool getProofs=false,
+                                      uint32_t proofHeight=0,
+                                      const uint160 &indexKey=uint160(),
+                                      bool keepDeleted=false);
+    static std::vector<std::tuple<std::vector<unsigned char>, uint256, uint32_t, CUTXORef, CPartialTransactionProof>>
+        GetIdentityContentByKey(const uint160 &idID,
+                                const uint160 &vdxfKey,
+                                uint32_t startHeight=0,
+                                uint32_t endHeight=0,
+                                bool checkMempool=false,
+                                bool getProofs=false,
+                                uint32_t proofHeight=0,
+                                bool keepDeleted=false);
+    static CIdentity LookupIdentity(const CIdentityID &nameID, uint32_t height=0, uint32_t *pHeightOut=nullptr, CTxIn *pTxIn=nullptr, bool checkMempool=false);
     static CIdentity LookupFirstIdentity(const CIdentityID &idID, uint32_t *pHeightOut=nullptr, CTxIn *idTxIn=nullptr, CTransaction *pidTx=nullptr);
 
     CIdentity RevocationAuthority() const

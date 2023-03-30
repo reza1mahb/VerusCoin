@@ -1,34 +1,34 @@
 /********************************************************************
  * (C) 2020 Michael Toutonghi
- * 
+ *
  * Distributed under the MIT software license, see the accompanying
  * file COPYING or http://www.opensource.org/licenses/mit-license.php.
- * 
+ *
  * The Verus Data Exchange Format provides a fully interoperable system
  * for defining data types that may consist of structured or or unstructured
  * data and associated content or keys that may be used to retrieve such
  * data from centralized or decentralized storage for use in and across
  * centralized or decentralized applications.
- * 
+ *
  * Overview
  * Verus Data Exchange Format enables application developers to define globally unique
- * data types and publish references to the same, which may refer to structured or 
- * unstructured data that can be located unambiguously via an URL, which implicitly 
- * provides both location and decoding information, enabling applications to use such 
+ * data types and publish references to the same, which may refer to structured or
+ * unstructured data that can be located unambiguously via an URL, which implicitly
+ * provides both location and decoding information, enabling applications to use such
  * data, in whole or in part, if they know how, or even ignore parts of the data, while
- * remaining compatible with those parts they understand. VDXF typee keys are globally 
- * unique identifiers, which are defined as human readable names along with a 
- * specification of how to define and convert unlimited length, human readable type 
+ * remaining compatible with those parts they understand. VDXF typee keys are globally
+ * unique identifiers, which are defined as human readable names along with a
+ * specification of how to define and convert unlimited length, human readable type
  * names into collison-free 20 byte IDs, which can be used as type keys associated with
- * content or location values in various forms of data records. These data records, 
- * which may have application specific structures or no structure at all, besides 
+ * content or location values in various forms of data records. These data records,
+ * which may have application specific structures or no structure at all, besides
  * length form the basis of an interoperable data exchange format across decentralized
  * applications.
- * 
+ *
  * Definition of VDXF types
- * VDXF is not a strongly opinionated or highly specified type description 
+ * VDXF is not a strongly opinionated or highly specified type description
  * specification, and, instead, focuses on a model for recognizing an unlimited
- * number of user defined data types, using a standard human readable format for 
+ * number of user defined data types, using a standard human readable format for
  * definition and encoding of the type specifier, which is hashed, using the VDXF
  * specification and standard methodology, to produce collision-free, 20 byte keys,
  * which can be associated with retrieveable content hashes and location qualifiers
@@ -40,19 +40,19 @@
  * application development. It is recommended that new fundamental data types not be
  * defined unless necessary, but adherence to such recommendation is not enforced at
  * the consensus protocol layer.
- * 
+ *
  * Namespace for Type Definitions - VerusID
  * Namespaces for type definitions are equivalent to VerusIDs, a protocol first
  * implemented on the Verus Blockchain, and also one that can support IDs registered
  * on any blockchain or uniquely named system that becomes recognized via a consensus-
- * based bridge on the Verus network. Currently, to be recognized as a unique 
- * namespace, the easiest way is to base it on a VerusID, registered on the Verus 
+ * based bridge on the Verus network. Currently, to be recognized as a unique
+ * namespace, the easiest way is to base it on a VerusID, registered on the Verus
  * blockchain network. While there is not a defined way of creating bridges to other
  * external networks, there is work on an Ethereum bridge in progress, and this will
  * detail the naming mechanism of an externally bridged system and how it deals with
  * naming conventions for VDXF interoperability, if not the technical details of how
  * to register and implement such a bridge.
- * 
+ *
  * Generally, one may think of two types of VerusIDs, those defined on the Verus
  * network or on independent PBaaS (Public Blockchains as a Service) blockchains
  * spawned originally from and registered on the Verus blockchain network, or
@@ -65,85 +65,85 @@
  * with or shortly after the Verus DeFi network release, is the Ethereum blockchain
  * bridge, which will be used as the example of an externally recognized VerusID
  * system for the purpose of this explanation.
- * 
+ *
  * First, it is important to understand the requirements of registered VerusID
  * identity names, which will also inform how externally generated VerusIDs are
- * recognized as well. For the purposes of the VDXF, we do not require 
+ * recognized as well. For the purposes of the VDXF, we do not require
  * compatibility of the internal structure of IDs across different systems, and
  * only define compatibility requirements of the naming systems and how those
  * names translate into recognizeable IDs on the Verus network.
- * 
+ *
  * VerusID names all have some components in common. These components are:
  * 1. "name": This is the friendly name associated with the specific VerusID.
- *    As of this writing, name may consist of any unicode characters, with the 
+ *    As of this writing, name may consist of any unicode characters, with the
  *    exception of the following, disallowed characters:
  *      \ / : * ? " < > |
  *      leading and trailing spaces
- * 
+ *
  *    In addition, there are further display limitations and expected display
  *    restrictions and also name restrictions expected in a future consensus
  *    change that are currently listed as "not recommended". Characters that are
  *    display restricted include:
  *      "\n\t\r\b\t\v\f\x1B"
- * 
+ *
  *    Those currently not recommended include:
  *      More than one consecutive space internally to a name
  *      Tab characters
  *      Blank unicode characters
- * 
+ *
  *    Although both upper and lower case names are allowed in VerusIDs, when
- *    using VerusIDs for lookup, duplication prevention, or namespace usage, 
+ *    using VerusIDs for lookup, duplication prevention, or namespace usage,
  *    only the global character set latin lowercase characters are used for
  *    all upper and lowercase characters.
- * 
+ *
  * 2. "name" can be combined in various ways to provide different elements that
  *    may be used in the VDXF. In each case, a name follows the same pattern
  *    as the name of a VerusID, but is combined with specific separators for
  *    unambiguous URL references, with defaults for simplicity. Here are some
  *    examples of the names that may be used as URLs:
- * 
+ *
  *         verus://idname.vrsc/namespaceid::keyname/contentprotocol/qualifier1/qualifier2/
- * 
- *          This is a way to refer to values that may be substituted for 
+ *
+ *          This is a way to refer to values that may be substituted for
  *          information located through idname.vrsc@exportedchain.vrsc.
- *          According to the VerusID specification, the suffix ".vrsc" is 
+ *          According to the VerusID specification, the suffix ".vrsc" is
  *          default, if not specified, and can be circumvented by terminating
  *          with a ".", when referring to non-vrsc systems that are supported
  *          in the vrsc network.
- * 
+ *
  *          In addition, the vrsc namespace defines a set of key
  *          names that provide basic, system level data structure definitions,
  *          such as claim.health.covid and claim.id.passport.firstname, etc.
- * 
+ *
  *          If no namespace is specified, vrsc, vrsctest on testnet, is assumed.
  *          That means that an equivalent URL using keys in the vrsc namespace
  *          and leaving out defaults for brevity would be:
- * 
+ *
  *         verus://idname/keyname/contentprotocol/qualifier1/qualifier2
- * 
- *          qualifier1 and qualifier2 are optional specifiers that are 
+ *
+ *          qualifier1 and qualifier2 are optional specifiers that are
  *          specific to the type of key, may include sub-storage information,
  *          and follow the distributed storage system used for content.
  *          The default storage system used is ipfs, and default does not have
  *          to be specified, as long as there are not sub-storage qualifiers.
- * 
- *          Finally, the default keyname, if not specified, is vrsc::index, 
- *          which is used as a homepage for an ID. That means that a default 
+ *
+ *          Finally, the default keyname, if not specified, is vrsc::index,
+ *          which is used as a homepage for an ID. That means that a default
  *          homepage or ID profile can be specified as simply as:
- * 
+ *
  *         verus://idname
- * 
+ *
  *          As a result of this specification, published data types and
  *          structures, which may include alternate location and qualifier
  *          defaults, have no definitive length limit, and are hashed into
  *          a globally unique, 20 byte identifier, which shall be found in
  *          any ID specified in the "idname@". The 32 byte value of that
- *          keyed content is considered the initial locator, using the 
+ *          keyed content is considered the initial locator, using the
  *          default contentprotocol, defined by the specified keyname.
  *          As a result, the URL, verus://idname, defines a content
- *          address to an HTML, index data structure for the specified ID, 
+ *          address to an HTML, index data structure for the specified ID,
  *          which shall be located in IPFS storage.
- * 
+ *
  * The specifics of the above details have yet to be finalized, but this is
  * the general model, subject to modification and update before the V1 release,
  * which is expected to be released along with the first mainnet release of
@@ -222,6 +222,7 @@ public:
     }
 
     static std::string DATA_KEY_SEPARATOR;
+    static bool HasExplicitParent(const std::string &Name);
     static std::vector<std::string> ParseSubNames(const std::string &Name, std::string &ChainOut, bool displayfilter=false, bool addVerus=true);
     static std::string CleanName(const std::string &Name, uint160 &Parent, bool displayapproved=false);
     static uint160 GetID(const std::string &Name);
@@ -433,6 +434,16 @@ public:
         static uint160 key = GetDataKey(DataTransferDestinationKeyName(), nameSpace);
         return key;
     }
+    static std::string UTXORefKeyName()
+    {
+        return "vrsc::data.type.object.utxoref";
+    }
+    static uint160 UTXORefKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(UTXORefKeyName(), nameSpace);
+        return key;
+    }
     static std::string TypeDefinitionKeyName()
     {
         return "vrsc::data.type.typedefinition";
@@ -509,8 +520,8 @@ public:
     std::vector<std::vector<unsigned char>> data;
 
     CVDXF_StructuredData(uint32_t Version=DEFAULT_VERSION) : CVDXF(Version) {}
-    CVDXF_StructuredData(const uint160 &Key, 
-                         const std::vector<std::vector<unsigned char>> &Data, 
+    CVDXF_StructuredData(const uint160 &Key,
+                         const std::vector<std::vector<unsigned char>> &Data,
                          uint32_t Version=DEFAULT_VERSION) : CVDXF(Key, Version), data(Data) {}
 
     ADD_SERIALIZE_METHODS;
@@ -539,7 +550,7 @@ public:
             // valid, unknown types
             for (auto &oneVec : data)
             {
-                
+
             }
             return true;
         }
@@ -579,7 +590,7 @@ public:
 // standard name parsing functions
 std::string TrimLeading(const std::string &Name, unsigned char ch);
 std::string TrimTrailing(const std::string &Name, unsigned char ch);
-std::string TrimSpaces(const std::string &Name);
+std::string TrimSpaces(const std::string &Name, bool removeDuals=false, const std::string &invalidChars="\\/:*?\"<>|");
 
 // this deserializes a vector into either a VDXF data object or a VDXF structured
 // object, which may contain one or more VDXF data objects.

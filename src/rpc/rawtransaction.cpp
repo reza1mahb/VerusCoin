@@ -198,10 +198,10 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
                         smartSigs = CSmartTransactionSignatures(std::vector<unsigned char>(ffVec.begin(), ffVec.end()));
 
                         UniValue signatureHashInfo(UniValue::VOBJ);
-                        SignatureHash(txFrom.vout[txin.prevout.n].scriptPubKey, 
-                                      tx, 
-                                      i, 
-                                      smartSigs.sigHashType, 
+                        SignatureHash(txFrom.vout[txin.prevout.n].scriptPubKey,
+                                      tx,
+                                      i,
+                                      smartSigs.sigHashType,
                                       txFrom.vout[txin.prevout.n].nValue,
                                       CurrentEpochBranchId(nHeight, Params().GetConsensus()),
                                       nullptr,
@@ -370,7 +370,7 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
             int64_t interest; int32_t txheight; uint32_t locktime;
             interest = komodo_accrued_interest(&txheight,&locktime,tx.GetHash(),i,0,txout.nValue,(int32_t)tipindex->GetHeight());
             out.push_back(Pair("interest", ValueFromAmount(interest)));
-        }        
+        }
         out.push_back(Pair("valueZat", txout.nValue));
         out.push_back(Pair("valueSat", txout.nValue));
         out.push_back(Pair("n", (int64_t)i));
@@ -947,8 +947,6 @@ UniValue decoderawtransaction(const UniValue& params, bool fHelp)
 
     uint256 hashBlock;
     TxToJSONExpanded(tx, hashBlock, result);
-    TxToJSON(tx, uint256(), result);
-
     return result;
 }
 
@@ -988,7 +986,7 @@ UniValue decodescript(const UniValue& params, bool fHelp)
     } else {
         // Empty scripts are valid
     }
-    ScriptPubKeyToJSON(script, r, false);
+    ScriptPubKeyToUniv(script, r, false);
 
     r.push_back(Pair("p2sh", EncodeDestination(CScriptID(script))));
     return r;
@@ -1210,7 +1208,7 @@ UniValue signrawtransaction(const UniValue& params, bool fHelp)
     }
 
     bool fHashSingle = ((nHashType & ~SIGHASH_ANYONECANPAY) == SIGHASH_SINGLE);
-    // Use the approximate release height if it is greater so offline nodes 
+    // Use the approximate release height if it is greater so offline nodes
     // have a better estimation of the current height and will be more likely to
     // determine the correct consensus branch ID.  Regtest mode ignores release height.
     int chainHeight = chainActive.Height() + 1;
@@ -1223,8 +1221,8 @@ UniValue signrawtransaction(const UniValue& params, bool fHelp)
         if (!IsConsensusBranchId(consensusBranchId)) {
             throw runtime_error(params[4].get_str() + " is not a valid consensus branch id");
         }
-    } 
-    
+    }
+
     // Script verification errors
     UniValue vErrors(UniValue::VARR);
 
@@ -1342,7 +1340,7 @@ UniValue sendrawtransaction(const UniValue& params, bool fHelp)
         }
     } else if (fHaveChain) {
         throw JSONRPCError(RPC_TRANSACTION_ALREADY_IN_CHAIN, "transaction already in block chain");
-    }    
+    }
     RelayTransaction(tx);
 
     return hashTx.GetHex();
