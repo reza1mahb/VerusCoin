@@ -746,6 +746,25 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
         {
             if (vdxfObj.key == CCrossChainExport::CurrencyExportKey())
             {
+                bool optimizedProof = false;
+                if (_IsVerusActive())
+                {
+                    if (PBAAS_TESTMODE)
+                    {
+                        if (chainActive.Height() >= 284300)
+                        {
+                            optimizedProof = true;
+                        }
+                    }
+                    else
+                    {
+                        if (chainActive.Height() >= 2280500)
+                        {
+                            optimizedProof = true;
+                        }
+                    }
+                }
+
                 // unpack data specific to export and reserve transfers
                 CDataStream s = CDataStream(vdxfObj.data, SER_NETWORK, PROTOCOL_VERSION);
                 uint256 prevtxid;
