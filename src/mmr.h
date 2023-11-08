@@ -562,7 +562,7 @@ public:
 
     std::vector<unsigned char> verifyAccountProof();
     std::vector<unsigned char> verifyProof(uint256& rootHash,std::vector<unsigned char> key,std::vector<std::vector<unsigned char>>& proof);
-    uint256 verifyStorageProof(uint256 hash);
+    uint256 verifyStorageProof(uint256 hash, bool optimizedProof);
     bool verifyStorageValue(std::vector<unsigned char> testStorageValue);
 
     ADD_SERIALIZE_METHODS;
@@ -580,10 +580,7 @@ public:
         READWRITE(storageProof);
     }
 
-    uint256 SafeCheck(uint256 hash) 
-    {
-        return verifyStorageProof(hash);
-    }
+    uint256 SafeCheck(uint256 hash);
 
     std::vector<unsigned char> GetBalanceAsBEVector() const
     {

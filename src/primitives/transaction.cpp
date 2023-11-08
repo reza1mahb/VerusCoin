@@ -650,6 +650,12 @@ uint32_t GetOptimizedETHProofHeight(bool getVerusHeight)
     return (getVerusHeight || _IsVerusActive()) ? (PBAAS_TESTMODE ? 284300 : 2280500) : 0;
 }
 
+template<>
+uint256 CPATRICIABranch<CKeccack256Writer>::SafeCheck(uint256 hash) 
+{
+    return verifyStorageProof(hash, chainActive.Height() >= GetOptimizedETHProofHeight());
+}
+
 // this validates that all parts of a transaction match and either returns a full transaction
 // and its hash, a partially filled transaction and its MMR root, or NULL
 uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, bool *pIsPartial) const
@@ -751,8 +757,6 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
         {
             if (vdxfObj.key == CCrossChainExport::CurrencyExportKey())
             {
-                bool optimizedProof = chainActive.Height() >= GetOptimizedETHProofHeight();
-
                 // unpack data specific to export and reserve transfers
                 CDataStream s = CDataStream(vdxfObj.data, SER_NETWORK, PROTOCOL_VERSION);
                 uint256 prevtxid;

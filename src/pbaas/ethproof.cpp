@@ -381,7 +381,7 @@ std::vector<unsigned char> CPATRICIABranch<CHashWriter>::verifyAccountProof()
 }
 
 template<>
-uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash){
+uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash, bool optimizedProof){
 
     //Check the storage value hash, which is the hash of the crosschain export transaction
     //matches the the RLP decoded information from the bridge keeper
