@@ -601,8 +601,10 @@ public:
         std::vector<std::vector<unsigned char>> data;
         std::vector<unsigned char> remainder; 
     };
-
+    bool optimized;
+    RLP(bool optimized) : optimized(optimized){};
     std::vector<unsigned char> encodeLength(int length,int offset);
+    std::vector<unsigned char> encodeLength_depricated(int length,int offset);
     std::vector<unsigned char> encode(std::vector<unsigned char> input);
     std::vector<unsigned char> encode(std::vector<std::vector<unsigned char>> input);
     rlpDecoded decode(std::vector<unsigned char> inputBytes);
