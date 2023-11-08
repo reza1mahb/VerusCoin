@@ -102,7 +102,7 @@ void TrieNode::setValue(){
     }
 }
 
-std::string int_to_hex_depricated(int input){
+std::string int_to_hex_deprecated(int input){
     std::stringstream sstream;
     if(input < 10) sstream << std::hex << 0;
     sstream << std::hex << input;
@@ -110,7 +110,7 @@ std::string int_to_hex_depricated(int input){
     return result;
 }
 
-std::string uint64_to_hex_depricated(uint64_t input){
+std::string uint64_to_hex_deprecated(uint64_t input){
     if(input < 10){
         std::stringstream sstream;
         if(input < 10) sstream << std::hex << 0;
@@ -124,7 +124,7 @@ std::string uint64_to_hex_depricated(uint64_t input){
 }
 
 //converts uint to vector and trims off leading 00 bytes
-std::vector<unsigned char> uint64_to_vec_depricated(uint64_t input){
+std::vector<unsigned char> uint64_to_vec_deprecated(uint64_t input){
 
     std::vector<unsigned char> temp(8);
     for (int i = 0; i < 8; i++)
@@ -160,14 +160,14 @@ std::vector<unsigned char> RLP::encodeLength(int length,int offset){
     return output;
 }
 
-std::vector<unsigned char> RLP::encodeLength_depricated(int length,int offset){
+std::vector<unsigned char> RLP::encodeLength_deprecated(int length,int offset){
     std::vector<unsigned char> output;
     if(length < 56){
         output.push_back(length+offset);
     } else {
-        std::string hexLength = int_to_hex_depricated(length);
+        std::string hexLength = int_to_hex_deprecated(length);
         int dataLength = hexLength.size() / 2;
-        std::string firstByte = int_to_hex_depricated((offset + 55 + dataLength));
+        std::string firstByte = int_to_hex_deprecated((offset + 55 + dataLength));
         std::string outputString = firstByte + hexLength;
         output = ParseHex(outputString);
     }
@@ -179,7 +179,7 @@ std::vector<unsigned char> RLP::encode(std::vector<unsigned char> input){
     std::vector<unsigned char> output;
     if(input.size() == 1 && input[0] < 128 ) return input;
     else {
-        output = optimized ? encodeLength(input.size(),128) : encodeLength_depricated(input.size(),128);
+        output = optimized ? encodeLength(input.size(),128) : encodeLength_deprecated(input.size(),128);
         output.insert(output.end(),input.begin(),input.end());
         return output;
         }
@@ -192,7 +192,7 @@ std::vector<unsigned char> RLP::encode(std::vector<std::vector<unsigned char>> i
         inProgress = encode(input[i]);
         encoded.insert(encoded.end(),inProgress.begin(),inProgress.end());
     }
-    std::vector<unsigned char> output = optimized ?  encodeLength(encoded.size(),192) : encodeLength_depricated(encoded.size(),192);
+    std::vector<unsigned char> output = optimized ?  encodeLength(encoded.size(),192) : encodeLength_deprecated(encoded.size(),192);
     output.insert(output.end(),encoded.begin(),encoded.end());
     return output;
 }
@@ -482,7 +482,7 @@ uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash, b
     try
     {
         std::vector<std::vector<unsigned char>> toEncode;
-        toEncode.push_back(optimizedProof ? uint64_to_vec_BE(nonce) : ParseHex(uint64_to_hex_depricated(nonce)));
+        toEncode.push_back(optimizedProof ? uint64_to_vec_BE(nonce) : ParseHex(uint64_to_hex_deprecated(nonce)));
         toEncode.push_back(GetBalanceAsBEVector());
         toEncode.push_back(storage);
         std::vector<unsigned char> codeHash_vec(codeHash.begin(),codeHash.end());
