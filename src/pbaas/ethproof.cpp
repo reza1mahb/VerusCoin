@@ -37,7 +37,7 @@ std::string bytes_to_hex(const std::vector<unsigned char> &in)
     return oss.str();
 }
 
-std::vector<unsigned char> uint64_to_vec_LE(uint64_t input){
+std::vector<unsigned char> uint64_to_vec_BE(uint64_t input){
 
     std::vector<unsigned char> bytes;
     while (input) {
@@ -434,7 +434,7 @@ uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash){
     try
     {
         std::vector<std::vector<unsigned char>> toEncode;
-        toEncode.push_back(uint64_to_vec_LE(nonce));
+        toEncode.push_back(uint64_to_vec_BE(nonce));
         toEncode.push_back(GetBalanceAsBEVector());
         toEncode.push_back(storage);
         std::vector<unsigned char> codeHash_vec(codeHash.begin(),codeHash.end());
