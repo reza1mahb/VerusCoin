@@ -1767,4 +1767,6 @@ struct WTxId
     }
 };
 
+uint32_t GetOptimizedETHProofHeight(bool getVerusHeight=false);
+
 #endif // BITCOIN_PRIMITIVES_TRANSACTION_H
