@@ -751,7 +751,7 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
         {
             if (vdxfObj.key == CCrossChainExport::CurrencyExportKey())
             {
-                bool optimizedProof = chainActive.Height() < GetOptimizedETHProofHeight();
+                bool optimizedProof = chainActive.Height() >= GetOptimizedETHProofHeight();
 
                 // unpack data specific to export and reserve transfers
                 CDataStream s = CDataStream(vdxfObj.data, SER_NETWORK, PROTOCOL_VERSION);
