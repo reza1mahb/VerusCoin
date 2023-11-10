@@ -6424,7 +6424,7 @@ uint32_t CConnectedChains::GetZeroViaHeight(bool getVerusHeight) const
 
 uint32_t CConnectedChains::GetOptimizedETHProofHeight(bool getVerusHeight) const
 {
-    return (getVerusHeight || _IsVerusActive()) ? (PBAAS_TESTMODE ? 284300 : PBAAS_OPTIMIZE_ETH_HEIGHT) : 0;
+    return (getVerusHeight || _IsVerusActive()) ? (PBAAS_TESTMODE && PBAAS_OPTIMIZE_ETH_HEIGHT > 284300 ? 284300 : PBAAS_OPTIMIZE_ETH_HEIGHT) : 0;
 }
 
 bool CConnectedChains::ShouldOptimizeETHProof() const
@@ -11207,7 +11207,7 @@ void CConnectedChains::SubmissionThread()
                                                 lastConfirmed,
                                                 lastConfirmedUTXO);
 
-                    if (exports.size())
+                    if (notaryRevokeID.IsNull() && exports.size())
                     {
                         bool submitImports = true;
                         const CCurrencyDefinition &notaryCurrency = ConnectedChains.FirstNotaryChain().chainDefinition;
