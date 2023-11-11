@@ -6330,6 +6330,7 @@ void CConnectedChains::CheckOracleUpgrades()
     std::map<uint160, CUpgradeDescriptor>::iterator disablePBaaSCrossChainIt = activeUpgradesByKey.find(DisablePBaaSCrossChainKey());
     std::map<uint160, CUpgradeDescriptor>::iterator disableGatewayCrossChainIt = activeUpgradesByKey.find(DisableGatewayCrossChainKey());
     std::map<uint160, CUpgradeDescriptor>::iterator magicNumberFixIt = IsVerusActive() ? activeUpgradesByKey.find(MagicNumberFixKey()) : activeUpgradesByKey.end();
+    std::map<uint160, CUpgradeDescriptor>::iterator enableOptimizedETHProofIt = IsVerusActive() ? activeUpgradesByKey.find(EnableOptimizedETHProofKey()) : activeUpgradesByKey.end();
     std::map<uint160, CUpgradeDescriptor>::iterator stoppingIt = activeUpgradesByKey.end();
 
     std::string gracefulStop;
@@ -6342,6 +6343,12 @@ void CConnectedChains::CheckOracleUpgrades()
             gracefulStop = "PROTOCOL CHANGE FOR PBAAS CHAIN VERSION UPDATE";
         }
     }
+
+    if (enableOptimizedETHProofIt != activeUpgradesByKey.end())
+    {
+        PBAAS_OPTIMIZE_ETH_HEIGHT = enableOptimizedETHProofIt->second.upgradeBlockHeight;
+    }
+
     if (disableDeFiIt != activeUpgradesByKey.end() ||
         disablePBaaSCrossChainIt != activeUpgradesByKey.end() ||
         disableGatewayCrossChainIt != activeUpgradesByKey.end())
@@ -6413,6 +6420,16 @@ bool CConnectedChains::IsUpgradeActive(const uint160 &upgradeID, uint32_t blockH
 uint32_t CConnectedChains::GetZeroViaHeight(bool getVerusHeight) const
 {
     return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 69013 : 2578653) : 0;
+}
+
+uint32_t CConnectedChains::GetOptimizedETHProofHeight(bool getVerusHeight) const
+{
+    return (getVerusHeight || _IsVerusActive()) ? (PBAAS_TESTMODE && PBAAS_OPTIMIZE_ETH_HEIGHT > 285700 ? 285700 : PBAAS_OPTIMIZE_ETH_HEIGHT) : 0;
+}
+
+bool CConnectedChains::ShouldOptimizeETHProof() const
+{
+    return chainActive.Height() >= GetOptimizedETHProofHeight();
 }
 
 bool CConnectedChains::CheckZeroViaOnlyPostLaunch(uint32_t height) const
@@ -7367,7 +7384,7 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
                 continue;
             }
 
-            if (proofNotarization.proofRoots[sourceSystemID].stateRoot != oneIT.first.second.CheckPartialTransaction(exportTx))
+            if (proofNotarization.proofRoots[sourceSystemID].stateRoot != oneIT.first.second.CheckPartialTransaction(exportTx, nullptr, ConnectedChains.ShouldOptimizeETHProof()))
             {
                 LogPrintf("%s: export tx %s fails verification\n", __func__, oneIT.first.first.txIn.prevout.hash.GetHex().c_str());
                 continue;
@@ -11190,7 +11207,7 @@ void CConnectedChains::SubmissionThread()
                                                 lastConfirmed,
                                                 lastConfirmedUTXO);
 
-                    if (exports.size())
+                    if (notaryRevokeID.IsNull() && exports.size())
                     {
                         bool submitImports = true;
                         const CCurrencyDefinition &notaryCurrency = ConnectedChains.FirstNotaryChain().chainDefinition;

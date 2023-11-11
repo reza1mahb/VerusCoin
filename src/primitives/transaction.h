@@ -240,7 +240,6 @@ public:
     JSDescription(): vpub_old(0), vpub_new(0) { }
 
     JSDescription(
-            bool makeGrothProof,
             ZCJoinSplit& params,
             const uint256& joinSplitPubKey,
             const uint256& rt,
@@ -253,7 +252,6 @@ public:
     );
 
     static JSDescription Randomized(
-            bool makeGrothProof,
             ZCJoinSplit& params,
             const uint256& joinSplitPubKey,
             const uint256& rt,
@@ -1373,7 +1371,7 @@ public:
 
     // this validates that all parts of a transaction match and either returns a full transaction
     // and its hash, a partially filled transaction and its MMR root, or NULL
-    uint256 CheckPartialTransaction(CTransaction &outTx, bool *pIsPartial=nullptr) const;
+    uint256 CheckPartialTransaction(CTransaction &outTx, bool *pIsPartial=nullptr, bool optimizedETH=true) const;
 
     bool IsBlockPreHeader() const
     {

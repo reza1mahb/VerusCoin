@@ -1208,6 +1208,8 @@ public:
     void CheckOracleUpgrades();
     bool IsUpgradeActive(const uint160 &upgradeID, uint32_t blockHeight=UINT32_MAX, uint32_t blockTime=UINT32_MAX) const;
     uint32_t GetZeroViaHeight(bool getVerusHeight) const;
+    uint32_t GetOptimizedETHProofHeight(bool getVerusHeight=false) const;
+    bool ShouldOptimizeETHProof() const;
     bool CheckZeroViaOnlyPostLaunch(uint32_t height) const;
     uint32_t IncludePostLaunchFeeHeight(bool getVerusHeight) const;
     bool IncludePostLaunchFees(uint32_t height) const;
@@ -1270,6 +1272,18 @@ public:
     {
         static uint160 nameSpace;
         static uint160 key = CVDXF_Data::GetDataKey(DisableDeFiKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string EnableOptimizedETHProofName()
+    {
+        return "vrsc::system.upgradedata.enableoptimizedethproof";
+    }
+
+    static uint160 EnableOptimizedETHProofKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(EnableOptimizedETHProofName(), nameSpace);
         return key;
     }
 

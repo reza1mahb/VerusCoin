@@ -536,7 +536,7 @@ public:
 };
 
 
-template <typename HASHALGOWRITER=CKeccack256Writer, typename NODETYPE=CMMRNode<HASHALGOWRITER>>
+template <typename HASHALGOWRITER=CKeccack256Writer, typename NODETYPE=CMMRNode<CKeccack256Writer>>
 class CPATRICIABranch : public CMerkleBranchBase
 {
 public:
@@ -562,7 +562,7 @@ public:
 
     std::vector<unsigned char> verifyAccountProof();
     std::vector<unsigned char> verifyProof(uint256& rootHash,std::vector<unsigned char> key,std::vector<std::vector<unsigned char>>& proof);
-    uint256 verifyStorageProof(uint256 hash);
+    uint256 verifyStorageProof(uint256 hash, bool optimizedProof);
     bool verifyStorageValue(std::vector<unsigned char> testStorageValue);
 
     ADD_SERIALIZE_METHODS;
@@ -580,10 +580,7 @@ public:
         READWRITE(storageProof);
     }
 
-    uint256 SafeCheck(uint256 hash) 
-    {
-        return verifyStorageProof(hash);
-    }
+    uint256 SafeCheck(uint256 hash, bool optimizedProof=true);
 
     std::vector<unsigned char> GetBalanceAsBEVector() const
     {
@@ -596,7 +593,7 @@ public:
         return vecVal;
     }
 };
-typedef CPATRICIABranch<CHashWriter> CETHPATRICIABranch;
+typedef CPATRICIABranch<> CETHPATRICIABranch;
 
 class RLP {
 public:
@@ -604,8 +601,10 @@ public:
         std::vector<std::vector<unsigned char>> data;
         std::vector<unsigned char> remainder; 
     };
-
+    bool optimized;
+    RLP(bool Optimized=true) : optimized(Optimized){};
     std::vector<unsigned char> encodeLength(int length,int offset);
+    std::vector<unsigned char> encodeLength_deprecated(int length,int offset);
     std::vector<unsigned char> encode(std::vector<unsigned char> input);
     std::vector<unsigned char> encode(std::vector<std::vector<unsigned char>> input);
     rlpDecoded decode(std::vector<unsigned char> inputBytes);
@@ -873,7 +872,7 @@ public:
     {
         return proofSequence.size() == 1 && proofSequence[0]->branchType == CMerkleBranchBase::BRANCH_MULTIPART;
     }
-    uint256 CheckProof(uint256 checkHash) const;
+    uint256 CheckProof(uint256 checkHash, bool optimized=true) const;
     uint160 GetNativeAddress() const;
     UniValue ToUniValue() const;
 };

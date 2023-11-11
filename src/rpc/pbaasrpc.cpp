@@ -10607,7 +10607,7 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
         }
         else if (uni_get_int(params[1], -1) != -1)
         {
-            lStart = startEnd[1] = startEnd[0] = uni_get_int(params[0], lStart);
+            lStart = startEnd[1] = startEnd[0] = uni_get_int(params[1], lStart);
         }
     }
 

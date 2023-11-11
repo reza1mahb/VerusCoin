@@ -127,6 +127,11 @@ void EraseOrphansFor(NodeId peer) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 static bool IsSuperMajority(int minVersion, const CBlockIndex* pstart, unsigned nRequired, const Consensus::Params& consensusParams);
 static void CheckBlockIndex(const Consensus::Params& consensusParams);
 
+uint32_t GetLatestHeight()
+{
+    return chainActive.Height();
+}
+
 /** Constant stuff for coinbase transactions we create: */
 CScript COINBASE_FLAGS;
 
@@ -2754,9 +2759,9 @@ void CheckForkWarningConditions(const CChainParams& chainParams)
     if (IsInitialBlockDownload(chainParams))
         return;
 
-    // If our best fork is no longer within 288 blocks (+/- 12 hours if no one mines it)
+    // If our best fork is no longer within 100 blocks
     // of our head, drop it
-    if (pindexBestForkTip && chainActive.Height() - pindexBestForkTip->GetHeight() >= 288)
+    if (pindexBestForkTip && chainActive.Height() - pindexBestForkTip->GetHeight() >= 100)
         pindexBestForkTip = NULL;
 
     if (pindexBestForkTip || (pindexBestInvalid && pindexBestInvalid->chainPower > (chainActive.LastTip()->chainPower + (GetBlockProof(*chainActive.LastTip()) * 6))))

@@ -9080,6 +9080,7 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
 
     std::set<int> validCrossChainIndexSet;
     std::set<int> invalidCrossChainIndexSet;
+    uint160 notaryRevokeID;
     {
         LOCK(cs_main);
         // if the returned data is not confirmed, then it is a gateway that has not yet confirmed its first transaction
@@ -9120,7 +9121,6 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
         else
         {
             std::string notaryRevokeAddr = GetArg("-autonotaryrevoke", "");
-            uint160 notaryRevokeID;
             if (!notaryRevokeAddr.empty())
             {
                 CTxDestination notaryDest = DecodeDestination(notaryRevokeAddr);
@@ -9573,18 +9573,19 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
     }
 
     uint32_t blocksBeforeModuloExtension = CPBaaSNotarization::GetBlocksBeforeModuloExtension(externalSystem.chainDefinition.blockNotarizationModulo);
-    bool submit = GetBoolArg("-alwayssubmitnotarizations", false) ||
-                  !GetBoolArg("-allowdelayednotarizations", true) ||
-                  (!crosschainCND.IsConfirmed() ||
-                   (crosschainCND.vtx[crosschainCND.lastConfirmed].second.IsDefinitionNotarization() &&
-                    crosschainCND.vtx[crosschainCND.lastConfirmed].second.IsSameChain())) ||
-                  (externalSystem.chainDefinition.proofProtocol != CCurrencyDefinition::PROOF_ETHNOTARIZATION &&
-                   (newConfirmedNotarization.proofRoots[systemID].rootHeight - crosschainCND.vtx[crosschainCND.lastConfirmed].second.proofRoots[systemID].rootHeight) >
-                    (blocksBeforeModuloExtension - (blocksBeforeModuloExtension >> 2)));
+    bool submit = notaryRevokeID.IsNull() &&
+                  (GetBoolArg("-alwayssubmitnotarizations", false) ||
+                   !GetBoolArg("-allowdelayednotarizations", true) ||
+                   (!crosschainCND.IsConfirmed() ||
+                    (crosschainCND.vtx[crosschainCND.lastConfirmed].second.IsDefinitionNotarization() &&
+                     crosschainCND.vtx[crosschainCND.lastConfirmed].second.IsSameChain())) ||
+                   (externalSystem.chainDefinition.proofProtocol != CCurrencyDefinition::PROOF_ETHNOTARIZATION &&
+                    (newConfirmedNotarization.proofRoots[systemID].rootHeight - crosschainCND.vtx[crosschainCND.lastConfirmed].second.proofRoots[systemID].rootHeight) >
+                     (blocksBeforeModuloExtension - (blocksBeforeModuloExtension >> 2))));
 
     bool amWitness = externalSystem.chainDefinition.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION && notarySet.count(VERUS_NOTARYID);
 
-    if (!submit)
+    if (notaryRevokeID.IsNull() && !submit)
     {
         CPBaaSNotarization unMirrored = crosschainCND.vtx[crosschainCND.lastConfirmed].second;
         if (!unMirrored.SetMirror(false))
@@ -9697,11 +9698,11 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
             }
             if (amWitness && submit)
             {
-                LogPrintf("Witness found %ld pending exports on %s\n", result.size(),
+                LogPrintf("Witness found %ld pending exports for %s\n", result.size(),
                                                                         externalSystem.chainDefinition.parent == ASSETCHAINS_CHAINID ?
                                                                             externalSystem.chainDefinition.name.c_str() :
                                                                             (externalSystem.chainDefinition.name + "." + ConnectedChains.ThisChain().name).c_str());
-                printf("Witness found %ld pending exports on %s\n", result.size(),
+                printf("Witness found %ld pending exports for %s\n", result.size(),
                                                                     externalSystem.chainDefinition.parent == ASSETCHAINS_CHAINID ?
                                                                         externalSystem.chainDefinition.name.c_str() :
                                                                         (externalSystem.chainDefinition.name + "." + ConnectedChains.ThisChain().name).c_str());
@@ -9712,7 +9713,7 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
     LogPrint("notarization", "%s: ready to submit accepted notarization with evidence:\n%s\n", __func__, allEvidence.ToUniValue().write(1,2).c_str());
     if (!submit)
     {
-        LogPrint("notarization", "skipping submission due to no pending exports or currency transitions\n");
+        LogPrint("notarization", "skipping submission due to being revoke node or no pending exports or currency transitions\n");
         return retVal;
     }
 
