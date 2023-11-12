@@ -309,15 +309,20 @@ void *chainparams_commandline(void *ptr)
                     (20000, uint256S("0xb0e8cb9f77aaa7ff5bd90d6c08d06f4c4bf03e00c2b8a35a042e760845590c8a"))
                     (30000, uint256S("0xf2112ca577338ad7104bf905fa6a63d36b17a86f914c97b73cd31d43fcd7557c"))
                     (40000, uint256S("0x00000000008f83378dab727864b763ce91a4ea5f75d55939c0c1390cfb8c38f1"))
-                    (49170, uint256S("0x2add646c0089871ec2379f02f7cd60b3af6efd9c152a6f16fc10925458c270cc")),
-                    (int64_t)1529910234,    // * UNIX timestamp of last checkpoint block
-                    (int64_t)63661,         // * total number of transactions between genesis and last checkpoint
+                    (49170, uint256S("0x2add646c0089871ec2379f02f7cd60b3af6efd9c152a6f16fc10925458c270cc"))
+                    (800200, uint256S("0xfa2d5e5f5fb42af9d6343fa93bbc776761341fd754a7e078004132bcd8403dd2"))
+                    (1053660, uint256S("0x0000000000182c0fcba3ae9360417848dd03a8e0cb153f1ee8b4b8f72376de2b"))
+                    (1796400, uint256S("0xeead7e4b5236de7c9fd782d28efa0a288d9188fd40ba7ca9804983035435caec"))
+                    (2549420, uint256S("0x000000000000e1d2915791640dcee0bf36141cc58d436e158fcf126e529083a3"))
+                    (2802250, uint256S("0x000000000002a5c44fd73dab43b2e0cac0dd2b5be6a22d03df5283ca8ee1f8bc")),
+                    (int64_t)1700525524,    // * UNIX timestamp of last checkpoint block
+                    (int64_t)6318742,         // * total number of transactions between genesis and last checkpoint
                                             //   (the tx=... number in the SetBestChain debug.log lines)
-                    (double)2777            // * estimated number of transactions per day after checkpoint
+                    (double)1298            // * estimated number of transactions per day after checkpoint
                                             //   total number of tx / (checkpoint block height / (24 * 24))
                 };
 
-            mainParams.consensus.nMinimumChainWork = uint256S("0x000000000000000000000000000000000000000000000001a8f4f23f8b2d1f7e");
+            mainParams.consensus.nMinimumChainWork = uint256S("0x00000000000d798fd9fc9c92867f40a7000000026e5624a2f47b71ea49cda473");
         }
         else
         {
