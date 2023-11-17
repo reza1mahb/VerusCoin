@@ -898,6 +898,40 @@ public:
         return false;
     }
 
+    static std::string IdentityParentKeyName()
+    {
+        return "vrsc::system.identity.parentkey";
+    }
+
+    uint160 IdentityParentKey() const
+    {
+        uint160 nameSpace;
+        return CCrossChainRPCData::GetConditionID(CVDXF::GetDataKey(IdentityParentKeyName(), nameSpace), GetID());
+    }
+
+    static uint160 IdentityParentKey(const CIdentityID &parentIdentityID)
+    {
+        uint160 nameSpace;
+        return CCrossChainRPCData::GetConditionID(CVDXF::GetDataKey(IdentityParentKeyName(), nameSpace), parentIdentityID);
+    }
+
+    static std::string IdentitySystemKeyName()
+    {
+        return "vrsc::system.identity.systemkey";
+    }
+
+    uint160 IdentitySystemKey() const
+    {
+        uint160 nameSpace;
+        return CCrossChainRPCData::GetConditionID(CVDXF::GetDataKey(IdentitySystemKeyName(), nameSpace), GetID());
+    }
+
+    static uint160 IdentitySystemKey(const CIdentityID &systemIdentityID)
+    {
+        uint160 nameSpace;
+        return CCrossChainRPCData::GetConditionID(CVDXF::GetDataKey(IdentitySystemKeyName(), nameSpace), systemIdentityID);
+    }
+
     static std::string IdentityRevocationKeyName()
     {
         return "vrsc::system.identity.revocationkey";

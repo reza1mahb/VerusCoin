@@ -1496,8 +1496,10 @@ std::set<CIndexID> COptCCParams::GetIndexKeys() const
                     {
                         destinations.insert(identity.IdentityPrimaryAddressKey(oneDest));
                     }
-                    destinations.insert(identity.IdentityRecoveryKey());
-                    destinations.insert(identity.IdentityRevocationKey());
+                    destinations.insert(identity.IdentityRecoveryKey(identity.recoveryAuthority));
+                    destinations.insert(identity.IdentityRevocationKey(identity.revocationAuthority));
+                    destinations.insert(identity.IdentityParentKey(identity.parent));
+                    destinations.insert(identity.IdentitySystemKey(identity.systemID));
                 }
             }
             break;

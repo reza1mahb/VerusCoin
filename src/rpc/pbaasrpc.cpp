@@ -5444,18 +5444,170 @@ std::vector<CAddressUnspentDbEntry> GetFractionalNotarizationsForReserve(const u
     return fractionalNotarizations;
 }
 
+// calculate the amount necessary for conversion, starting from the currency state & given a max slippage and price target to be less than or equal to
+// if we can't meet slippage or target price, we return 0
+CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
+                                        const CCurrencyDefinition &destCurrency,
+                                        const CCoinbaseCurrencyState &cbState,
+                                        uint32_t destHeight,
+                                        const uint160 &sourceID,
+                                        const uint160 &destID,
+                                        CAmount maxSlippage,
+                                        CAmount maxPriceTarget,
+                                        CAmount destAmount,
+                                        CValidationState &state)
+{
+    CReserveTransfer rt(CReserveTransfer::VALID | CReserveTransfer::CONVERT,
+                        CCurrencyValueMap(),
+                        ASSETCHAINS_CHAINID,
+                        CReserveTransfer::DEFAULT_PER_STEP_FEE << 1,
+                        destID,
+                        DestinationToTransferDestination(CIdentityID(ASSETCHAINS_CHAINID)));
+
+    auto curMap = cbState.GetReserveMap();
+    auto firstPrices = cbState.TargetConversionPricesReverse(destID, true);
+
+    // reverse our way to an estimated source,
+    // which in almost all cases will be an incorrect starting point, but a starting point
+    if (cbState.GetID() == destID)
+    {
+        if (!curMap.count(sourceID))
+        {
+            state.Error("Invalid converter is not equal to and does not contain source currency");
+            return 0;
+        }
+    }
+    else if (cbState.GetID() == sourceID)
+    {
+        if (!curMap.count(destID))
+        {
+            state.Error("Invalid converter is not equal to and does not contain destination currency");
+            return 0;
+        }
+        rt.flags |= rt.IMPORT_TO_SOURCE;
+    }
+    else
+    {
+        if (!curMap.count(destID) || !curMap.count(sourceID))
+        {
+            state.Error("Invalid converter is not equal to and does not contain both source and destination currency");
+            return 0;
+        }
+        rt.flags |= rt.RESERVE_TO_RESERVE;
+        rt.destCurrencyID = cbState.GetID();
+        rt.secondReserveID = destID;
+    }
+    rt.reserveValues.valueMap[sourceID] = cbState.ReserveToNativeRaw(destAmount, firstPrices.valueMap[sourceID]);
+
+    std::vector<CReserveTransfer> exportObjects({rt});
+    CAmount errorCorrection = 0;
+    CAmount lastError = INT64_MAX;
+    CAmount nextError = 0;
+
+    int64_t firstPrice(firstPrices.valueMap[sourceID]);
+    if (maxPriceTarget && firstPrice > maxPriceTarget)
+    {
+        state.Error("Price too high");
+        return 0;
+    }
+
+    do
+    {
+        exportObjects.back().reserveValues.valueMap[sourceID] += nextError;
+
+        // converge on the closest source value, assuming no failure on slippage or
+        // price target, and return result, or fail and return 0
+        CReserveTransactionDescriptor rtxd;
+        std::vector<CTxOut> vOutputs;
+        CCurrencyValueMap importedCurrency;
+        CCurrencyValueMap gatewayDepositsIn;
+        CCurrencyValueMap spentCurrencyOut;
+        CCoinbaseCurrencyState newState;
+        bool success = rtxd.AddReserveTransferImportOutputs(ConnectedChains.ThisChain(),
+                                                            destSystem,
+                                                            destCurrency,
+                                                            cbState,
+                                                            exportObjects,
+                                                            destHeight,
+                                                            vOutputs,
+                                                            importedCurrency,
+                                                            gatewayDepositsIn,
+                                                            spentCurrencyOut,
+                                                            &newState);
+        if (!success || !vOutputs.size())
+        {
+            state.Error("Failure to convert with the latest currency state");
+            return 0;
+        }
+
+        auto secondPrices = cbState.TargetConversionPricesReverse(destID, CCurrencyValueMap(cbState.currencies, cbState.conversionPrice), CCurrencyValueMap(cbState.currencies, cbState.viaConversionPrice), true);
+
+        // get slippage
+        int64_t secondPrice(secondPrices.valueMap[sourceID]);
+
+        int64_t difference = firstPrice - secondPrice;
+        if (difference < 0)
+        {
+            difference = -difference;
+        }
+        else if (maxPriceTarget && secondPrice > maxPriceTarget)
+        {
+            state.Error("Price too high");
+            return 0;
+        }
+
+        arith_uint256 bigDifference(difference);
+        bigDifference = bigDifference * SATOSHIDEN;
+        int64_t slippage = (bigDifference/firstPrice).GetLow64();
+        if (maxSlippage && slippage > maxSlippage)
+        {
+            state.Error("Slippage too high");
+            return 0;
+        }
+
+        // figure out how much was output in the destination currency, add an error, and loop if error is lower than last
+        // get destination currency from the output
+        CAmount destCurAmount = destID == ASSETCHAINS_CHAINID ? vOutputs[0].nValue : vOutputs[0].ReserveOutValue().valueMap[destID];
+        
+        nextError = destAmount - destCurAmount;
+        // if we have an error and it hasn't changed, we need to increment input by
+        // one satoshi, as it's getting truncated away
+        if (nextError > 0)
+        {
+            CAmount bias = 0;
+            nextError = cbState.ReserveToNativeRaw(nextError, secondPrices.valueMap[sourceID]);
+            if (nextError == lastError)
+            {
+                nextError++;
+            }
+        }
+    } while (nextError > 0);
+
+    return exportObjects.back().reserveValues.valueMap[sourceID];
+}
+
 UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > CCurrencyState::MAX_RESERVE_CURRENCIES)
     {
         throw runtime_error(
-            "getcurrencyconverters \"currency1\" \"currency2\" ...\n"
-            "\nRetrieves all currencies that have at least 1000 VRSC in reserve, are >10% VRSC reserve ratio, and have all listed currencies as reserves\n"
+            "getcurrencyconverters \"currency1\" \"currency2\" ... |\n"
+            "                      {\"convertto\":\"currencynameorid\",\"fromcurrency\":\"sourcecurrency\" | [{\"currency\":\"sourcecurrency1\", \"targetprice\":n}, ...],\n"
+            "                       \"amount\":n, \"slippage\":0.01 (=1 percent slippage)}\n"
+            "\nRetrieves all currencies that will generally satisfy the request at or better than target price without other traffic and have all listed currencies as reserves\n"
             "\nArguments\n"
-            "       \"currencyname\"               : \"string\" ...  (string(s), one or more) all selected currencies are returned with their current state"
+            "       \"currencyname\"                    : \"string\" ...  (string(s), one or more) all selected currencies are returned with their current state\n"
+            "       \"paramobject\"                     : \"object\" ...  (one or more parameters) advanced query with slippage options\n"
+            "       {\n"
+            "           \"convertto\":\"destcurrency\"              \"string\" target currency\n"
+            "           \"fromcurrency\":\"sourcecurrency\" | [...] \"string\" | object array ... (string(s), one or more) currencies to convert from\n"
+            "           \"targetprice\":n | [n,...]                 \"number(s)\" ...       (number(s), one or more) target price within slippage required\n"
+            "           \"amount\":n                                \"number\"              (number) amount of tocurrency needed\n"
+            "           \"slippage\":n                              \"number\"              (number) max slippage with no other conversions 100,000,000 == 100%\n"
+            "       }\n"
 
             "\nResult:\n"
-            "       \"[{currency1}, {currency2}]\" : \"array of objects\" (string) All currencies and the last notarization, which are valid converters.\n"
+            "       \"[{currency1}, {currency2}]\" : \"array of objects\" (string) All currencies, last currency state, and last amount to convert if amount specified\n"
 
             "\nExamples:\n"
             + HelpExampleCli("getcurrencyconverters", "'[\"currency1\",\"currency2\",...]'")
@@ -5465,31 +5617,122 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
 
     CheckPBaaSAPIsValid();
 
-    std::map<uint160, CCurrencyDefinition> reserves;
+    std::map<uint160, std::pair<CCurrencyDefinition, CAmount>> reserves;
 
-    for (int i = 0; i < params.size(); i++)
+    CCurrencyDefinition toCurrencyDef;
+    uint160 toCurID;
+    std::string toCurrency;
+    std::vector<std::string> fromCurrency;
+
+    int64_t amountTarget = 0;
+    int64_t slippageTarget = 0;
+
+    UniValue firstParam;
+    firstParam.read(uni_get_str(params[0]));
+
+    // if we have object parameters, process them
+    if (firstParam.isObject() &&
+        !(toCurrency = uni_get_str(find_value(firstParam, "convertto"))).empty())
     {
-        std::string oneName = uni_get_str(params[i]);
-        CCurrencyDefinition oneCurrency;
-        uint160 oneCurrencyID;
-        if (!oneName.size() ||
-            (oneCurrencyID = ValidateCurrencyName(oneName, true, &oneCurrency)).IsNull() ||
-            reserves.count(oneCurrencyID))
+        LOCK(cs_main);
+        toCurID = ValidateCurrencyName(toCurrency, true, &toCurrencyDef);
+
+        amountTarget = AmountFromValueNoErr(find_value(firstParam, "amount"));
+        slippageTarget = AmountFromValueNoErr(find_value(firstParam, "slippage"));
+
+        if (toCurID.IsNull())
         {
-            throw JSONRPCError(RPC_INVALID_PARAMS, "Each reserve currency specified must be a valid, unique currency");
+            throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid tocurrency");
         }
-        reserves[oneCurrencyID] = oneCurrency;
+
+        // assume an object specifying search, target and slippage parameters
+        UniValue fromCurUni(UniValue::VOBJ);
+        fromCurUni = find_value(firstParam, "fromcurrency");
+        if (fromCurUni.isArray())
+        {
+            for (int i = 0; i < fromCurUni.size(); i++)
+            {
+                CAmount targetPrice = 0;
+                UniValue fromOneCurrency;
+                fromOneCurrency = fromCurUni[i];
+                uint160 fromCurID;
+                CCurrencyDefinition fromCurrencyDef;
+
+                if (fromOneCurrency.isStr())
+                {
+                    fromCurrency.push_back(uni_get_str(fromOneCurrency));
+                }
+                else if (!fromOneCurrency.isObject())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMS, "fromcurrency must be an array of currency names or objects with currency name and target price");
+                }
+                else
+                {
+                    targetPrice = uni_get_int64(find_value(fromOneCurrency, "targetprice"));
+                    fromCurrency.push_back(uni_get_str(find_value(fromOneCurrency, "currency")));
+                }
+
+                if (!fromCurrency.back().empty() && !(fromCurID = ValidateCurrencyName(fromCurrency.back(), true, &fromCurrencyDef)).IsNull())
+                {
+                    reserves.insert({fromCurID, {fromCurrencyDef, targetPrice}});
+                }
+                else
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMS, "fromcurrency must be a valid array of currency names or objects with currency name and target price");
+                }
+            }
+        }
+        else
+        {
+            fromCurrency.push_back(uni_get_str(fromCurUni));
+            CCurrencyDefinition fromCurrencyDef;
+            uint160 fromCurID;
+            if (fromCurrency.back().empty() ||
+                (fromCurID = ValidateCurrencyName(fromCurrency.back(), true, &fromCurrencyDef)).IsNull() ||
+                reserves.count(fromCurID))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMS, "Each from currency specified must be a valid, unique currency");
+            }
+            else
+            {
+                reserves.insert({fromCurID, {fromCurrencyDef, 0}});
+            }
+        }
+    }
+    else
+    {
+        LOCK(cs_main);
+        toCurrency = uni_get_str(params[0]);
+        toCurID = ValidateCurrencyName(toCurrency, true, &toCurrencyDef);
+
+        if (toCurID.IsNull())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid first currency");
+        }
+
+        for (int i = 1; i < params.size(); i++)
+        {
+            std::string oneName = uni_get_str(params[i]);
+            CCurrencyDefinition oneCurrency;
+            uint160 oneCurrencyID;
+            if (!oneName.size() ||
+                (oneCurrencyID = ValidateCurrencyName(oneName, true, &oneCurrency)).IsNull() ||
+                reserves.count(oneCurrencyID))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMS, "Each reserve currency specified must be a valid, unique currency");
+            }
+            reserves[oneCurrencyID] = {oneCurrency, 0};
+        }
     }
 
     // get all currencies that contain all specified reserves in our fractionalsFound set
     // use latest notarizations of the currencies to do so
     std::vector<CAddressUnspentDbEntry> activeFractionals;
     std::set<int32_t> toRemove;
-    auto resIt = reserves.begin();
-    if (reserves.size() &&
-        (activeFractionals = GetFractionalNotarizationsForReserve(resIt->first)).size())
+    if ((activeFractionals = GetFractionalNotarizationsForReserve(toCurID)).size() &&
+        reserves.size())
     {
-        resIt++;
+        auto resIt = reserves.begin();
         for (int i = 0; i < activeFractionals.size(); i++)
         {
             CPBaaSNotarization pbn(activeFractionals[i].second.script);
@@ -5500,7 +5743,8 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
             auto curMap = pbn.currencyState.GetReserveMap();
             for (auto it = resIt; it != reserves.end(); it++)
             {
-                if (!curMap.count(it->first))
+                if (it->first != pbn.currencyState.GetID() &&
+                    !curMap.count(it->first))
                 {
                     toRemove.insert(i);
                     break;
@@ -5513,18 +5757,190 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
         }
     }
 
-    UniValue ret(UniValue::VARR);
+    CCoinbaseCurrencyState toState = ConnectedChains.GetCurrencyState(toCurID, chainActive.Height(), true);
+    if (toCurrencyDef.systemID == ASSETCHAINS_CHAINID && !(toState.IsValid() && toState.IsLaunchConfirmed()))
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot get converters for pre-launch or refunded currency " + EncodeDestination(CIdentityID(toCurID)));
+    }
+
+    // converter currency, source currency checked, amount required to match conditions
+    std::map<uint160, std::tuple<CCurrencyDefinition, CCoinbaseCurrencyState, std::map<uint160, CAmount>>> converterCurrencyOptions;
+
+    // get latest notarizations for all currencies selected to ensure that we have
+    // appropriate slippage
+
+    // if toCurrency is fractional and contains all reserves to check, add it as well
+    std::map<uint160, int32_t> toCurMap = toCurrencyDef.GetCurrenciesMap();
+    if (toCurrencyDef.IsFractional())
+    {
+        bool addThis = true;
+        for (auto oneReserve : reserves)
+        {
+            if (oneReserve.first != toCurID &&
+                !toCurMap.count(oneReserve.first))
+            {
+                addThis = false;
+                break;
+            }
+        }
+        if (addThis)
+        {
+            converterCurrencyOptions[toCurID] = {toCurrencyDef, toState, std::map<uint160, CAmount>()};
+        }
+    }
+
+    // if any reserve currency is fractional and contains tuCurrency and other reserves to check, add it as well
+    for (auto &oneReserve : reserves)
+    {
+        if (oneReserve.second.first.IsFractional())
+        {
+            CCoinbaseCurrencyState oneState = ConnectedChains.GetCurrencyState(oneReserve.first, chainActive.Height(), true);
+            if (!(oneState.IsValid() && oneState.IsLaunchConfirmed() && oneState.IsLaunchCompleteMarker()))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot convert pre-launch or refunded currency " + EncodeDestination(CIdentityID(toCurID)));
+            }
+            auto curMap = oneReserve.second.first.GetCurrenciesMap();
+            bool addThis = curMap.count(toCurID);
+            if (addThis)
+            {
+                for (auto oneReserve : reserves)
+                {
+                    if (oneReserve.first != toCurID &&
+                        !curMap.count(oneReserve.first))
+                    {
+                        addThis = false;
+                        break;
+                    }
+                }
+            }
+            if (addThis)
+            {
+                converterCurrencyOptions[toCurID] = {toCurrencyDef, oneState, std::map<uint160, CAmount>()};
+            }
+        }
+    }
+
     for (int i = 0; i < activeFractionals.size(); i++)
     {
         CPBaaSNotarization pbn(activeFractionals[i].second.script);
         CCurrencyDefinition oneCur;
-        if (!GetCurrencyDefinition(pbn.currencyID, oneCur))
+        // if we already have it, move on
+        if (converterCurrencyOptions.count(pbn.currencyID))
         {
-            throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Cannot get currency definition for currency " + EncodeDestination(CIdentityID(pbn.currencyID)));
+            continue;
         }
+        if (reserves.count(pbn.currencyID))
+        {
+            oneCur = reserves[pbn.currencyID].first;
+        }
+        else if (!GetCurrencyDefinition(pbn.currencyID, oneCur))
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot get currency definition for currency " + EncodeDestination(CIdentityID(pbn.currencyID)));
+        }
+
+        CCoinbaseCurrencyState oneState = ConnectedChains.GetCurrencyState(pbn.currencyID, chainActive.Height(), true);
+        if (!(oneState.IsValid() && oneState.IsLaunchConfirmed() && oneState.IsLaunchCompleteMarker()))
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot use pre-launch or refunded currency " + EncodeDestination(CIdentityID(toCurID)));
+        }
+        converterCurrencyOptions[pbn.currencyID] = {oneCur, oneState, std::map<uint160, CAmount>()};
+    }
+
+    // now, if we don't have any narrowing, return the converters we have with > 1000 native currency,
+    // otherwise, confirm slippage on amount and other data
+    std::set<uint160> removeIDs;
+    if (reserves.size())
+    {
+        for (auto &oneConverter : converterCurrencyOptions)
+        {
+            auto curMap = std::get<0>((oneConverter.second)).GetCurrenciesMap();
+
+            // loop through reserves, and if it can't satisfy the requirements of all reserves, remove it
+            for (auto &oneReserve : reserves)
+            {
+                if (!(slippageTarget && amountTarget))
+                {
+                    if (std::get<1>((oneConverter.second)).reserves[curMap[ASSETCHAINS_CHAINID]] < 100000000000)
+                    {
+                        removeIDs.insert(oneConverter.first);
+                    }
+                }
+                // it may be the dest, the source, or contain both
+                else
+                {
+                    // check slippage, amount, and optionally price from reserve to reserve currency
+                    CCurrencyDefinition systemDest = ConnectedChains.GetCachedCurrency(std::get<0>(oneConverter.second).systemID);
+                    if (!systemDest.IsValid())
+                    {
+                        throw JSONRPCError(RPC_INTERNAL_ERROR, "Cannot find system ID for currency ");
+                    }
+                    CValidationState state;
+                    CAmount necessaryAmount = GetNecessaryAmountForConversion(systemDest,
+                                                                              std::get<0>(oneConverter.second),
+                                                                              std::get<1>(oneConverter.second),
+                                                                              chainActive.Height(),
+                                                                              oneReserve.first,
+                                                                              toCurID,
+                                                                              slippageTarget,
+                                                                              oneReserve.second.second,
+                                                                              amountTarget,
+                                                                              state);
+                    if (necessaryAmount)
+                    {
+                        std::get<2>(oneConverter.second)[oneReserve.first] = necessaryAmount;
+                    }
+                    else
+                    {
+                        removeIDs.insert(oneConverter.first);
+                    }
+                }
+            }
+            // if we have no valid convert ability to meet targets and have not removed already, remove converter
+            if (slippageTarget && amountTarget && !std::get<2>(oneConverter.second).size())
+            {
+                removeIDs.insert(oneConverter.first);
+            }
+        }
+    }
+    else
+    {
+        for (auto &oneConverter : converterCurrencyOptions)
+        {
+            auto curMap = std::get<0>((oneConverter.second)).GetCurrenciesMap();
+            if (std::get<1>((oneConverter.second)).reserves[curMap[ASSETCHAINS_CHAINID]] < 100000000000)
+            {
+                removeIDs.insert(oneConverter.first);
+            }
+        }
+    }
+    for (auto &oneID : removeIDs)
+    {
+        converterCurrencyOptions.erase(oneID);
+    }
+
+    UniValue ret(UniValue::VARR);
+    for (auto &oneConverter : converterCurrencyOptions)
+    {
         UniValue oneCurrency(UniValue::VOBJ);
-        oneCurrency.push_back(Pair(oneCur.name, oneCur.ToUniValue()));
-        oneCurrency.push_back(Pair("lastnotarization", pbn.ToUniValue()));
+        oneCurrency.push_back(Pair(std::get<0>(oneConverter.second).name, std::get<0>(oneConverter.second).ToUniValue()));
+        std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastNotarization = GetLastConfirmedNotarization(oneConverter.first, chainActive.Height());
+        oneCurrency.push_back(Pair("height", int64_t(std::get<0>(lastNotarization))));
+        oneCurrency.push_back(Pair("output", std::get<1>(lastNotarization).ToUniValue()));
+        oneCurrency.push_back(Pair("lastnotarization", std::get<2>(lastNotarization).ToUniValue()));
+        if (amountTarget)
+        {
+            oneCurrency.push_back(Pair("targetamount", amountTarget));
+            UniValue sourceAmounts(UniValue::VOBJ);
+            // if we have conversion sources and amounts, add them
+            for (auto &oneConversion : std::get<2>(oneConverter.second))
+            {
+                sourceAmounts.pushKV(EncodeDestination(CIdentityID(oneConversion.first)), oneConversion.second);
+            }
+            if (sourceAmounts.size())
+            {
+                oneCurrency.pushKV("sourceamounts", sourceAmounts);
+            }
+        }
         ret.push_back(oneCurrency);
     }
     return ret;
@@ -9447,9 +9863,23 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
 
                 CTxDestination destination = ValidateDestination(destStr);
 
-                CTxDestination refundDestination = refundToStr.empty() ? destination : DecodeDestination(refundToStr);
-
-                if (refundDestination.which() == COptCCParams::ADDRTYPE_ID &&
+                CTxDestination refundDestination = DecodeDestination(refundToStr);
+                if (refundDestination.which() == COptCCParams::ADDRTYPE_INVALID)
+                {
+                    if (!VERUS_DEFAULTID.IsNull())
+                    {
+                        refundDestination = VERUS_DEFAULTID;
+                    }
+                    else if (!hasZSource && !wildCardAddress && sourceDest.which() != COptCCParams::ADDRTYPE_INVALID)
+                    {
+                        refundDestination = sourceDest;
+                    }
+                    else
+                    {
+                        refundDestination = destination;
+                    }
+                }
+                else if (refundDestination.which() == COptCCParams::ADDRTYPE_ID &&
                     GetDestinationID(refundDestination) != GetDestinationID(destination))
                 {
                     if (!CIdentity::LookupIdentity(GetDestinationID(refundDestination)).IsValid())
@@ -9918,6 +10348,11 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
 
                             dest.type |= dest.FLAG_DEST_GATEWAY;
                             dest.gatewayID = exportSystemDef.GetID();
+
+                            if (dest.gatewayID == ASSETCHAINS_CHAINID)
+                            {
+                                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot export from the current chain to the current chain");
+                            }
                             CChainNotarizationData cnd;
                             if (!GetNotarizationData(converterID, cnd) ||
                                 !cnd.IsConfirmed())
@@ -9967,6 +10402,10 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                         else
                         {
                             flags |= CReserveTransfer::CROSS_SYSTEM;
+                            if (destSystemID == ASSETCHAINS_CHAINID)
+                            {
+                                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot export from the current chain to the same chain");
+                            }
                         }
 
                         auto reserveMap = converterCurrency.GetCurrenciesMap();
@@ -10006,6 +10445,11 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                         if (!validFeeCurrencies.count(feeCurrencyID))
                         {
                             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid fee currency for cross-chain transaction 2" + ConnectedChains.GetFriendlyCurrencyName(feeCurrencyID));
+                        }
+
+                        if (offChainDef.GetID() == ASSETCHAINS_CHAINID)
+                        {
+                            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot export to and from the same chain");
                         }
 
                         CAmount feeConversionRate = 0;
@@ -10603,7 +11047,20 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
     {
         if (params[1].isStr())
         {
+            std::vector<std::string> retNames;
+            boost::split(retNames, uni_get_str(params[1]), boost::is_any_of(","));
             Split(params[1].get_str(), startEnd, startEnd[0], 3);
+            if (retNames.size() == 2)
+            {
+                int64_t step = 1;
+                int64_t delta = startEnd[1] - startEnd[0];
+                while ((delta / step) > 100)
+                {
+                    step *= 10;
+                }
+                // default to step 1
+                startEnd[2] = step;
+            }
         }
         else if (uni_get_int(params[1], -1) != -1)
         {
@@ -10643,7 +11100,7 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
     for (int i = start; i <= end; i += step)
     {
         LOCK(cs_main);
-        CCoinbaseCurrencyState currencyState = ConnectedChains.GetCurrencyState(currencyID, i);
+        CCoinbaseCurrencyState currencyState = ConnectedChains.GetCurrencyState(currencyID, i, (i + step) > end);
         UniValue entry(UniValue::VOBJ);
         entry.push_back(Pair("height", i));
         entry.push_back(Pair("blocktime", (uint64_t)chainActive.LastTip()->nTime));

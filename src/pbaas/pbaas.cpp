@@ -6510,17 +6510,25 @@ bool CConnectedChains::ConfigureEthBridge(bool callToCheck)
         map<string, vector<string>> settingsmulti;
 
         // create config file for our notary chain if one does not exist already
-        if (ReadConfigFile("veth", settings, settingsmulti) &&
-            settingsmulti.count("-rpchost") &&
-            settingsmulti.count("-rpcuser") &&
-            settingsmulti.count("-rpcport") &&
-            settingsmulti.count("-rpcpassword"))
+        try
         {
-            // the Ethereum bridge, "VETH", serves as the root currency to VRSC and for Rinkeby to VRSCTEST
-            vethNotaryChain.rpcUserPass = PBAAS_USERPASS = settingsmulti.find("-rpcuser")->second[0] + ":" + settingsmulti.find("-rpcpassword")->second[0];
-            vethNotaryChain.rpcPort = PBAAS_PORT = atoi(settingsmulti.find("-rpcport")->second[0]);
-            PBAAS_HOST = settingsmulti.find("-rpchost")->second[0];
+            if (ReadConfigFile("veth", settings, settingsmulti) &&
+                settingsmulti.count("-rpchost") &&
+                settingsmulti.count("-rpcuser") &&
+                settingsmulti.count("-rpcport") &&
+                settingsmulti.count("-rpcpassword"))
+            {
+                // the Ethereum bridge, "VETH", serves as the root currency to VRSC and for Rinkeby to VRSCTEST
+                vethNotaryChain.rpcUserPass = PBAAS_USERPASS = settingsmulti.find("-rpcuser")->second[0] + ":" + settingsmulti.find("-rpcpassword")->second[0];
+                vethNotaryChain.rpcPort = PBAAS_PORT = atoi(settingsmulti.find("-rpcport")->second[0]);
+                PBAAS_HOST = settingsmulti.find("-rpchost")->second[0];
+            }
         }
+        catch(const std::exception& e)
+        {
+            LogPrintf("%s: Error reading veth config file - may be invalid or misconfigured\n", __func__);
+        }
+        
         if (!PBAAS_HOST.size())
         {
             PBAAS_HOST = "127.0.0.1";

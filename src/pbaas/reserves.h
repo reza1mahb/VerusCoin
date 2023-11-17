@@ -1707,6 +1707,7 @@ public:
     CCurrencyValueMap TargetConversionPrices(const uint160 &targetCurrencyID) const;
     CCurrencyValueMap TargetLastConversionPrices(const uint160 &targetCurrencyID) const;
     CCurrencyValueMap TargetConversionPricesReverse(const uint160 &targetCurrencyID, bool addFeePct=false) const;
+    CCurrencyValueMap TargetConversionPricesReverse(const uint160 &targetCurrencyID, const CCurrencyValueMap &prices, const CCurrencyValueMap &viaPrices, bool addFeePct=false) const;
 };
 
 class CReserveInOuts
