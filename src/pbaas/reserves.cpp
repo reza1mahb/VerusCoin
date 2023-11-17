@@ -622,6 +622,11 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
                                     CTransferDestination::EncodeEthDestination(EthProof.GetNativeAddress()));
                                 return state.Error(strprintf("%s: invalid ETH storage address", __func__));
                             }
+
+                            if(!EthProof.CheckStorageKey(ccx.sourceHeightStart)){
+                                LogPrintf("%s: Invalid ETH storage key.", __func__);
+                                return state.Error(strprintf("%s: invalid ETH storage key", __func__));
+                            }
                         }
                     }
                     else
@@ -914,6 +919,58 @@ CCurrencyValueMap CCoinbaseCurrencyState::TargetConversionPricesReverse(const ui
             else
             {
                 CAmount firstVal = NativeToReserveRaw(SATOSHIDEN - extraFeeAmount, currencyMap.valueMap[targetCurrencyID]);
+
+                retVal.valueMap[oneCur] = ReserveToNativeRaw(
+                    NativeToReserveRaw(SATOSHIDEN - extraFeeAmount, currencyMap.valueMap[targetCurrencyID]),
+                    currencyMap.valueMap[oneCur]);
+            }
+        }
+    }
+    return retVal;
+}
+
+CCurrencyValueMap CCoinbaseCurrencyState::TargetConversionPricesReverse(const uint160 &targetCurrencyID, const CCurrencyValueMap &prices, const CCurrencyValueMap &viaPrices, bool addFeePct) const
+{
+    CAmount extraFeeAmount = addFeePct ? CReserveTransactionDescriptor::CalculateConversionFeeNoMin(SATOSHIDEN) : 0;
+
+    CCurrencyValueMap retVal(std::vector<uint160>({targetCurrencyID}), std::vector<int64_t>({(int64_t)SATOSHIDEN - extraFeeAmount}));
+    CCurrencyValueMap currencyMap(prices);
+    CCurrencyValueMap currencyViaMap(viaPrices);
+    bool targetIsPrimary = targetCurrencyID == GetID();
+    if (!IsFractional() || (!targetIsPrimary && !currencyMap.valueMap.count(targetCurrencyID)))
+    {
+        return retVal;
+    }
+    if (!targetIsPrimary)
+    {
+        if (!currencyMap.valueMap.count(targetCurrencyID))
+        {
+            return retVal;
+        }
+    }
+
+    if (targetIsPrimary)
+    {
+        for (auto &onePrice : currencyMap.valueMap)
+        {
+            retVal.valueMap[onePrice.first] = ReserveToNativeRaw(SATOSHIDEN - extraFeeAmount, onePrice.second);
+        }
+    }
+    else
+    {
+        retVal.valueMap[GetID()] = NativeToReserveRaw(SATOSHIDEN - extraFeeAmount, currencyMap.valueMap[targetCurrencyID]);
+        extraFeeAmount <<= 1;
+
+        for (auto &oneCur : currencies)
+        {
+            // reserve to reserve in reverse
+            if (oneCur == targetCurrencyID)
+            {
+                retVal.valueMap[oneCur] = SATOSHIDEN - extraFeeAmount;
+            }
+            else
+            {
+                CAmount firstVal = NativeToReserveRaw(SATOSHIDEN - extraFeeAmount, currencyViaMap.valueMap[targetCurrencyID]);
 
                 retVal.valueMap[oneCur] = ReserveToNativeRaw(
                     NativeToReserveRaw(SATOSHIDEN - extraFeeAmount, currencyMap.valueMap[targetCurrencyID]),

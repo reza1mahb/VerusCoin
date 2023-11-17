@@ -564,6 +564,7 @@ public:
     std::vector<unsigned char> verifyProof(uint256& rootHash,std::vector<unsigned char> key,std::vector<std::vector<unsigned char>>& proof);
     uint256 verifyStorageProof(uint256 hash, bool optimizedProof);
     bool verifyStorageValue(std::vector<unsigned char> testStorageValue);
+    bool CheckStorageKeyHash(uint32_t height) const; 
 
     ADD_SERIALIZE_METHODS;
     
@@ -874,6 +875,7 @@ public:
     }
     uint256 CheckProof(uint256 checkHash, bool optimized=true) const;
     uint160 GetNativeAddress() const;
+    bool CheckStorageKey(uint32_t height) const;
     UniValue ToUniValue() const;
 };
 

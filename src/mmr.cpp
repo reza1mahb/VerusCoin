@@ -211,6 +211,25 @@ uint160 CMMRProof::GetNativeAddress() const
     return retAddress;
 }
 
+bool CMMRProof::CheckStorageKey(uint32_t height) const
+{
+    for (auto &pProof : proofSequence)
+    {
+        switch(pProof->branchType)
+        {
+            case CMerkleBranchBase::BRANCH_ETH:
+            {
+                return ((CETHPATRICIABranch *)pProof)->CheckStorageKeyHash(height);
+            }
+            default:
+            {
+                return false;
+            }
+        }
+    }
+    return false;
+}
+
 uint256 CMMRProof::CheckProof(uint256 hash, bool optimized) const
 {
     for (auto &pProof : proofSequence)

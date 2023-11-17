@@ -497,6 +497,20 @@ uint256 CETHPATRICIABranch::verifyStorageProof(uint256 ccExporthash, bool optimi
 }
 
 template<>
+bool CETHPATRICIABranch::CheckStorageKeyHash(uint32_t mapIndex) const{
+
+    CKeccack256Writer keyhw;
+    arith_uint256 num256(mapIndex);
+    uint256 tmp = ArithToUint256(num256);
+    std::vector<unsigned char> mapIndex_vec(tmp.begin(), tmp.end());
+    std::reverse(mapIndex_vec.begin(), mapIndex_vec.end());
+    std::vector<unsigned char> additional(32, 0); 
+    mapIndex_vec.insert(mapIndex_vec.end(), additional.begin(), additional.end());
+    keyhw.write((const char *)mapIndex_vec.data(), mapIndex_vec.size());
+    return keyhw.GetHash() == storageProofKey;
+}
+
+template<>
 uint256 CETHPATRICIABranch::SafeCheck(uint256 hash, bool optimizedProof) 
 {
     return verifyStorageProof(hash, optimizedProof);
