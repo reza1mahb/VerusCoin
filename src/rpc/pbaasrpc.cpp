@@ -14717,7 +14717,9 @@ bool CConnectedChains::GetNotaryCurrencies(const CRPCChainData notaryChain,
 
         // get launch notarization from notary chain if on the notary chain or pre-block 1, and from block 1 if on
         // the PBaaS chain after it has been confirmed
-        if ((oneDef.IsPBaaSChain() || oneDef.IsGatewayConverter()) && oneDef.launchSystemID == notaryChain.GetID())
+        if ((oneDef.IsPBaaSChain() || oneDef.IsGatewayConverter()) &&
+            oneDef.systemID == ASSETCHAINS_CHAINID &&
+            oneDef.launchSystemID == notaryChain.GetID())
         {
             if (notaryChain.GetID() == ASSETCHAINS_CHAINID || chainActive.Height() > 0)
             {
