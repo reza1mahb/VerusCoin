@@ -5841,7 +5841,7 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
         CCoinbaseCurrencyState oneState = ConnectedChains.GetCurrencyState(pbn.currencyID, chainActive.Height(), true);
         if (!(oneState.IsValid() && oneState.IsLaunchConfirmed() && oneState.IsLaunchCompleteMarker()))
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot use pre-launch or refunded currency " + EncodeDestination(CIdentityID(toCurID)));
+            continue;
         }
         converterCurrencyOptions[pbn.currencyID] = {oneCur, oneState, std::map<uint160, CAmount>()};
     }
