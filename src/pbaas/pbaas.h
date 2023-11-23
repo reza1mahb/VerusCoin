@@ -1216,6 +1216,9 @@ public:
     bool CheckClearConvert(uint32_t height) const;
     uint32_t StrictCheckIDExportHeight(bool getVerusHeight) const;
     bool StrictCheckIDExport(uint32_t height) const;
+    uint32_t DiscernBlockOneLaunchInfoHeight(bool getVerusHeight) const;
+    bool DiscernBlockOneLaunchInfo(uint32_t height) const;
+
 
     std::vector<CCurrencyDefinition> GetMergeMinedChains()
     {

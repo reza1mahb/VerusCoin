@@ -5841,7 +5841,7 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
         CCoinbaseCurrencyState oneState = ConnectedChains.GetCurrencyState(pbn.currencyID, chainActive.Height(), true);
         if (!(oneState.IsValid() && oneState.IsLaunchConfirmed() && oneState.IsLaunchCompleteMarker()))
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot use pre-launch or refunded currency " + EncodeDestination(CIdentityID(toCurID)));
+            continue;
         }
         converterCurrencyOptions[pbn.currencyID] = {oneCur, oneState, std::map<uint160, CAmount>()};
     }
@@ -14717,7 +14717,11 @@ bool CConnectedChains::GetNotaryCurrencies(const CRPCChainData notaryChain,
 
         // get launch notarization from notary chain if on the notary chain or pre-block 1, and from block 1 if on
         // the PBaaS chain after it has been confirmed
-        if ((oneDef.IsPBaaSChain() || oneDef.IsGatewayConverter()) && oneDef.launchSystemID == notaryChain.GetID())
+        if ((oneDef.IsPBaaSChain() || oneDef.IsGatewayConverter()) &&
+            (!ConnectedChains.DiscernBlockOneLaunchInfo(chainActive.Height()) ||
+             (notaryChain.GetID() != ASSETCHAINS_CHAINID && oneDef.systemID == ASSETCHAINS_CHAINID) ||
+             (notaryChain.GetID() == ASSETCHAINS_CHAINID && oneDef.systemID != ASSETCHAINS_CHAINID)) &&
+            oneDef.launchSystemID == notaryChain.GetID())
         {
             if (notaryChain.GetID() == ASSETCHAINS_CHAINID || chainActive.Height() > 0)
             {

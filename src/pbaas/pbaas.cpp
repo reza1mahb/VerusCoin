@@ -6473,6 +6473,17 @@ bool CConnectedChains::StrictCheckIDExport(uint32_t height) const
     }
 }
 
+uint32_t CConnectedChains::DiscernBlockOneLaunchInfoHeight(bool getVerusHeight) const
+{
+    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 302170 : 2824790) : 0;
+}
+
+bool CConnectedChains::DiscernBlockOneLaunchInfo(uint32_t height) const
+{
+    height = std::min(((uint32_t)chainActive.Height()), height);
+    return height >= DiscernBlockOneLaunchInfoHeight(false);
+}
+
 bool CConnectedChains::CheckClearConvert(uint32_t height) const
 {
     return (PBAAS_TESTMODE && chainActive.Height() >= (height - 1) && chainActive[height - 1]->nTime >= PBAAS_TESTFORK5_TIME) ||

@@ -1110,7 +1110,7 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
 
                 CTxDestination preallocDest = DecodeDestination(preallocationKey[0]);
 
-                if (preallocDest.which() != COptCCParams::ADDRTYPE_ID && preallocDest.which() != COptCCParams::ADDRTYPE_INVALID)
+                if (preallocDest.which() != COptCCParams::ADDRTYPE_ID && (preallocationArr.size() == 1 && preallocDest.which() != COptCCParams::ADDRTYPE_INVALID))
                 {
                     LogPrintf("%s: preallocation destination must be an identity\n", __func__);
                     nVersion = PBAAS_VERSION_INVALID;
