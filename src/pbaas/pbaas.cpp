@@ -6475,7 +6475,7 @@ bool CConnectedChains::StrictCheckIDExport(uint32_t height) const
 
 uint32_t CConnectedChains::DiscernBlockOneLaunchInfoHeight(bool getVerusHeight) const
 {
-    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 2821700 : 298700) : 0;
+    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 298700 : 2821700) : 0;
 }
 
 bool CConnectedChains::DiscernBlockOneLaunchInfo(uint32_t height) const
