@@ -2214,26 +2214,25 @@ UniValue getpendingtransfers(const UniValue& params, bool fHelp)
 
     if (GetCurrencyDefinition(chainID, chainDef, &defHeight))
     {
-        // look for new exports
-        multimap<uint160, ChainTransferData> inputDescriptors;
+        std::vector<ChainTransferData> unspentOutputs;
 
-        if (GetUnspentChainTransfers(inputDescriptors, chainID))
+        if (GetUnspentChainTransfers(unspentOutputs, chainID))
         {
             UniValue ret(UniValue::VARR);
 
-            for (auto &desc : inputDescriptors)
+            for (auto &desc : unspentOutputs)
             {
                 UniValue oneExport(UniValue::VOBJ);
-                uint32_t inpHeight = std::get<0>(desc.second);
-                CInputDescriptor inpDesc = std::get<1>(desc.second);
-
-                oneExport.push_back(Pair("currencyid", EncodeDestination(CIdentityID(desc.first))));
-                oneExport.push_back(Pair("height", (int64_t)inpHeight));
-                oneExport.push_back(Pair("txid", inpDesc.txIn.prevout.hash.GetHex()));
-                oneExport.push_back(Pair("n", (int32_t)inpDesc.txIn.prevout.n));
-                oneExport.push_back(Pair("valueout", inpDesc.nValue));
-                oneExport.push_back(Pair("reservetransfer", std::get<2>(desc.second).ToUniValue()));
-                ret.push_back(oneExport);
+                if (std::get<2>(desc).IsValid())
+                {
+                    oneExport.push_back(Pair("currencyid", EncodeDestination(CIdentityID(chainID))));
+                    oneExport.push_back(Pair("height", (int64_t)std::get<0>(desc)));
+                    oneExport.push_back(Pair("txid", std::get<1>(desc).txIn.prevout.hash.GetHex()));
+                    oneExport.push_back(Pair("n", (int32_t)std::get<1>(desc).txIn.prevout.n));
+                    oneExport.push_back(Pair("valueout", std::get<1>(desc).nValue));
+                    oneExport.push_back(Pair("reservetransfer", std::get<2>(desc).ToUniValue()));
+                    ret.push_back(oneExport);
+                }
             }
             if (ret.size())
             {
@@ -3372,6 +3371,67 @@ bool GetUnspentChainTransfers(std::multimap<uint160, ChainTransferData> &inputDe
             else
             {
                 LogPrint("crosschainexports", "%s: cannot retrieve transaction %s from height %u\n", __func__, it->first.txhash.GetHex().c_str(), it->second.blockHeight);
+            }
+        }
+        return true;
+    }
+}
+
+// returns all unspent chain transfer outputs, * including from the mempool *
+bool GetUnspentChainTransfers(std::vector<ChainTransferData> &inputDescriptors, uint160 chainID)
+{
+    std::vector<std::pair<CInputDescriptor, uint32_t>> unspentOutputs;
+
+    LOCK(cs_main);
+    LOCK2(smartTransactionCS, mempool.cs);
+
+    if (!ConnectedChains.GetUnspentByIndex(CReserveTransfer::ReserveTransferKey(), unspentOutputs))
+    {
+        return false;
+    }
+    else
+    {
+        CCoins coins;
+        CCoinsView dummy;
+        CCoinsViewCache view(&dummy);
+
+        CCoinsViewMemPool viewMemPool(pcoinsTip, mempool);
+        view.SetBackend(viewMemPool);
+
+        for (auto it = unspentOutputs.begin(); it != unspentOutputs.end(); it++)
+        {
+            CCoins coins;
+
+            if (view.GetCoins(it->first.txIn.prevout.hash, coins))
+            {
+                if (coins.IsAvailable(it->first.txIn.prevout.n))
+                {
+                    // if this is a transfer output, optionally to this chain, add it to the input vector
+                    // chain filter was applied in index search
+                    COptCCParams p;
+                    COptCCParams m;
+                    CReserveTransfer rt;
+                    uint160 destCID;
+                    if (coins.vout[it->first.txIn.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
+                        p.evalCode == EVAL_RESERVE_TRANSFER &&
+                        p.vData.size() &&
+                        p.version >= p.VERSION_V3 &&
+                        (m = COptCCParams(p.vData.back())).IsValid() &&
+                        (rt = CReserveTransfer(p.vData[0])).IsValid() &&
+                        !(destCID = rt.GetImportCurrency()).IsNull() &&
+                        destCID == chainID)
+                    {
+                        inputDescriptors.push_back(ChainTransferData(it->second,
+                                                                     CInputDescriptor(coins.vout[it->first.txIn.prevout.n].scriptPubKey,
+                                                                                      coins.vout[it->first.txIn.prevout.n].nValue,
+                                                                                      CTxIn(COutPoint(it->first.txIn.prevout.hash, it->first.txIn.prevout.n))),
+                                                                     rt));
+                    }
+                }
+            }
+            else
+            {
+                LogPrint("crosschainexports", "%s: cannot retrieve transaction %s from height %u\n", __func__, it->first.txIn.prevout.hash.GetHex().c_str(), coins.nHeight);
             }
         }
         return true;

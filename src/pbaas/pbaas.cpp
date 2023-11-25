@@ -3658,7 +3658,7 @@ CCurrencyDefinition::CCurrencyDefinition(const CScript &scriptPubKey)
     COptCCParams p;
     if (scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid())
     {
-        if (p.evalCode == EVAL_CURRENCY_DEFINITION)
+        if (p.evalCode == EVAL_CURRENCY_DEFINITION && p.vData.size())
         {
             FromVector(p.vData[0], *this);
         }
@@ -6692,7 +6692,7 @@ CCoinbaseCurrencyState CConnectedChains::AddPendingConversions(CCurrencyDefiniti
     // get chain transfers that should apply before the start block
     // until there is a post-start block notarization, we always consider the
     // currency state to be up to just before the start block
-    std::multimap<uint160, ChainTransferData> unspentTransfers;
+    std::vector<ChainTransferData> unspentTransfers;
     std::map<uint160, int32_t> currencyIndexes = currencyState.GetReserveMap();
 
     if (GetUnspentChainTransfers(unspentTransfers, curDef.GetID()) &&
@@ -6701,10 +6701,7 @@ CCoinbaseCurrencyState CConnectedChains::AddPendingConversions(CCurrencyDefiniti
         std::vector<CReserveTransfer> transfers = extraConversions;
         for (auto &oneTransfer : unspentTransfers)
         {
-            if (std::get<0>(oneTransfer.second) < curDef.startBlock)
-            {
-                transfers.push_back(std::get<2>(oneTransfer.second));
-            }
+            transfers.push_back(std::get<2>(oneTransfer));
         }
         uint256 transferHash;
         CPBaaSNotarization newNotarization;

@@ -204,6 +204,7 @@ public:
     CReserveTransfer() : CTokenOutput(), flags(0), nFees(0) { }
 
     CReserveTransfer(const UniValue &uni);
+    CReserveTransfer(const CScript &script);
 
     CReserveTransfer(const std::vector<unsigned char> &asVector)
     {
