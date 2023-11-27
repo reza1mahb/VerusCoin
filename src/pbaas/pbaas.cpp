@@ -3658,7 +3658,7 @@ CCurrencyDefinition::CCurrencyDefinition(const CScript &scriptPubKey)
     COptCCParams p;
     if (scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid())
     {
-        if (p.evalCode == EVAL_CURRENCY_DEFINITION)
+        if (p.evalCode == EVAL_CURRENCY_DEFINITION && p.vData.size())
         {
             FromVector(p.vData[0], *this);
         }
@@ -4579,7 +4579,8 @@ bool IsValidExportCurrency(const CCurrencyDefinition &systemDest, const uint160 
             return true;
         }
 
-        uint160 converterID = (!IsVerusActive && ConnectedChains.FirstNotaryChain().GetID() == sysID) ? ConnectedChains.ThisChain().GatewayConverterID() : systemDest.GatewayConverterID();
+        int64_t thresholdTime = (height > 1 && chainActive.Height() >= height) ? chainActive[height]->nTime : chainActive.LastTip()->nTime;
+        uint160 converterID = ((!IsVerusActive() && thresholdTime > PBAAS_TESTFORK9_TIME) && ConnectedChains.FirstNotaryChain().GetID() == sysID) ? ConnectedChains.ThisChain().GatewayConverterID() : systemDest.GatewayConverterID();
         if (!converterID.IsNull())
         {
             CCurrencyDefinition converter = ConnectedChains.GetCachedCurrency(converterID);
@@ -6692,7 +6693,7 @@ CCoinbaseCurrencyState CConnectedChains::AddPendingConversions(CCurrencyDefiniti
     // get chain transfers that should apply before the start block
     // until there is a post-start block notarization, we always consider the
     // currency state to be up to just before the start block
-    std::multimap<uint160, ChainTransferData> unspentTransfers;
+    std::vector<ChainTransferData> unspentTransfers;
     std::map<uint160, int32_t> currencyIndexes = currencyState.GetReserveMap();
 
     if (GetUnspentChainTransfers(unspentTransfers, curDef.GetID()) &&
@@ -6701,10 +6702,7 @@ CCoinbaseCurrencyState CConnectedChains::AddPendingConversions(CCurrencyDefiniti
         std::vector<CReserveTransfer> transfers = extraConversions;
         for (auto &oneTransfer : unspentTransfers)
         {
-            if (std::get<0>(oneTransfer.second) < curDef.startBlock)
-            {
-                transfers.push_back(std::get<2>(oneTransfer.second));
-            }
+            transfers.push_back(std::get<2>(oneTransfer));
         }
         uint256 transferHash;
         CPBaaSNotarization newNotarization;

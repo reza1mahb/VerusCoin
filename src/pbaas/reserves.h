@@ -49,6 +49,7 @@ extern uint32_t PBAAS_TESTFORK5_TIME;
 extern uint32_t PBAAS_TESTFORK6_TIME;
 extern uint32_t PBAAS_TESTFORK7_TIME;
 extern uint32_t PBAAS_TESTFORK8_TIME;
+extern uint32_t PBAAS_TESTFORK9_TIME;
 extern uint32_t PBAAS_MAINDEFI3_HEIGHT;
 extern uint32_t PBAAS_CLEARCONVERT_HEIGHT;
 extern uint32_t PBAAS_LASTKNOWNCLEARORACLE_HEIGHT;
@@ -204,6 +205,7 @@ public:
     CReserveTransfer() : CTokenOutput(), flags(0), nFees(0) { }
 
     CReserveTransfer(const UniValue &uni);
+    CReserveTransfer(const CScript &script);
 
     CReserveTransfer(const std::vector<unsigned char> &asVector)
     {

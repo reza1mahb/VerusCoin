@@ -812,6 +812,18 @@ CReserveTransfer::CReserveTransfer(const UniValue &uni) : CTokenOutput(uni), nFe
     destination = CTransferDestination(find_value(uni, "destination"));
 }
 
+CReserveTransfer::CReserveTransfer(const CScript &script) : flags(0)
+{
+    COptCCParams p;
+    if (script.IsPayToCryptoCondition(p) && p.IsValid())
+    {
+        if (p.evalCode == EVAL_RESERVE_TRANSFER && p.vData.size())
+        {
+            FromVector(p.vData[0], *this);
+        }
+    }
+}
+
 CPrincipal::CPrincipal(const UniValue &uni)
 {
     nVersion = uni_get_int(find_value(uni, "version"), VERSION_VAULT);
