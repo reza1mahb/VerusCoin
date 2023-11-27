@@ -4579,7 +4579,8 @@ bool IsValidExportCurrency(const CCurrencyDefinition &systemDest, const uint160 
             return true;
         }
 
-        uint160 converterID = (!IsVerusActive && ConnectedChains.FirstNotaryChain().GetID() == sysID) ? ConnectedChains.ThisChain().GatewayConverterID() : systemDest.GatewayConverterID();
+        int64_t thresholdTime = (height > 1 && chainActive.Height() >= height) ? chainActive[height]->nTime : chainActive.LastTip()->nTime;
+        uint160 converterID = ((!IsVerusActive() && thresholdTime > PBAAS_TESTFORK9_TIME) && ConnectedChains.FirstNotaryChain().GetID() == sysID) ? ConnectedChains.ThisChain().GatewayConverterID() : systemDest.GatewayConverterID();
         if (!converterID.IsNull())
         {
             CCurrencyDefinition converter = ConnectedChains.GetCachedCurrency(converterID);
