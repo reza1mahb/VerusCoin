@@ -5601,8 +5601,8 @@ CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
             return 0;
         }
 
-        auto secondPrices = cbState.TargetConversionPrices(destID, CCurrencyValueMap(newState.currencies, newState.conversionPrice), CCurrencyValueMap(newState.currencies, newState.viaConversionPrice));
-        auto reversePrices = cbState.TargetConversionPricesReverse(destID, CCurrencyValueMap(newState.currencies, newState.conversionPrice), CCurrencyValueMap(newState.currencies, newState.viaConversionPrice));
+        auto secondPrices = newState.TargetConversionPrices(destID, CCurrencyValueMap(newState.currencies, newState.conversionPrice), CCurrencyValueMap(newState.currencies, newState.viaConversionPrice));
+        auto reversePrices = newState.TargetConversionPricesReverse(destID, CCurrencyValueMap(newState.currencies, newState.conversionPrice), CCurrencyValueMap(newState.currencies, newState.viaConversionPrice));
 
         // get slippage
         int64_t secondPrice(secondPrices.valueMap[sourceID]);
@@ -5635,15 +5635,30 @@ CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
         {
             conversionFee = conversionFee << 1;
         }
-        CAmount destCurAmount = newState.ReserveToNativeRaw(startingInput - conversionFee, secondPrice);
+
+        CAmount destCurAmount;
+
+        if (exportObjects.back().IsImportToSource())
+        {
+            destCurAmount = newState.NativeToReserveRaw(startingInput - conversionFee, newState.conversionPrice[newState.GetReserveMap()[destID]]);
+        }
+        else
+        {
+            destCurAmount = newState.ReserveToNativeRaw(startingInput - conversionFee, newState.conversionPrice[newState.GetReserveMap()[sourceID]]);
+            if (exportObjects.back().IsReserveToReserve())
+            {
+                destCurAmount = newState.NativeToReserveRaw(destCurAmount, newState.viaConversionPrice[newState.GetReserveMap()[destID]]);
+            }
+        }
+
         nextError = destAmount - destCurAmount;
 
         // if we have an error and it hasn't changed, we need to increment input by
         // one satoshi, as it's getting truncated away
         if (nextError > 0)
         {
-            nextError = cbState.ReserveToNativeRaw(nextError, reversePrices.valueMap[sourceID]);
-            if (nextError == lastError)
+            nextError = newState.ReserveToNativeRaw(nextError, reversePrices.valueMap[sourceID]);
+            if (!nextError || nextError == lastError)
             {
                 nextError++;
             }
@@ -6256,12 +6271,14 @@ UniValue estimateconversion(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_TRANSACTION_ERROR, "Cannot process conversion parameters for " + pFractionalCurrency->name);
     }
 
-    CAmount startingAmount = sourceAmount - CReserveTransactionDescriptor::CalculateConversionFeeNoMin(sourceAmount);
-    if (secondCurrencyID == pFractionalCurrency->GetID())
+    CAmount conversionFee = CReserveTransactionDescriptor::CalculateConversionFeeNoMin(sourceAmount);
+    if (reserveToReserve)
     {
-        startingAmount = startingAmount - CReserveTransactionDescriptor::CalculateConversionFeeNoMin(sourceAmount);
+        conversionFee = conversionFee << 1;
     }
+    CAmount startingAmount = sourceAmount - conversionFee;
     CAmount amountOut = 0;
+
     if (checkTransfer.IsImportToSource())
     {
         amountOut = currencyState.NativeToReserveRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[convertToCurrencyID]]);

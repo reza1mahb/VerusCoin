@@ -6696,8 +6696,7 @@ CCoinbaseCurrencyState CConnectedChains::AddPendingConversions(CCurrencyDefiniti
     std::vector<ChainTransferData> unspentTransfers;
     std::map<uint160, int32_t> currencyIndexes = currencyState.GetReserveMap();
 
-    if (GetUnspentChainTransfers(unspentTransfers, curDef.GetID()) &&
-        (unspentTransfers.size() || extraConversions.size()))
+    if ((GetUnspentChainTransfers(unspentTransfers, curDef.GetID()) && unspentTransfers.size()) || extraConversions.size())
     {
         std::vector<CReserveTransfer> transfers = extraConversions;
         for (auto &oneTransfer : unspentTransfers)
