@@ -5525,7 +5525,8 @@ CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
                         DestinationToTransferDestination(CIdentityID(ASSETCHAINS_CHAINID)));
 
     auto curMap = cbState.GetReserveMap();
-    auto firstPrices = cbState.TargetConversionPricesReverse(destID, true);
+    auto firstPrices = cbState.TargetConversionPrices(destID);
+    auto reversePrices = cbState.TargetConversionPricesReverse(destID, true);
 
     // reverse our way to an estimated source,
     // which in almost all cases will be an incorrect starting point, but a starting point
@@ -5557,7 +5558,7 @@ CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
         rt.destCurrencyID = cbState.GetID();
         rt.secondReserveID = destID;
     }
-    rt.reserveValues.valueMap[sourceID] = cbState.ReserveToNativeRaw(destAmount, firstPrices.valueMap[sourceID]);
+    rt.reserveValues.valueMap[sourceID] = cbState.ReserveToNativeRaw(destAmount, reversePrices.valueMap[sourceID]);
 
     std::vector<CReserveTransfer> exportObjects({rt});
     CAmount errorCorrection = 0;
@@ -5600,7 +5601,8 @@ CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
             return 0;
         }
 
-        auto secondPrices = cbState.TargetConversionPricesReverse(destID, CCurrencyValueMap(cbState.currencies, cbState.conversionPrice), CCurrencyValueMap(cbState.currencies, cbState.viaConversionPrice), true);
+        auto secondPrices = cbState.TargetConversionPrices(destID, CCurrencyValueMap(newState.currencies, newState.conversionPrice), CCurrencyValueMap(newState.currencies, newState.viaConversionPrice));
+        auto reversePrices = cbState.TargetConversionPricesReverse(destID, CCurrencyValueMap(newState.currencies, newState.conversionPrice), CCurrencyValueMap(newState.currencies, newState.viaConversionPrice), true);
 
         // get slippage
         int64_t secondPrice(secondPrices.valueMap[sourceID]);
@@ -5627,15 +5629,21 @@ CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
 
         // figure out how much was output in the destination currency, add an error, and loop if error is lower than last
         // get destination currency from the output
-        CAmount destCurAmount = destID == ASSETCHAINS_CHAINID ? vOutputs[0].nValue : vOutputs[0].ReserveOutValue().valueMap[destID];
-        
+        CAmount startingInput = exportObjects.back().reserveValues.valueMap[sourceID];
+        CAmount conversionFee = rtxd.CalculateConversionFeeNoMin(startingInput);
+        if (rt.IsReserveToReserve())
+        {
+            conversionFee <<= 1;
+        }
+        CAmount destCurAmount = newState.ReserveToNativeRaw(startingInput - conversionFee, secondPrice);
+
         nextError = destAmount - destCurAmount;
         // if we have an error and it hasn't changed, we need to increment input by
         // one satoshi, as it's getting truncated away
         if (nextError > 0)
         {
             CAmount bias = 0;
-            nextError = cbState.ReserveToNativeRaw(nextError, secondPrices.valueMap[sourceID]);
+            nextError = cbState.ReserveToNativeRaw(nextError, reversePrices.valueMap[sourceID]);
             if (nextError == lastError)
             {
                 nextError++;
@@ -5652,8 +5660,8 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
     {
         throw runtime_error(
             "getcurrencyconverters \"currency1\" \"currency2\" ... |\n"
-            "                      {\"convertto\":\"currencynameorid\",\"fromcurrency\":\"sourcecurrency\" | [{\"currency\":\"sourcecurrency1\", \"targetprice\":n}, ...],\n"
-            "                       \"amount\":n, \"slippage\":0.01 (=1 percent slippage)}\n"
+            "                      '{\"convertto\":\"currencynameorid\",\"fromcurrency\":\"sourcecurrency\" | [{\"currency\":\"sourcecurrency1\", \"targetprice\":n}, ...],\n"
+            "                       \"amount\":n, \"slippage\":0.01 (=1 percent slippage)}'\n"
             "\nRetrieves all currencies that will generally satisfy the request at or better than target price without other traffic and have all listed currencies as reserves\n"
             "\nArguments\n"
             "       \"currencyname\"                    : \"string\" ...  (string(s), one or more) all selected currencies are returned with their current state\n"
@@ -5989,12 +5997,12 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
         oneCurrency.push_back(Pair("lastnotarization", std::get<2>(lastNotarization).ToUniValue()));
         if (amountTarget)
         {
-            oneCurrency.push_back(Pair("targetamount", amountTarget));
+            oneCurrency.push_back(Pair("targetamount", ValueFromAmount(amountTarget)));
             UniValue sourceAmounts(UniValue::VOBJ);
             // if we have conversion sources and amounts, add them
             for (auto &oneConversion : std::get<2>(oneConverter.second))
             {
-                sourceAmounts.pushKV(EncodeDestination(CIdentityID(oneConversion.first)), oneConversion.second);
+                sourceAmounts.pushKV(EncodeDestination(CIdentityID(oneConversion.first)), ValueFromAmount(oneConversion.second));
             }
             if (sourceAmounts.size())
             {
