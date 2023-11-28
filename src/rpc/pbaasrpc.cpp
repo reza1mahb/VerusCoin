@@ -5526,7 +5526,7 @@ CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
 
     auto curMap = cbState.GetReserveMap();
     auto firstPrices = cbState.TargetConversionPrices(destID);
-    auto reversePrices = cbState.TargetConversionPricesReverse(destID, true);
+    auto reversePrices = cbState.TargetConversionPricesReverse(destID);
 
     // reverse our way to an estimated source,
     // which in almost all cases will be an incorrect starting point, but a starting point
@@ -5602,7 +5602,7 @@ CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
         }
 
         auto secondPrices = cbState.TargetConversionPrices(destID, CCurrencyValueMap(newState.currencies, newState.conversionPrice), CCurrencyValueMap(newState.currencies, newState.viaConversionPrice));
-        auto reversePrices = cbState.TargetConversionPricesReverse(destID, CCurrencyValueMap(newState.currencies, newState.conversionPrice), CCurrencyValueMap(newState.currencies, newState.viaConversionPrice), true);
+        auto reversePrices = cbState.TargetConversionPricesReverse(destID, CCurrencyValueMap(newState.currencies, newState.conversionPrice), CCurrencyValueMap(newState.currencies, newState.viaConversionPrice));
 
         // get slippage
         int64_t secondPrice(secondPrices.valueMap[sourceID]);
@@ -5631,23 +5631,23 @@ CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
         // get destination currency from the output
         CAmount startingInput = exportObjects.back().reserveValues.valueMap[sourceID];
         CAmount conversionFee = rtxd.CalculateConversionFeeNoMin(startingInput);
-        if (rt.IsReserveToReserve())
+        if (exportObjects.back().IsReserveToReserve())
         {
-            conversionFee <<= 1;
+            conversionFee = conversionFee << 1;
         }
         CAmount destCurAmount = newState.ReserveToNativeRaw(startingInput - conversionFee, secondPrice);
-
         nextError = destAmount - destCurAmount;
+
         // if we have an error and it hasn't changed, we need to increment input by
         // one satoshi, as it's getting truncated away
         if (nextError > 0)
         {
-            CAmount bias = 0;
             nextError = cbState.ReserveToNativeRaw(nextError, reversePrices.valueMap[sourceID]);
             if (nextError == lastError)
             {
                 nextError++;
             }
+            lastError = nextError;
         }
     } while (nextError > 0);
 
@@ -5671,7 +5671,7 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
             "           \"fromcurrency\":\"sourcecurrency\" | [...] \"string\" | object array ... (string(s), one or more) currencies to convert from\n"
             "           \"targetprice\":n | [n,...]                 \"number(s)\" ...       (number(s), one or more) target price within slippage required\n"
             "           \"amount\":n                                \"number\"              (number) amount of tocurrency needed\n"
-            "           \"slippage\":n                              \"number\"              (number) max slippage with no other conversions 100,000,000 == 100%\n"
+            "           \"slippage\":n                              \"number\"              (number) max slippage with no other conversions max is 50000000 == 50%\n"
             "       }\n"
 
             "\nResult:\n"
@@ -5707,6 +5707,7 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
 
         amountTarget = AmountFromValueNoErr(find_value(firstParam, "amount"));
         slippageTarget = AmountFromValueNoErr(find_value(firstParam, "slippage"));
+        slippageTarget = std::max((int64_t)0, std::min((int64_t)50000000, slippageTarget));
 
         if (toCurID.IsNull())
         {
