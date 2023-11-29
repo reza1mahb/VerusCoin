@@ -5713,6 +5713,8 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
     UniValue firstParam;
     firstParam.read(uni_get_str(params[0]));
 
+    bool checkIntersect = false;
+
     // if we have object parameters, process them
     if (firstParam.isObject() &&
         !(toCurrency = uni_get_str(find_value(firstParam, "convertto"))).empty())
@@ -5785,6 +5787,7 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
     }
     else
     {
+        checkIntersect = true;
         LOCK(cs_main);
         toCurrency = uni_get_str(params[0]);
         toCurID = ValidateCurrencyName(toCurrency, true, &toCurrencyDef);
@@ -5825,13 +5828,31 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Cannot read currency notarization in transaction " + activeFractionals[i].first.txhash.GetHex());
             }
             auto curMap = pbn.currencyState.GetReserveMap();
-            for (auto it = resIt; it != reserves.end(); it++)
+            if (checkIntersect)
             {
-                if (it->first != pbn.currencyState.GetID() &&
-                    !curMap.count(it->first))
+                for (auto it = resIt; it != reserves.end(); it++)
+                {
+                    if (it->first != pbn.currencyState.GetID() && !curMap.count(it->first))
+                    {
+                        toRemove.insert(i);
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                bool foundReserve = false;
+                for (auto it = resIt; it != reserves.end(); it++)
+                {
+                    if (it->first == pbn.currencyState.GetID() || curMap.count(it->first))
+                    {
+                        foundReserve = true;
+                        break;
+                    }
+                }
+                if (!foundReserve)
                 {
                     toRemove.insert(i);
-                    break;
                 }
             }
         }
@@ -5887,13 +5908,28 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
             bool addThis = curMap.count(toCurID);
             if (addThis)
             {
-                for (auto oneReserve : reserves)
+                if (checkIntersect)
                 {
-                    if (oneReserve.first != toCurID &&
-                        !curMap.count(oneReserve.first))
+                    for (auto oneReserve : reserves)
                     {
-                        addThis = false;
-                        break;
+                        if (oneReserve.first != toCurID &&
+                            !curMap.count(oneReserve.first))
+                        {
+                            addThis = false;
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    addThis = false;
+                    for (auto oneReserve : reserves)
+                    {
+                        if (oneReserve.first == toCurID || curMap.count(oneReserve.first))
+                        {
+                            addThis = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -5939,10 +5975,9 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
         {
             auto curMap = std::get<0>((oneConverter.second)).GetCurrenciesMap();
 
-            // loop through reserves, and if it can't satisfy the requirements of all reserves, remove it
             for (auto &oneReserve : reserves)
             {
-                if (!(slippageTarget && amountTarget))
+                if (!(slippageTarget || amountTarget))
                 {
                     if (std::get<1>((oneConverter.second)).reserves[curMap[ASSETCHAINS_CHAINID]] < 100000000000)
                     {
@@ -5973,14 +6008,10 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
                     {
                         std::get<2>(oneConverter.second)[oneReserve.first] = necessaryAmount;
                     }
-                    else
-                    {
-                        removeIDs.insert(oneConverter.first);
-                    }
                 }
             }
             // if we have no valid convert ability to meet targets and have not removed already, remove converter
-            if (slippageTarget && amountTarget && !std::get<2>(oneConverter.second).size())
+            if ((slippageTarget || amountTarget) && !std::get<2>(oneConverter.second).size())
             {
                 removeIDs.insert(oneConverter.first);
             }
