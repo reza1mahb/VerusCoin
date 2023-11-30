@@ -5525,7 +5525,8 @@ CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
                         DestinationToTransferDestination(CIdentityID(ASSETCHAINS_CHAINID)));
 
     auto curMap = cbState.GetReserveMap();
-    auto firstPrices = cbState.TargetConversionPricesReverse(destID, true);
+    auto firstPrices = cbState.TargetConversionPrices(destID);
+    auto reversePrices = cbState.TargetConversionPricesReverse(destID);
 
     // reverse our way to an estimated source,
     // which in almost all cases will be an incorrect starting point, but a starting point
@@ -5557,7 +5558,7 @@ CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
         rt.destCurrencyID = cbState.GetID();
         rt.secondReserveID = destID;
     }
-    rt.reserveValues.valueMap[sourceID] = cbState.ReserveToNativeRaw(destAmount, firstPrices.valueMap[sourceID]);
+    rt.reserveValues.valueMap[sourceID] = cbState.ReserveToNativeRaw(destAmount, reversePrices.valueMap[sourceID]);
 
     std::vector<CReserveTransfer> exportObjects({rt});
     CAmount errorCorrection = 0;
@@ -5600,7 +5601,8 @@ CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
             return 0;
         }
 
-        auto secondPrices = cbState.TargetConversionPricesReverse(destID, CCurrencyValueMap(cbState.currencies, cbState.conversionPrice), CCurrencyValueMap(cbState.currencies, cbState.viaConversionPrice), true);
+        auto secondPrices = newState.TargetConversionPrices(destID, CCurrencyValueMap(newState.currencies, newState.conversionPrice), CCurrencyValueMap(newState.currencies, newState.viaConversionPrice));
+        auto reversePrices = newState.TargetConversionPricesReverse(destID, CCurrencyValueMap(newState.currencies, newState.conversionPrice), CCurrencyValueMap(newState.currencies, newState.viaConversionPrice));
 
         // get slippage
         int64_t secondPrice(secondPrices.valueMap[sourceID]);
@@ -5627,19 +5629,40 @@ CAmount GetNecessaryAmountForConversion(const CCurrencyDefinition &destSystem,
 
         // figure out how much was output in the destination currency, add an error, and loop if error is lower than last
         // get destination currency from the output
-        CAmount destCurAmount = destID == ASSETCHAINS_CHAINID ? vOutputs[0].nValue : vOutputs[0].ReserveOutValue().valueMap[destID];
-        
+        CAmount startingInput = exportObjects.back().reserveValues.valueMap[sourceID];
+        CAmount conversionFee = rtxd.CalculateConversionFeeNoMin(startingInput);
+        if (exportObjects.back().IsReserveToReserve())
+        {
+            conversionFee = conversionFee << 1;
+        }
+
+        CAmount destCurAmount;
+
+        if (exportObjects.back().IsImportToSource())
+        {
+            destCurAmount = newState.NativeToReserveRaw(startingInput - conversionFee, newState.conversionPrice[newState.GetReserveMap()[destID]]);
+        }
+        else
+        {
+            destCurAmount = newState.ReserveToNativeRaw(startingInput - conversionFee, newState.conversionPrice[newState.GetReserveMap()[sourceID]]);
+            if (exportObjects.back().IsReserveToReserve())
+            {
+                destCurAmount = newState.NativeToReserveRaw(destCurAmount, newState.viaConversionPrice[newState.GetReserveMap()[destID]]);
+            }
+        }
+
         nextError = destAmount - destCurAmount;
+
         // if we have an error and it hasn't changed, we need to increment input by
         // one satoshi, as it's getting truncated away
         if (nextError > 0)
         {
-            CAmount bias = 0;
-            nextError = cbState.ReserveToNativeRaw(nextError, secondPrices.valueMap[sourceID]);
-            if (nextError == lastError)
+            nextError = newState.ReserveToNativeRaw(nextError, reversePrices.valueMap[sourceID]);
+            if (!nextError || nextError == lastError)
             {
                 nextError++;
             }
+            lastError = nextError;
         }
     } while (nextError > 0);
 
@@ -5652,8 +5675,8 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
     {
         throw runtime_error(
             "getcurrencyconverters \"currency1\" \"currency2\" ... |\n"
-            "                      {\"convertto\":\"currencynameorid\",\"fromcurrency\":\"sourcecurrency\" | [{\"currency\":\"sourcecurrency1\", \"targetprice\":n}, ...],\n"
-            "                       \"amount\":n, \"slippage\":0.01 (=1 percent slippage)}\n"
+            "                      '{\"convertto\":\"currencynameorid\",\"fromcurrency\":\"sourcecurrency\" | [{\"currency\":\"sourcecurrency1\", \"targetprice\":n}, ...],\n"
+            "                       \"amount\":n, \"slippage\":0.01 (=1 percent slippage)}'\n"
             "\nRetrieves all currencies that will generally satisfy the request at or better than target price without other traffic and have all listed currencies as reserves\n"
             "\nArguments\n"
             "       \"currencyname\"                    : \"string\" ...  (string(s), one or more) all selected currencies are returned with their current state\n"
@@ -5663,7 +5686,7 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
             "           \"fromcurrency\":\"sourcecurrency\" | [...] \"string\" | object array ... (string(s), one or more) currencies to convert from\n"
             "           \"targetprice\":n | [n,...]                 \"number(s)\" ...       (number(s), one or more) target price within slippage required\n"
             "           \"amount\":n                                \"number\"              (number) amount of tocurrency needed\n"
-            "           \"slippage\":n                              \"number\"              (number) max slippage with no other conversions 100,000,000 == 100%\n"
+            "           \"slippage\":n                              \"number\"              (number) max slippage with no other conversions max is 50000000 == 50%\n"
             "       }\n"
 
             "\nResult:\n"
@@ -5690,6 +5713,8 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
     UniValue firstParam;
     firstParam.read(uni_get_str(params[0]));
 
+    bool checkIntersect = false;
+
     // if we have object parameters, process them
     if (firstParam.isObject() &&
         !(toCurrency = uni_get_str(find_value(firstParam, "convertto"))).empty())
@@ -5699,6 +5724,7 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
 
         amountTarget = AmountFromValueNoErr(find_value(firstParam, "amount"));
         slippageTarget = AmountFromValueNoErr(find_value(firstParam, "slippage"));
+        slippageTarget = std::max((int64_t)0, std::min((int64_t)50000000, slippageTarget));
 
         if (toCurID.IsNull())
         {
@@ -5761,6 +5787,7 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
     }
     else
     {
+        checkIntersect = true;
         LOCK(cs_main);
         toCurrency = uni_get_str(params[0]);
         toCurID = ValidateCurrencyName(toCurrency, true, &toCurrencyDef);
@@ -5801,13 +5828,31 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Cannot read currency notarization in transaction " + activeFractionals[i].first.txhash.GetHex());
             }
             auto curMap = pbn.currencyState.GetReserveMap();
-            for (auto it = resIt; it != reserves.end(); it++)
+            if (checkIntersect)
             {
-                if (it->first != pbn.currencyState.GetID() &&
-                    !curMap.count(it->first))
+                for (auto it = resIt; it != reserves.end(); it++)
+                {
+                    if (it->first != pbn.currencyState.GetID() && !curMap.count(it->first))
+                    {
+                        toRemove.insert(i);
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                bool foundReserve = false;
+                for (auto it = resIt; it != reserves.end(); it++)
+                {
+                    if (it->first == pbn.currencyState.GetID() || curMap.count(it->first))
+                    {
+                        foundReserve = true;
+                        break;
+                    }
+                }
+                if (!foundReserve)
                 {
                     toRemove.insert(i);
-                    break;
                 }
             }
         }
@@ -5863,13 +5908,28 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
             bool addThis = curMap.count(toCurID);
             if (addThis)
             {
-                for (auto oneReserve : reserves)
+                if (checkIntersect)
                 {
-                    if (oneReserve.first != toCurID &&
-                        !curMap.count(oneReserve.first))
+                    for (auto oneReserve : reserves)
                     {
-                        addThis = false;
-                        break;
+                        if (oneReserve.first != toCurID &&
+                            !curMap.count(oneReserve.first))
+                        {
+                            addThis = false;
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    addThis = false;
+                    for (auto oneReserve : reserves)
+                    {
+                        if (oneReserve.first == toCurID || curMap.count(oneReserve.first))
+                        {
+                            addThis = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -5915,10 +5975,9 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
         {
             auto curMap = std::get<0>((oneConverter.second)).GetCurrenciesMap();
 
-            // loop through reserves, and if it can't satisfy the requirements of all reserves, remove it
             for (auto &oneReserve : reserves)
             {
-                if (!(slippageTarget && amountTarget))
+                if (!(slippageTarget || amountTarget))
                 {
                     if (std::get<1>((oneConverter.second)).reserves[curMap[ASSETCHAINS_CHAINID]] < 100000000000)
                     {
@@ -5949,14 +6008,10 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
                     {
                         std::get<2>(oneConverter.second)[oneReserve.first] = necessaryAmount;
                     }
-                    else
-                    {
-                        removeIDs.insert(oneConverter.first);
-                    }
                 }
             }
             // if we have no valid convert ability to meet targets and have not removed already, remove converter
-            if (slippageTarget && amountTarget && !std::get<2>(oneConverter.second).size())
+            if ((slippageTarget || amountTarget) && !std::get<2>(oneConverter.second).size())
             {
                 removeIDs.insert(oneConverter.first);
             }
@@ -5989,12 +6044,12 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
         oneCurrency.push_back(Pair("lastnotarization", std::get<2>(lastNotarization).ToUniValue()));
         if (amountTarget)
         {
-            oneCurrency.push_back(Pair("targetamount", amountTarget));
+            oneCurrency.push_back(Pair("targetamount", ValueFromAmount(amountTarget)));
             UniValue sourceAmounts(UniValue::VOBJ);
             // if we have conversion sources and amounts, add them
             for (auto &oneConversion : std::get<2>(oneConverter.second))
             {
-                sourceAmounts.pushKV(EncodeDestination(CIdentityID(oneConversion.first)), oneConversion.second);
+                sourceAmounts.pushKV(EncodeDestination(CIdentityID(oneConversion.first)), ValueFromAmount(oneConversion.second));
             }
             if (sourceAmounts.size())
             {
@@ -6247,12 +6302,14 @@ UniValue estimateconversion(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_TRANSACTION_ERROR, "Cannot process conversion parameters for " + pFractionalCurrency->name);
     }
 
-    CAmount startingAmount = sourceAmount - CReserveTransactionDescriptor::CalculateConversionFeeNoMin(sourceAmount);
-    if (secondCurrencyID == pFractionalCurrency->GetID())
+    CAmount conversionFee = CReserveTransactionDescriptor::CalculateConversionFeeNoMin(sourceAmount);
+    if (reserveToReserve)
     {
-        startingAmount = startingAmount - CReserveTransactionDescriptor::CalculateConversionFeeNoMin(sourceAmount);
+        conversionFee = conversionFee << 1;
     }
+    CAmount startingAmount = sourceAmount - conversionFee;
     CAmount amountOut = 0;
+
     if (checkTransfer.IsImportToSource())
     {
         amountOut = currencyState.NativeToReserveRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[convertToCurrencyID]]);
