@@ -214,18 +214,6 @@ unsigned int lwmaCalculateNextWorkRequired(const CBlockIndex* pindexLast, const 
     return nextTarget.GetCompact();
 }
 
-bool DoesHashQualify(const CBlockIndex *pbindex)
-{
-    // if it fails hash test and PoW validation, consider it POS. it could also be invalid
-    arith_uint256 hash = UintToArith256(pbindex->GetBlockHash());
-    // to be considered POS in Komodo POS, non VerusPoS, we first can't qualify as POW
-    if (hash > hash.SetCompact(pbindex->nBits))
-    {
-        return false;
-    }
-    return true;
-}
-
 // the goal is to keep POS at a solve time that is a ratio of block time units. the low resolution makes a stable solution more challenging
 // and requires that the averaging window be quite long.
 uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::Params& params)
@@ -250,10 +238,14 @@ uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::
         maxConsecutivePos = VERUS_PBAAS_CONSECUTIVE_POS_THRESHOLD;
         maxConsecutiveNoPos = VERUS_PBAAS_NOPOS_THRESHHOLD;
 
-        if (!PBAAS_TESTMODE || pindexLast->nTime > PBAAS_TESTFORK_TIME)
+        // due to constraining maximum consecutive PoS blocks, we use this bias to adjust to 50%
+        if (PBAAS_TESTMODE && pindexLast->nTime < PBAAS_TESTFORK_TIME)
         {
-            // due to constraining maximum consecutive PoS blocks, we use this bias to adjust to 50%
             nProofOfWorkBlockPOSUnits += (VERUS_BLOCK_POSUNITS / 20);
+        }
+        else
+        {
+            nProofOfWorkBlockPOSUnits += (VERUS_BLOCK_POSUNITS / 10);
         }
 
         // the default staking difficulty is based on an expectation of 25% of the supply staking, which if facing 100%, will not be catastrophic

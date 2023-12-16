@@ -28,10 +28,9 @@ static const int DEFAULT_RPC_TIMEOUT=900;
 static const uint32_t PBAAS_VERSION = 1;
 static const uint32_t PBAAS_VERSION_INVALID = 0;
 
-extern uint32_t PBAAS_TESTFORK_TIME;
 extern const uint32_t PBAAS_PREMAINNET_ACTIVATION;
-
-extern std::string PBAAS_TEST_ETH_CONTRACT;
+extern const uint32_t PBAAS_LARGE_ETH_PROOF_ACTIVATION;
+extern const uint32_t PBAAS_TESTFORK_TIME;
 
 class CTransaction;
 class CScript;
@@ -155,7 +154,7 @@ public:
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(networkAddress);
+        READWRITE(LIMITED_STRING(networkAddress, 512));
         READWRITE(nodeIdentity);
     }
 
@@ -205,9 +204,11 @@ public:
         DEST_ETHNFT = 10,                   // used when defining a mapped NFT to gateway that uses an ETH compatible model
         DEST_RAW = 11,
         LAST_VALID_TYPE_NO_FLAGS = DEST_RAW,
+        FLAG_RESERVED1 = 16,
+        FLAG_RESERVED2 = 32,
         FLAG_DEST_AUX = 64,
         FLAG_DEST_GATEWAY = 128,
-        FLAG_MASK = FLAG_DEST_AUX + FLAG_DEST_GATEWAY
+        FLAG_MASK = FLAG_DEST_AUX + FLAG_DEST_GATEWAY + FLAG_RESERVED1 + FLAG_RESERVED2
     };
     uint8_t type;
     std::vector<unsigned char> destination;
@@ -397,6 +398,7 @@ public:
     }
 
     friend bool operator<(const CCurrencyValueMap& a, const CCurrencyValueMap& b);
+    friend bool LegacyLT(const CCurrencyValueMap& a, const CCurrencyValueMap& b);
     friend bool operator>(const CCurrencyValueMap& a, const CCurrencyValueMap& b);
     friend bool operator==(const CCurrencyValueMap& a, const CCurrencyValueMap& b);
     friend bool operator!=(const CCurrencyValueMap& a, const CCurrencyValueMap& b);
@@ -465,15 +467,17 @@ public:
         MAX_RESERVE_CURRENCIES = 10,
         MIN_RESERVE_RATIO = 5000000,
         MAX_STARTUP_NODES = 5,
+        MAX_NATIVE_IDENTITY_SIZE = 512,
         DEFAULT_START_TARGET = 0x1e01e1e1,
         MAX_CURRENCY_DEFINITION_EXPORTS_PER_BLOCK = 20,
         MAX_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 100,
-        MAX_TRANSFER_EXPORTS_PER_BLOCK = 1000,
-        MAX_TRANSFER_EXPORTS_SIZE_PER_BLOCK = 400000,
+        MAX_TRANSFER_EXPORTS_PER_BLOCK = 500,       // this is per block, and up to two of these limits go into an export
+        MAX_EXPORT_INPUT_OVERHEAD_PER_BLOCK = 10,   // in addition to transfer inputs, we may have up to 10 inputs extra for an export transaction
+        MAX_TRANSFER_EXPORTS_SIZE_PER_BLOCK = 100000, // same as above, but regarding space
         MAX_ETH_CURRENCY_DEFINITION_EXPORTS_PER_BLOCK = 1,
         MAX_ETH_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 0,
         MAX_ETH_TRANSFER_EXPORTS_PER_BLOCK = 50,
-        MAX_ETH_TRANSFER_EXPORTS_SIZE_PER_BLOCK = 100000,
+        MAX_ETH_TRANSFER_EXPORTS_SIZE_PER_BLOCK = 50000,
         DEFAULT_BLOCK_NOTARIZATION_TIME = 600,      // default target time for block notarizations
         MIN_BLOCK_NOTARIZATION_PERIOD = 5,          // minimum target blocks for notarization period
         MAX_NOTARIZATION_CONVERSION_PRICING_INTERVAL = 100,  // there must be a notarization with conversion at least 100 blocks before reserve transfer
@@ -503,7 +507,8 @@ public:
         OPTION_GATEWAY_CONVERTER = 0x200,   // this means that for a specific PBaaS gateway, this is the default converter and will publish prices
         OPTION_GATEWAY_NAMECONTROLLER = 0x400, // when not set on a gateway, top level ID and currency registration happen on launch chain
         OPTION_NFT_TOKEN = 0x800,           // single satoshi NFT token, tokenizes control over the root ID
-        OPTIONS_FLAG_MASK = 0xfff
+        OPTION_NO_IDS = 0x1000,             // this currency cannot issue IDs
+        OPTIONS_FLAG_MASK = 0x1fff
     };
 
     // these should be pluggable in function
@@ -1108,6 +1113,7 @@ public:
         return (nVersion != PBAAS_VERSION_INVALID) &&
                 (!notaries.size() || minNotariesConfirm > (notaries.size() >> 1)) &&
                 !(options & ~OPTIONS_FLAG_MASK) &&
+                !(IsPBaaSChain() && (NoIDs() || IsToken() || IsFractional())) &&
                 idReferralLevels <= MAX_ID_REFERRAL_LEVELS &&
                 name.size() > 0 &&
                 name.size() <= (KOMODO_ASSETCHAIN_MAXLEN - 1) &&
@@ -1136,6 +1142,11 @@ public:
     bool IsNFTToken() const
     {
         return ChainOptions() & OPTION_NFT_TOKEN;
+    }
+
+    bool NoIDs() const
+    {
+        return IsNFTToken() || ChainOptions() & OPTION_NO_IDS;
     }
 
     bool IsGateway() const
@@ -1185,6 +1196,18 @@ public:
         else
         {
             options &= ~OPTION_NFT_TOKEN;
+        }
+    }
+
+    void SetNoIDs(bool noIDs)
+    {
+        if (noIDs)
+        {
+            options |= OPTION_NO_IDS;
+        }
+        else
+        {
+            options &= ~OPTION_NO_IDS;
         }
     }
 
@@ -1265,6 +1288,7 @@ public:
     }
 
     static int64_t CalculateRatioOfValue(int64_t value, int64_t ratio);
+    static int64_t CalculateRatioOfTwoValues(int64_t value1, int64_t value2);
     int64_t GetTotalPreallocation() const;
     int32_t GetTotalCarveOut() const;
 };
@@ -1276,8 +1300,6 @@ public:
 class CIdentitySignature
 {
 public:
-    // TODO HARDENING - move all instances post PBaaS to
-    // VERSION_ETHBRIDGE
     enum EVersions {
         VERSION_INVALID = 0,
         VERSION_VERUSID = 1,

@@ -176,7 +176,8 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
             in.push_back(Pair("vout", (int64_t)txin.prevout.n));
             {
                 uint256 hash; CTransaction txFrom;
-                if (GetTransaction(txin.prevout.hash,txFrom,hash,false))
+                if (GetTransaction(txin.prevout.hash, txFrom, hash, false) &&
+                    txFrom.vout.size() > txin.prevout.n)
                 {
                     COptCCParams p;
                     BlockMap::iterator blockIdxIt = mapBlockIndex.find(hash);
@@ -471,7 +472,7 @@ UniValue getrawtransaction(const UniValue& params, bool fHelp)
             "         \"reqSigs\" : n,            (numeric) The required sigs\n"
             "         \"type\" : \"pubkeyhash\",  (string) The type, eg 'pubkeyhash'\n"
             "         \"addresses\" : [           (json array of string)\n"
-            "           \"komodoaddress\"          (string) Komodo address\n"
+            "           \"address\"          (string) transparent address\n"
             "           ,...\n"
             "         ]\n"
             "       }\n"
@@ -748,7 +749,8 @@ UniValue createrawtransaction(const UniValue& params, bool fHelp)
             "     ]\n"
             "2. \"addresses\"           (string, required) a json object with addresses as keys and amounts as values\n"
             "    {\n"
-            "      \"address\": x.xxx   (numeric, required) The key is the Komodo address, the value is the " + CURRENCY_UNIT + " amount\n"
+            "      \"address\": x.xxx   (numeric, required) The key is the destination address or ID, the value is the " + CURRENCY_UNIT + " amount\n"
+            "      \"address\": {\"currency\": x.xxx, ...} (object, optional) The key is the destination address or ID, the value is currencies and amounts\n"
             "      \"data\": \"hex\"    (string, optional) The key is \"data\", the value is hex encoded data\n"
             "      ,...\n"
             "    }\n"
@@ -837,20 +839,61 @@ UniValue createrawtransaction(const UniValue& params, bool fHelp)
         } else {
             CTxDestination destination = DecodeDestination(name_);
             if (!IsValidDestination(destination)) {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid Komodo address: ") + name_);
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid address: ") + name_);
             }
 
             if (!destinations.insert(destination).second) {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, std::string("Invalid parameter, duplicated address: ") + name_);
             }
 
-            CScript scriptPubKey = GetScriptForDestination(destination);
-            CAmount nAmount = AmountFromValue(sendTo[name_]);
+            CScript scriptPubKey;
+            CAmount nAmount = 0;
+
+            UniValue sendVal = find_value(sendTo, name_);
+            if (sendVal.isObject())
+            {
+                UniValue decodedSendVal(UniValue::VOBJ);
+                auto keys = sendVal.getKeys();
+                auto values = sendVal.getValues();
+                for (int j = 0; j < keys.size(); j++)
+                {
+                    uint160 destCurrency = ValidateCurrencyName(keys[j], true);
+                    if (destCurrency.IsNull())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, std::string("Invalid currency in output: ") + name_);
+                    }
+                    decodedSendVal.pushKV(EncodeDestination(CIdentityID(destCurrency)), values[j]);
+                }
+
+                CCurrencyValueMap outputValue = CCurrencyValueMap(sendVal).CanonicalMap();
+                if (!(outputValue.IsValid() && outputValue.valueMap.size()))
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, std::string("Invalid output for address: ") + name_);
+                }
+                nAmount = outputValue.valueMap[ASSETCHAINS_CHAINID];
+                outputValue.valueMap.erase(ASSETCHAINS_CHAINID);
+                if (outputValue.valueMap.size())
+                {
+                    std::vector<CTxDestination> dests = std::vector<CTxDestination>({destination});
+                    CTokenOutput to(outputValue);
+                    scriptPubKey = MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, dests, 1, &to));
+                }
+                else
+                {
+                    scriptPubKey = GetScriptForDestination(destination);
+                }
+            }
+            else
+            {
+                scriptPubKey = GetScriptForDestination(destination);
+                nAmount = AmountFromValue(sendVal);
+            }
 
             CTxOut out(nAmount, scriptPubKey);
             rawTx.vout.push_back(out);
         }
     }
+
     return EncodeHexTx(rawTx);
 }
 
@@ -894,7 +937,7 @@ UniValue decoderawtransaction(const UniValue& params, bool fHelp)
             "         \"reqSigs\" : n,            (numeric) The required sigs\n"
             "         \"type\" : \"pubkeyhash\",  (string) The type, eg 'pubkeyhash'\n"
             "         \"addresses\" : [           (json array of string)\n"
-            "           \"RTZMZHDFSTFQst8XmX2dR4DaH87cEUs3gC\"   (string) komodo address\n"
+            "           \"RTZMZHDFSTFQst8XmX2dR4DaH87cEUs3gC\"   (string) transparent address\n"
             "           ,...\n"
             "         ]\n"
             "       }\n"
@@ -965,7 +1008,7 @@ UniValue decodescript(const UniValue& params, bool fHelp)
             "  \"type\":\"type\", (string) The output type\n"
             "  \"reqSigs\": n,    (numeric) The required signatures\n"
             "  \"addresses\": [   (json array of string)\n"
-            "     \"address\"     (string) Komodo address\n"
+            "     \"address\"     (string) transparent address\n"
             "     ,...\n"
             "  ],\n"
             "  \"p2sh\",\"address\" (string) script address\n"
@@ -1317,8 +1360,17 @@ UniValue sendrawtransaction(const UniValue& params, bool fHelp)
     }
 
     bool fOverrideFees = false;
+    for (auto &oneOut : tx.vout)
+    {
+        if (CCurrencyDefinition(oneOut.scriptPubKey).IsValid())
+        {
+            fOverrideFees = true;
+        }
+    }
     if (params.size() > 1)
+    {
         fOverrideFees = params[1].get_bool();
+    }
 
     CCoinsViewCache &view = *pcoinsTip;
     const CCoins* existingCoins = view.AccessCoins(hashTx);

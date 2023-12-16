@@ -222,7 +222,14 @@ CTxDestination GetCompatibleAuxDestination(const CTransferDestination &transferD
             {
                 if (addressProtocol != CCurrencyDefinition::PROOF_ETHNOTARIZATION)
                 {
-                    return TransferDestinationToDestination(i == -1 ? transferDest : transferDest.GetAuxDest(i));
+                    try
+                    {
+                        return TransferDestinationToDestination(i == -1 ? transferDest : transferDest.GetAuxDest(i));
+                    }
+                    catch(...)
+                    {
+                        return CTxDestination();
+                    }
                 }
                 break;
             }
@@ -231,7 +238,14 @@ CTxDestination GetCompatibleAuxDestination(const CTransferDestination &transferD
             {
                 if (addressProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION)
                 {
-                    return TransferDestinationToDestination(i == -1 ? transferDest : transferDest.GetAuxDest(i));
+                    try
+                    {
+                        return TransferDestinationToDestination(i == -1 ? transferDest : transferDest.GetAuxDest(i));
+                    }
+                    catch(...)
+                    {
+                        return CTxDestination();
+                    }
                 }
                 break;
             }
@@ -664,10 +678,15 @@ bool CScript::IsInstantSpendOrUnspendable() const
     return isInstantSpend;
 }
 
-bool CScript::IsPayToCryptoCondition(COptCCParams &ccParams) const
+bool CScript::IsPayToCryptoCondition(COptCCParams &ccParams, bool doSizeCheck) const
 {
     CScript subScript;
     std::vector<std::vector<unsigned char>> vParams;
+
+    if (!size() || (doSizeCheck && size() > MAX_SCRIPT_SIZE))
+    {
+        return false;
+    }
 
     if (IsPayToCryptoCondition(&subScript, vParams))
     {
@@ -716,20 +735,6 @@ bool CScript::IsPayToCryptoCondition(uint32_t *ecode) const
     return false;
 }
 
-CScript &CScript::ReplaceCCParams(const COptCCParams &params)
-{
-    CScript subScript;
-    std::vector<std::vector<unsigned char>> vParams;
-    COptCCParams p;
-    if (this->IsPayToCryptoCondition(&subScript, vParams, p) || p.evalCode != params.evalCode)
-    {
-        // add the object to the end of the script
-        *this = subScript;
-        *this << params.AsVector() << OP_DROP;
-    }
-    return *this;
-}
-
 bool CScript::IsSpendableOutputType(const COptCCParams &p) const
 {
     bool isSpendable = true;
@@ -739,16 +744,23 @@ bool CScript::IsSpendableOutputType(const COptCCParams &p) const
     }
     switch (p.evalCode)
     {
-        case EVAL_CURRENCYSTATE:
+        case EVAL_CURRENCY_DEFINITION:
+        case EVAL_NOTARY_EVIDENCE:
+        case EVAL_EARNEDNOTARIZATION:
+        case EVAL_ACCEPTEDNOTARIZATION:
+        case EVAL_FINALIZE_NOTARIZATION:
         case EVAL_RESERVE_TRANSFER:
         case EVAL_IDENTITY_ADVANCEDRESERVATION:
         case EVAL_RESERVE_DEPOSIT:
+        case EVAL_CROSSCHAIN_EXPORT:
+        case EVAL_FINALIZE_EXPORT:
         case EVAL_CROSSCHAIN_IMPORT:
         case EVAL_IDENTITY_COMMITMENT:
         case EVAL_IDENTITY_PRIMARY:
         case EVAL_IDENTITY_REVOKE:
         case EVAL_IDENTITY_RECOVER:
         case EVAL_IDENTITY_RESERVATION:
+        case EVAL_FEE_POOL:
         {
             isSpendable = false;
             break;
@@ -836,7 +848,7 @@ CCurrencyValueMap CScript::ReserveOutValue(COptCCParams &p, bool spendableOnly) 
                 CCrossChainImport cci(p.vData[0]);
                 // reserve out amount when converting to reserve is 0, since the amount cannot be calculated in isolation as an input
                 // if reserve in, we can consider the output the same reserve value as the input
-                retVal = cci.totalReserveOutMap;
+                //retVal = cci.totalReserveOutMap;
                 break;
             }
 
@@ -1048,6 +1060,25 @@ uint160 CScript::AddressHash() const
     return addressHash;
 }
 
+bool COptCCParams::IsInstantSpendOrUnspendable() const
+{
+    bool isInstantSpend = false;
+    if (version >= VERSION_V3)
+    {
+        if (evalCode == EVAL_EARNEDNOTARIZATION ||
+            evalCode == EVAL_NOTARY_EVIDENCE ||
+            evalCode == EVAL_FINALIZE_NOTARIZATION ||
+            evalCode == EVAL_FINALIZE_EXPORT ||
+            evalCode == EVAL_CROSSCHAIN_IMPORT ||
+            evalCode == EVAL_CROSSCHAIN_EXPORT ||
+            evalCode == EVAL_FEE_POOL)
+        {
+            isInstantSpend = true;
+        }
+    }
+    return isInstantSpend;
+}
+
 std::set<CIndexID> COptCCParams::GetIndexKeys() const
 {
     std::set<CIndexID> destinations;
@@ -1077,7 +1108,14 @@ std::set<CIndexID> COptCCParams::GetIndexKeys() const
                 {
                     destinations.insert(CIndexID(CCrossChainRPCData::GetConditionID(ASSETCHAINS_CHAINID, CCurrencyDefinition::ExternalCurrencyKey())));
                 }
-                if (definition.launchSystemID == ASSETCHAINS_CHAINID)
+                if (definition.launchSystemID == ASSETCHAINS_CHAINID &&
+                    !(definition.IsToken() &&
+                      !definition.IsFractional() &&
+                      definition.nativeCurrencyID.IsValid() &&
+                      definition.GetTotalPreallocation() == 0 &&
+                      (definition.nativeCurrencyID.TypeNoFlags() == CTransferDestination::DEST_ETH ||
+                       definition.nativeCurrencyID.TypeNoFlags() == CTransferDestination::DEST_ETHNFT) &&
+                      definition.systemID != ASSETCHAINS_CHAINID))
                 {
                     destinations.insert(CIndexID(CCrossChainRPCData::GetConditionID(ASSETCHAINS_CHAINID, CCurrencyDefinition::CurrencyLaunchKey())));
                 }
@@ -1183,7 +1221,10 @@ std::set<CIndexID> COptCCParams::GetIndexKeys() const
                         }
                     }
                 }
-                else if (notarization.IsBlockOneNotarization() && (notarization.currencyState.IsLaunchClear() || notarization.IsLaunchConfirmed()))
+                else if (notarization.IsBlockOneNotarization() &&
+                         (notarization.currencyState.IsLaunchClear() ||
+                          notarization.IsLaunchConfirmed() ||
+                          notarization.currencyID == ConnectedChains.ThisChain().launchSystemID))
                 {
                     destinations.insert(CIndexID(CCrossChainRPCData::GetConditionID(notarization.currencyID, CPBaaSNotarization::LaunchNotarizationKey())));
                     destinations.insert(CIndexID(CCrossChainRPCData::GetConditionID(ASSETCHAINS_CHAINID, CPBaaSNotarization::LaunchConfirmKey())));
@@ -1402,6 +1443,15 @@ std::set<CIndexID> COptCCParams::GetIndexKeys() const
                 for (auto defIT = identity.contentMultiMap.begin(); defIT != identity.contentMultiMap.end(); defIT++)
                 {
                     destinations.insert(CCrossChainRPCData::GetConditionID(CVDXF_Data::MultiMapKey(), CCrossChainRPCData::GetConditionID(defIT->first, identity.GetID())));
+
+                    if (LogAcceptCategory("oracles"))
+                    {
+                        LogPrintf("%s: defIT->first: %s, identity.GetID(): %s, lookupKey: %s\n", __func__,
+                                    EncodeDestination(CIdentityID(defIT->first)).c_str(),
+                                    EncodeDestination(identity.GetID()).c_str(),
+                                    EncodeDestination(CIdentityID(CCrossChainRPCData::GetConditionID(CVDXF_Data::MultiMapKey(), CCrossChainRPCData::GetConditionID(defIT->first, identity.GetID())))).c_str());
+                    }
+
                     if (defIT->first == CVDXF_Data::TypeDefinitionKey())
                     {
                         CDataStream ss(defIT->second, SER_DISK, PROTOCOL_VERSION);
@@ -1446,8 +1496,10 @@ std::set<CIndexID> COptCCParams::GetIndexKeys() const
                     {
                         destinations.insert(identity.IdentityPrimaryAddressKey(oneDest));
                     }
-                    destinations.insert(identity.IdentityRecoveryKey());
-                    destinations.insert(identity.IdentityRevocationKey());
+                    destinations.insert(identity.IdentityRecoveryKey(identity.recoveryAuthority));
+                    destinations.insert(identity.IdentityRevocationKey(identity.revocationAuthority));
+                    destinations.insert(identity.IdentityParentKey(identity.parent));
+                    destinations.insert(identity.IdentitySystemKey(identity.systemID));
                 }
             }
             break;
@@ -1839,6 +1891,37 @@ CCurrencyValueMap::CCurrencyValueMap(const std::vector<uint160> &currencyIDs, co
 }
 
 bool operator<(const CCurrencyValueMap& a, const CCurrencyValueMap& b)
+{
+    // to be less than means, in this order:
+    // 1. To have fewer non-zero currencies.
+    // 2. If not fewer currencies, all present currencies must be less in a than b
+    if (!a.valueMap.size() && !b.valueMap.size())
+    {
+        return false;
+    }
+
+    bool isaltb = false;
+    std::set<uint160> checked;
+
+    // ensure that we are smaller than all those present in b
+    for (auto &oneVal : b.valueMap)
+    {
+        checked.insert(oneVal.first);
+        if (oneVal.second)
+        {
+            auto it = a.valueMap.find(oneVal.first);
+
+            // negative is less than not present, which is equivalent to 0
+            if ((it == a.valueMap.end() && oneVal.second > 0) || (it != a.valueMap.end() && it->second < oneVal.second))
+            {
+                isaltb = true;
+            }
+        }
+    }
+    return isaltb;
+}
+
+bool LegacyLT(const CCurrencyValueMap& a, const CCurrencyValueMap& b)
 {
     // to be less than means, in this order:
     // 1. To have fewer non-zero currencies.

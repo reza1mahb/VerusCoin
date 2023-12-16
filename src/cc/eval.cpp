@@ -102,7 +102,6 @@ bool Eval::Dispatch(const CC *cond, const CTransaction &txTo, unsigned int nIn, 
         case EVAL_RESERVE_DEPOSIT:
         case EVAL_CROSSCHAIN_EXPORT:
         case EVAL_CROSSCHAIN_IMPORT:
-        case EVAL_CURRENCYSTATE:
         case EVAL_FINALIZE_EXPORT:
         case EVAL_FEE_POOL:
             if (!chainActive.LastTip() || CConstVerusSolutionVector::activationHeight.ActiveVersion(chainActive.LastTip()->GetHeight() + 1) < CActivationHeight::ACTIVATE_PBAAS)

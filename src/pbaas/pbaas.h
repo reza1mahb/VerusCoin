@@ -250,13 +250,15 @@ public:
         MODULO_EXTENSION_MULTIPLIER = 10,               // notarization rate drops to 1/10 when not confirmed on time
         MIN_BLOCKS_TO_AUTOCONFIRM = 100,                // we cannot autoconfirm (signature-free) a notarization < 200 blocks old
         MIN_BLOCKS_TO_SIGNCONFIRM = 15,                 // we cannot sign confirm a notarization < 15 blocks old
+        MAX_NOTARIZATION_DELAY_BEFORE_CROSSCHAIN_PAUSE = 1000, // if we go 1000 minutes with no notarization, cross-chain to that chani is paused
 
-        MAX_HEADER_PROOFS_PER_PROOF = 50,               // don't use more than this many header proofs in an alternate chain proof tx
+        MAX_HEADER_PROOFS_PER_PROOF = 25,               // don't use more than this many header proofs in an alternate chain proof tx
+        MAX_HEADER_PROOFS_SIZE = 200000,                // never require more than 200K of evidence for any reason
         MAX_BLOCKS_PER_COMMITMENT_RANGE = 256,          // up to 256 blocks per commitment range
         MAX_BLOCK_RANGES_PER_PROOF = 5,                 // no more than 5 randomly selected ranges to cover any gap length
         NUM_COMMITMENT_BLOCKS_START_OFFSET = 100,       // commitment blocks start this far before the actual start or at 1
         NUM_BLOCKS_PER_PROOF_RANGE = 100,               // number of blocks in an ideal proof range
-        NUM_HEADER_PROOF_RANGE_DIVISOR = 10,            // divide proof range length by this to determine required header proofs
+        NUM_HEADER_PROOF_RANGE_DIVISOR = 10,            // proofs every this many blocks
         MIN_BLOCKS_PER_CHECKPOINT = 256,                // blocks before we need another checkpoint
         MAX_PROOF_CHECKPOINTS = 100,                    // we do not add more than 100, after that, they are spaced further apart
         BLOCKS_TO_STABLE_PBAAS_ROOT = 5,                // PBaaS tip ahead of considered a "laststableroot", must be proven on challenge
@@ -296,23 +298,15 @@ public:
         return MIN_EARNED_FOR_AUTO << 1 + MIN_EARNED_FOR_AUTO;
     }
 
-    inline static int32_t GetAdjustedNotarizationModuloExp(int64_t notarizationBlockModulo,
-                                                           int64_t heightChange,
-                                                           int64_t notarizationsBeforeModuloExtension,
-                                                           int64_t notarizationCount=0)
-    {
-        if (heightChange <= GetBlocksBeforeModuloExtension(notarizationBlockModulo) && notarizationCount <= notarizationsBeforeModuloExtension)
-        {
-            return notarizationBlockModulo;
-        }
-        int32_t nextCheckModulo = notarizationBlockModulo * MODULO_EXTENSION_MULTIPLIER;
-        int32_t nextCheckNotarizationBeforeModulo = notarizationsBeforeModuloExtension << 1;
-        return GetAdjustedNotarizationModuloExp(nextCheckModulo, heightChange, nextCheckNotarizationBeforeModulo, notarizationCount);
-    }
+    static int32_t GetAdjustedNotarizationModuloExp(int64_t notarizationBlockModulo,
+                                                    int64_t fromHeight,
+                                                    int64_t untilHeight,
+                                                    int64_t notarizationsBeforeModuloExtension,
+                                                    int64_t notarizationCount=0);
 
-    inline static int32_t GetAdjustedNotarizationModulo(uint32_t notarizationBlockModulo, uint32_t heightChange, int32_t notarizationCount=0)
+    inline static int32_t GetAdjustedNotarizationModulo(uint32_t notarizationBlockModulo, uint32_t fromHeight, uint32_t untilHeight, int32_t notarizationCount=0)
     {
-        return GetAdjustedNotarizationModuloExp(notarizationBlockModulo, heightChange, NotarizationsBeforeModuloExtension(), notarizationCount);
+        return GetAdjustedNotarizationModuloExp(notarizationBlockModulo, fromHeight, untilHeight, NotarizationsBeforeModuloExtension(), notarizationCount);
     }
 
     enum FLAGS
@@ -327,7 +321,8 @@ public:
         FLAG_BLOCKONE_NOTARIZATION = 0x40,  // block 1 notarizations are auto-finalized, the blockchain itself will be worthless if it is wrong
         FLAG_SAME_CHAIN = 0x80,             // set if all currency information is verifiable on this chain
         FLAG_LAUNCH_COMPLETE = 0x100,       // set if all currency information is verifiable on this chain
-        FLAG_CONTRACT_UPGRADE = 0x200       // if set, this notarization agrees to the contract ugrade referenced in the first auxdest
+        FLAG_CONTRACT_UPGRADE = 0x200,      // if set, this notarization agrees to the contract ugrade referenced in the first auxdest
+        FLAGS_MASK = 0x3ff
     };
 
     uint32_t nVersion;
@@ -645,7 +640,8 @@ public:
                               CCurrencyValueMap &gatewayDepositsUsed,
                               CCurrencyValueMap &spentCurrencyOut,
                               CTransferDestination feeRecipient=CTransferDestination(),
-                              bool forcedRefunding=false) const;
+                              bool lastImportBeforeComplete=false,
+                              bool coLaunchCheck=true) const;
 
     static int GetBlocksPerCheckpoint(int heightChange);
     static int GetNumCheckpoints(int heightChange);
@@ -658,9 +654,18 @@ public:
                                          CPBaaSNotarization &notarization);
 
     bool FindEarnedNotarization(CObjectFinalization &finalization, CAddressIndexDbEntry *pEarnedNotarizationIndex=nullptr) const;
+    bool FindEarnedNotarizations(std::vector<CObjectFinalization> &finalization, std::vector<CAddressIndexDbEntry>  *pEarnedNotarizationIndex=nullptr) const;
     static bool FindFinalizedIndexByVDXFKey(const uint160 &notarizationIdxKey,
                                             CObjectFinalization &confirmedFinalization,
                                             CAddressIndexDbEntry &earnedNotarizationIndex);
+    static bool FindFinalizedIndexesByVDXFKey(const uint160 &notarizationIdxKey,
+                                              std::vector<CObjectFinalization> &confirmedFinalizations,
+                                              std::vector<CAddressIndexDbEntry> &earnedNotarizationIndex);
+
+    bool CheckCrossNotarizationProgression(const CCurrencyDefinition &curDef,
+                                           CPBaaSNotarization &priorNotarization,
+                                           uint32_t newHeight,
+                                           CValidationState &state) const;
 
     // accepts enough information to build a local accepted notarization transaction
     // miner fees are deferred until an import that uses this notarization, in which case
@@ -700,6 +705,12 @@ public:
         }
         return proofRootIt->second;
     }
+
+    static bool CheckEntropyHashMatch(const uint256 &entropyHash,
+                                      const CHashCommitments &commitments,
+                                      const uint160 &currencyID,
+                                      uint32_t startingHeight,
+                                      uint32_t endHeight);
 
     static std::vector<std::pair<uint32_t, uint32_t>>
         GetBlockCommitmentRanges(uint32_t lastNotarizationHeight, uint32_t currentNotarizationHeight, uint256 entropy);
@@ -746,6 +757,17 @@ public:
     // both sets the mirror flag and also transforms the notarization
     // between mirror states. returns false if could not change state to requested.
     bool SetMirror(bool setTrue=true);
+    void SetMirrorFlag(bool setTrue=true)
+    {
+        if (setTrue)
+        {
+            flags |= FLAG_ACCEPTED_MIRROR;
+        }
+        else
+        {
+            flags &= ~FLAG_ACCEPTED_MIRROR;
+        }
+    }
 
     bool IsDefinitionNotarization() const
     {
@@ -925,6 +947,9 @@ public:
     std::map<uint160, CPBaaSMergeMinedChainData> mergeMinedChains;
     std::multimap<arith_uint256, CPBaaSMergeMinedChainData *> mergeMinedTargets;
 
+    uint32_t nextBlockTime;
+    bool nextBlockTimeUpdateRequired;
+
     std::map<uint160, CUpgradeDescriptor> activeUpgradesByKey;
 
     LRUCache<uint160, CCurrencyDefinition> currencyDefCache;        // protected by cs_main, so doesn't need sync
@@ -932,6 +957,7 @@ public:
 
     // make earned notarizations for one or more notary chains
     std::map<uint160, CNotarySystemInfo> notarySystems;
+    std::set<uint160> idsToRevoke;
 
     CCurrencyDefinition thisChain;
     bool readyToStart;
@@ -943,7 +969,11 @@ public:
     int32_t earnedNotarizationIndex;            // index of earned notarization in block
 
     bool dirty;
+    bool dirtygbt;
     bool lastSubmissionFailed;                  // if we submit a failed block, make another
+
+    uint32_t saveBits;
+
     std::map<arith_uint256, CBlockHeader> qualifiedHeaders;
 
     CCriticalSection cs_mergemining;
@@ -957,8 +987,15 @@ public:
         earnedNotarizationHeight(0),
         earnedNotarizationIndex(0),
         dirty(false),
+        dirtygbt(false),
+        saveBits(0),
         lastSubmissionFailed(false),
-        sem_submitthread(0) {}
+        sem_submitthread(0),
+        nextBlockTime(0),
+        nextBlockTimeUpdateRequired(0) {}
+
+    uint32_t SetNextBlockTime(uint32_t NextBlockTime);
+    uint32_t GetNextBlockTime(const CBlockIndex *pindexPrev);
 
     arith_uint256 LowestTarget()
     {
@@ -977,6 +1014,8 @@ public:
     std::vector<std::pair<std::string, UniValue>> SubmitQualifiedBlocks();
 
     void QueueNewBlockHeader(CBlockHeader &bh);
+    void SetRevokeID(const CIdentityID &idID);
+    CIdentityID NextRevokeID();
     void QueueEarnedNotarization(CBlock &blk, int32_t txIndex, int32_t height);
     void CheckImports();
     void SignAndCommitImportTransactions(const CTransaction &lastImportTx, const std::vector<CTransaction> &transactions);
@@ -996,9 +1035,9 @@ public:
     bool SetLatestMiningOutputs(const std::vector<CTxOut> &minerOutputs);
     void AggregateChainTransfers(const CTransferDestination &feeRecipient, uint32_t nHeight);
     CCurrencyDefinition GetCachedCurrency(const uint160 &currencyID);
-    std::string GetFriendlyCurrencyName(const uint160 &currencyID);
-    std::string GetFriendlyIdentityName(const CIdentity &identity);
-    std::string GetFriendlyIdentityName(const std::string &name, const uint160 &parentCurrencyID);
+    std::string GetFriendlyCurrencyName(const uint160 &currencyID, bool addVerus=false);
+    std::string GetFriendlyIdentityName(const CIdentity &identity, bool addVerus=false);
+    std::string GetFriendlyIdentityName(const std::string &name, const uint160 &parentCurrencyID, bool addVerus=false);
     CCurrencyDefinition UpdateCachedCurrency(const CCurrencyDefinition &currentCurrency, uint32_t height);
 
     bool GetLastImport(const uint160 &currencyID,
@@ -1168,6 +1207,18 @@ public:
     bool ConfigureEthBridge(bool callToCheck=false);
     void CheckOracleUpgrades();
     bool IsUpgradeActive(const uint160 &upgradeID, uint32_t blockHeight=UINT32_MAX, uint32_t blockTime=UINT32_MAX) const;
+    uint32_t GetZeroViaHeight(bool getVerusHeight) const;
+    uint32_t GetOptimizedETHProofHeight(bool getVerusHeight=false) const;
+    bool ShouldOptimizeETHProof() const;
+    bool CheckZeroViaOnlyPostLaunch(uint32_t height) const;
+    uint32_t IncludePostLaunchFeeHeight(bool getVerusHeight) const;
+    bool IncludePostLaunchFees(uint32_t height) const;
+    bool CheckClearConvert(uint32_t height) const;
+    uint32_t StrictCheckIDExportHeight(bool getVerusHeight) const;
+    bool StrictCheckIDExport(uint32_t height) const;
+    uint32_t DiscernBlockOneLaunchInfoHeight(bool getVerusHeight) const;
+    bool DiscernBlockOneLaunchInfo(uint32_t height) const;
+
 
     std::vector<CCurrencyDefinition> GetMergeMinedChains()
     {
@@ -1182,9 +1233,14 @@ public:
 
     bool GetNotaryCurrencies(const CRPCChainData notaryChain,
                              const std::set<uint160> &currencyIDs,
-                             std::map<uint160, std::pair<CCurrencyDefinition,CPBaaSNotarization>> &currencyDefs);
+                             std::map<uint160, std::pair<CCurrencyDefinition,CPBaaSNotarization>> &currencyDefs,
+                             uint32_t untilHeight);
 
-    bool GetNotaryIDs(const CRPCChainData notaryChain, const std::set<uint160> &idIDs, std::map<uint160,CIdentity> &identities);
+    bool GetNotaryIDs(const CRPCChainData notaryChain,
+                      const CCurrencyDefinition &pbaasChain,
+                      const std::set<uint160> &idIDs,
+                      std::map<uint160,CIdentity> &identities,
+                      uint32_t untilHeight);
 
     static std::string UpgradeDataKeyName()
     {
@@ -1198,30 +1254,6 @@ public:
         return CCrossChainRPCData::GetConditionID(key, systemID);
     }
 
-    static std::string TestnetEthContractUpgradeKeyName()
-    {
-        return "vrsc::system.upgradedata.testnetethcontractupgrade";
-    }
-
-    static uint160 TestnetEthContractUpgradeKey()
-    {
-        static uint160 nameSpace;
-        static uint160 key = CVDXF_Data::GetDataKey(TestnetEthContractUpgradeKeyName(), nameSpace);
-        return key;
-    }
-
-    static std::string TestForkUpgradeKeyName()
-    {
-        return "vrsc::system.upgradedata.pbaastestfork";
-    }
-
-    static uint160 TestForkUpgradeKey()
-    {
-        static uint160 nameSpace;
-        static uint160 key = CVDXF_Data::GetDataKey(TestForkUpgradeKeyName(), nameSpace);
-        return key;
-    }
-
     static std::string OptionalPBaaSUpgradeKeyName()
     {
         return "vrsc::system.upgradedata.optionalpbaasupgrade";
@@ -1231,6 +1263,78 @@ public:
     {
         static uint160 nameSpace;
         static uint160 key = CVDXF_Data::GetDataKey(OptionalPBaaSUpgradeKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string DisableDeFiKeyName()
+    {
+        return "vrsc::system.upgradedata.disabledefi";
+    }
+
+    static uint160 DisableDeFiKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(DisableDeFiKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string EnableOptimizedETHProofName()
+    {
+        return "vrsc::system.upgradedata.enableoptimizedethproof";
+    }
+
+    static uint160 EnableOptimizedETHProofKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(EnableOptimizedETHProofName(), nameSpace);
+        return key;
+    }
+
+    static std::string ResetNotarizationModuloKeyName()
+    {
+        return "vrsc::system.upgradedata.resetnotarizationmodulo";
+    }
+
+    static uint160 ResetNotarizationModuloKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(ResetNotarizationModuloKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string DisablePBaaSCrossChainKeyName()
+    {
+        return "vrsc::system.upgradedata.disablepbaascrosschain";
+    }
+
+    static uint160 DisablePBaaSCrossChainKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(DisablePBaaSCrossChainKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string MagicNumberFixKeyName()
+    {
+        return "vrsc::system.upgradedata.magicnumberfix";
+    }
+
+    static uint160 MagicNumberFixKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(MagicNumberFixKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string DisableGatewayCrossChainKeyName()
+    {
+        return "vrsc::system.upgradedata.disablegatewaycrosschain";
+    }
+
+    static uint160 DisableGatewayCrossChainKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(DisableGatewayCrossChainKeyName(), nameSpace);
         return key;
     }
 
@@ -1392,6 +1496,7 @@ bool IsReserveExchangeInput(const CScript &scriptSig);
 bool ValidateReserveDeposit(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
 bool IsReserveDepositInput(const CScript &scriptSig);
 
+uint160 ValidateCurrencyName(std::string currencyStr, bool ensureCurrencyValid=false, CCurrencyDefinition *pCurrencyDef=NULL);
 bool ValidateCurrencyDefinition(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
 bool PrecheckCurrencyDefinition(const CTransaction &spendingTx, int32_t outNum, CValidationState &state, uint32_t height);
 bool IsCurrencyDefinitionInput(const CScript &scriptSig);
@@ -1416,5 +1521,15 @@ CCurrencyDefinition ValidateNewUnivalueCurrencyDefinition(const UniValue &uniObj
                                                           const uint160 systemID,
                                                           std::map<uint160, std::string> &requiredDefinitions,
                                                           bool checkMempool=true);
+
+bool ImportHasAdequateFees(const CTransaction &tx,
+                           int32_t outNum,
+                           const CCurrencyDefinition &importingToDef,
+                           const CCrossChainImport &cci,
+                           const CCrossChainExport &ccx,
+                           const CPBaaSNotarization &notarization,
+                           const std::vector<CReserveTransfer> &reserveTransfers,
+                           CValidationState &state,
+                           uint32_t height);
 
 #endif

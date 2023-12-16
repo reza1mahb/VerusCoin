@@ -20,6 +20,8 @@
 
 #define DEFAULT_STAKE_TXFEE 0
 
+extern int32_t VERUS_MIN_STAKEAGE;
+
 bool UnpackStakeOpRet(const CTransaction &stakeTx, std::vector<std::vector<unsigned char>> &vData);
 
 bool GetStakeParams(const CTransaction &stakeTx, CStakeParams &stakeParams);

@@ -17,7 +17,9 @@
 
 extern CIdentityID VERUS_DEFAULTID;
 extern CIdentityID VERUS_NOTARYID;
+extern std::set<uint160> FREE_CURRENCY_IMPORTS;
 extern CIdentityID PBAAS_NOTIFICATION_ORACLE;
+extern CTransferDestination APPROVE_CONTRACT_UPGRADE;
 extern std::string PBAAS_DEFAULT_NOTIFICATION_ORACLE;
 extern uint160 VERUS_NODEID;
 extern bool ONLY_ADD_WHITELISTED_UTXOS_ID_RESCAN;

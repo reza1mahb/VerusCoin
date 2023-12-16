@@ -20,6 +20,10 @@
 #include "txdb.h"
 
 extern CTxMemPool mempool;
+bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &outputs,
+                            const CRPCChainData &launchChain,
+                            const CCurrencyDefinition &newChainCurrency,
+                            CValidationState &state);
 
 CCommitmentHash::CCommitmentHash(const CTransaction &tx)
 {
@@ -144,6 +148,8 @@ bool CIdentity::IsInvalidMutation(const CIdentity &newIdentity, uint32_t height,
     return false;
 }
 
+LRUCache<std::pair<uint256, CIdentityID>, std::tuple<CIdentity, uint32_t, CTxIn>> CIdentity::IdentityLookupCache(2000);
+
 CIdentity CIdentity::LookupIdentity(const CIdentityID &nameID, uint32_t height, uint32_t *pHeightOut, CTxIn *pIdTxIn, bool checkMempool)
 {
     LOCK(mempool.cs);
@@ -200,6 +206,18 @@ CIdentity CIdentity::LookupIdentity(const CIdentityID &nameID, uint32_t height, 
         }
         unspentInputs.clear();
     }
+    // TODO: NEXTRELEASE - uncomment cache code
+    /* else if (height)
+    {
+        std::tuple<CIdentity, uint32_t, CTxIn> cachedIdentity;
+        if (std::get<0>(cachedIdentity = IdentityLookupCache.Get({chainActive[height > chainActive.Height() ? chainActive.Height() : height]->GetBlockHash(), nameID})).IsValid())
+        {
+            *pHeightOut = std::get<1>(cachedIdentity);
+            idTxIn = std::get<2>(cachedIdentity);
+            ret = std::get<0>(cachedIdentity);
+            return ret;
+        }
+    } */
 
     if (unspentOutputs.size() || GetAddressUnspent(keyID, CScript::P2IDX, unspentNewIDX) && GetAddressUnspent(keyID, CScript::P2PKH, unspentOutputs))
     {
@@ -290,6 +308,13 @@ CIdentity CIdentity::LookupIdentity(const CIdentityID &nameID, uint32_t height, 
             }
         }
     }
+
+    // TODO: NEXTRELEASE - uncomment cache code
+    /* if (height && !(height > chainActive.Height() && checkMempool))
+    {
+        IdentityLookupCache.Put({chainActive[height > chainActive.Height() ? chainActive.Height() : height]->GetBlockHash(), nameID}, {ret, *pHeightOut, idTxIn});
+    } */
+
     return ret;
 }
 
@@ -300,7 +325,8 @@ CIdentity::LookupIdentities(const CIdentityID &nameID,
                             bool checkMempool,
                             bool getProofs,
                             uint32_t proofHeight,
-                            const std::vector<uint160> &_indexKeys)
+                            const std::vector<uint160> &_indexKeys,
+                            bool sorted)
 {
     // if we don't have an endHeight, we also check the mempool
     if (!lteHeight || lteHeight == -1)
@@ -323,6 +349,26 @@ CIdentity::LookupIdentities(const CIdentityID &nameID,
         indexVec.push_back({oneKey, CScript::P2IDX});
     }
 
+    if (sorted)
+    {
+        std::map<std::pair<uint32_t, uint32_t>, int> sortMap;
+        std::vector<CAddressIndexDbEntry> sortedIdentityIndex;
+        for (int i = 0; i < identityIndex.size(); i++)
+        {
+            auto &oneIdx = identityIndex[i];
+            if (oneIdx.first.spending)
+            {
+                continue;
+            }
+            sortMap.insert(std::make_pair(std::make_pair(((uint32_t)oneIdx.first.blockHeight), oneIdx.first.txindex), i));
+        }
+        for (auto &idx : sortMap)
+        {
+            sortedIdentityIndex.push_back(identityIndex[idx.second]);
+        }
+        identityIndex = sortedIdentityIndex;
+    }
+
     LOCK(mempool.cs);
 
     if (checkMempool)
@@ -331,9 +377,6 @@ CIdentity::LookupIdentities(const CIdentityID &nameID,
     }
 
     // order from first that spends unknown to last that has no spender
-    std::map<COutPoint, uint256> spentOutputs;
-    mempoolIdentities = mempool.FilterAddressDeltas(mempoolIdentities, spentOutputs);
-
     if (identityIndex.size() || mempoolIdentities.size())
     {
         std::vector<int> toRemove;
@@ -376,10 +419,13 @@ CIdentity::LookupIdentities(const CIdentityID &nameID,
         }
         for (int i = 0; i < mempoolIdentities.size(); i++)
         {
+            if (mempoolIdentities[i].first.spending)
+            {
+                continue;
+            }
             CTransaction identityTx;
             if (mempool.lookup(mempoolIdentities[i].first.txhash, identityTx))
             {
-                CTransaction identityTx;
                 CIdentity identity;
                 COptCCParams fP;
                 if (mempoolIdentities[i].first.index >= identityTx.vout.size() ||
@@ -412,7 +458,8 @@ CIdentity::GetAggregatedIdentityMultimap(const uint160 &idID,
                                          bool getProofs,
                                          uint32_t proofHeight,
                                          const uint160 &indexKey,
-                                         bool keepDeleted)
+                                         bool keepDeleted,
+                                         bool sorted)
 {
     std::multimap<uint160, std::tuple<std::vector<unsigned char>, uint256, uint32_t, CUTXORef, CPartialTransactionProof>>
         retMap;
@@ -423,11 +470,17 @@ CIdentity::GetAggregatedIdentityMultimap(const uint160 &idID,
         indexKeys.push_back(indexKey);
         if (!keepDeleted)
         {
-            indexKeys.push_back(CVDXF_Data::ContentMultiMapRemoveKey());
+            indexKeys.push_back(
+                CCrossChainRPCData::GetConditionID(CVDXF_Data::MultiMapKey(), CCrossChainRPCData::GetConditionID(CVDXF_Data::ContentMultiMapRemoveKey(), idID))
+            );
+            if (LogAcceptCategory("oracles"))
+            {
+                LogPrintf("%s: lookupKey: %s\n", __func__, EncodeDestination(CIdentityID(CCrossChainRPCData::GetConditionID(CVDXF_Data::MultiMapKey(), CCrossChainRPCData::GetConditionID(CVDXF_Data::ContentMultiMapRemoveKey(), idID)))).c_str());
+            }
         }
     }
 
-    auto identityHistory = LookupIdentities(idID, startHeight, endHeight, checkMempool, getProofs, proofHeight, indexKeys);
+    auto identityHistory = LookupIdentities(idID, startHeight, endHeight, checkMempool, getProofs, proofHeight, indexKeys, sorted);
     for (auto &oneIdentity : identityHistory)
     {
         for (auto it = std::get<0>(oneIdentity).contentMultiMap.begin(); it != std::get<0>(oneIdentity).contentMultiMap.end(); it++)
@@ -435,10 +488,18 @@ CIdentity::GetAggregatedIdentityMultimap(const uint160 &idID,
             if (it->first == CVDXF_Data::ContentMultiMapRemoveKey() &&
                 it->second.size())
             {
+                CDataStream ss(it->second, PROTOCOL_VERSION, SER_DISK);
+                uint160 objTypeKey;
+                uint32_t serVersion;
+                size_t serSize;
                 CContentMultiMapRemove removeAction;
-                bool success;
-                ::FromVector(it->second, removeAction, &success);
-                if (!success ||
+
+                ss >> objTypeKey;
+                ss >> VARINT(serVersion);
+                ss >> VARINT(serSize);
+                ss >> removeAction;
+
+                if (objTypeKey != CVDXF_Data::ContentMultiMapRemoveKey() ||
                     !removeAction.IsValid())
                 {
                     continue;
@@ -462,7 +523,9 @@ CIdentity::GetAggregatedIdentityMultimap(const uint160 &idID,
                     {
                         CNativeHashWriter hw;
                         hw.write((char *)&(std::get<0>(removeItemCursor->second)[0]), std::get<0>(removeItemCursor->second).size());
-                        if (hw.GetHash() == removeAction.valueHash)
+
+                        uint256 hashVal = hw.GetHash();
+                        if (hashVal == removeAction.valueHash)
                         {
                             itemsToRemove.push_back(removeItemCursor);
                             if (removeAction.action == removeAction.ACTION_REMOVE_ONE_KEYVALUE)
@@ -494,10 +557,17 @@ CIdentity::GetIdentityContentByKey(const uint160 &idID,
                                    bool checkMempool,
                                    bool getProofs,
                                    uint32_t proofHeight,
-                                   bool keepDeleted)
+                                   bool keepDeleted,
+                                   bool sorted)
 {
     uint160 lookupKey = CCrossChainRPCData::GetConditionID(CVDXF_Data::MultiMapKey(), CCrossChainRPCData::GetConditionID(vdxfKey, idID));
-    auto aggregatedMap = GetAggregatedIdentityMultimap(idID, startHeight, endHeight, checkMempool, getProofs, proofHeight, lookupKey, keepDeleted);
+
+    if (LogAcceptCategory("oracles"))
+    {
+        LogPrintf("%s: vdxfKey: %s, idID: %s, lookupKey: %s\n", __func__, EncodeDestination(CIdentityID(vdxfKey)).c_str(), EncodeDestination(CIdentityID(idID)).c_str(), EncodeDestination(CIdentityID(lookupKey)).c_str());
+    }
+
+    auto aggregatedMap = GetAggregatedIdentityMultimap(idID, startHeight, endHeight, checkMempool, getProofs, proofHeight, lookupKey, keepDeleted, sorted);
 
     std::vector<std::tuple<std::vector<unsigned char>, uint256, uint32_t, CUTXORef, CPartialTransactionProof>> retVec;
     auto keyRange = aggregatedMap.equal_range(vdxfKey);
@@ -1220,7 +1290,7 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
             }
         }
         // aside from fractional currencies, centralized or native currencies can issue IDs
-        else if (!(issuingCurrency.GetID() == ASSETCHAINS_CHAINID || issuingCurrency.proofProtocol == issuingCurrency.PROOF_CHAINID))
+        else if (!(issuingCurrency.GetID() == ASSETCHAINS_CHAINID || issuingCurrency.IsToken()))
         {
             return state.Error("Invalid parent currency for identity registration on this chain");
         }
@@ -1266,7 +1336,11 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
             {
                 if (isPBaaS)
                 {
-                    if (issuingCurrency.proofProtocol == issuingCurrency.PROOF_CHAINID)
+                    bool testModePreUpdate = PBAAS_TESTMODE && !ConnectedChains.IncludePostLaunchFees(height);
+                    if (issuingCurrency.proofProtocol == issuingCurrency.PROOF_CHAINID &&
+                        (issuingCurrency.endBlock == 0 ||
+                         ((testModePreUpdate && issuingCurrency.endBlock <= height) ||
+                          (!testModePreUpdate && height <= issuingCurrency.endBlock))))
                     {
                         // if this is a purchase from centralized/DAO-based currency, ensure we have a valid output
                         // of the correct amount to the issuer ID before any of the referrals
@@ -1302,7 +1376,7 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
                             }
                         }
                     }
-                    else if (issuingCurrency.IsFractional())
+                    else if (issuingCurrency.IsToken())
                     {
                         // if this is a burn and issue, we need to make sure we have a valid burn transaction
                         // of the correct amount before any of the referrals
@@ -1518,7 +1592,7 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
     if (isPBaaS)
     {
         // CHECK #3e
-        // although IDs issued by fractional currencies are paid for by the currency or a reserve,
+        // although IDs issued by tokens are paid for by the currency or a reserve,
         // an import fee must be paid in the native currency to register on the current chain
         if (issuerID != ASSETCHAINS_CHAINID && rtxd.NativeFees() < ConnectedChains.ThisChain().IDImportFee())
         {
@@ -1530,7 +1604,9 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
                     rtxd.NativeFees() :
                     (burnAmount.valueMap.begin()->first == issuerID ?
                      burnAmount.valueMap.begin()->second :
-                     pricingState.ReserveToNative(burnAmount.valueMap.begin()->second, pricingState.GetReserveMap()[burnAmount.valueMap.begin()->first]));
+                     (issuingCurrency.IsFractional() ?
+                      pricingState.ReserveToNative(burnAmount.valueMap.begin()->second, pricingState.GetReserveMap()[burnAmount.valueMap.begin()->first]) :
+                      0));
 
         // CHECK #4 - if blockchain referrals are not enabled or if there is no referring identity, make sure the fees of this transaction are full price for an identity,
         // all further checks only if referrals are enabled and there is a referrer
@@ -1824,7 +1900,9 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
                 }
                 if (!(issuingCurrency.GetID() == ASSETCHAINS_CHAINID ||
                       issuingCurrency.IsFractional() ||
-                      issuingCurrency.proofProtocol == issuingCurrency.PROOF_CHAINID) ||
+                      (issuingCurrency.IsToken() &&
+                       !issuingCurrency.IsNFTToken())) ||
+                    issuingCurrency.NoIDs() ||
                     issuingCurrency.systemID != ASSETCHAINS_CHAINID)
                 {
                     return state.Error("Invalid parent in identity reservation");
@@ -1840,6 +1918,11 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
     int64_t idReferredRegistrationFee = parentCurrency.IDReferredRegistrationAmount();
     CCurrencyValueMap burnAmount;
     CCoinbaseCurrencyState pricingState;
+
+    if (issuingCurrency.NoIDs() || issuingCurrency.IsNFTToken())
+    {
+        return state.Error("Currency " + ConnectedChains.GetFriendlyCurrencyName(issuingCurrency.GetID()) + " cannot register IDs");
+    }
 
     if (issuingCurrency.IsFractional())
     {
@@ -1920,7 +2003,11 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
             {
                 if (isPBaaS)
                 {
-                    if (issuingCurrency.proofProtocol == issuingCurrency.PROOF_CHAINID)
+                    bool testModePreUpdate = PBAAS_TESTMODE && !ConnectedChains.IncludePostLaunchFees(height);
+                    if (issuingCurrency.proofProtocol == issuingCurrency.PROOF_CHAINID &&
+                        (issuingCurrency.endBlock == 0 ||
+                         ((testModePreUpdate && issuingCurrency.endBlock <= height) ||
+                          (!testModePreUpdate && height <= issuingCurrency.endBlock))))
                     {
                         // if this is a purchase from centralized/DAO-based currency, ensure we have a valid output
                         // of the correct amount to the issuer ID before any of the referrals
@@ -1956,7 +2043,7 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
                             }
                         }
                     }
-                    else if (issuingCurrency.IsFractional())
+                    else if (issuingCurrency.IsToken())
                     {
                         // if this is a burn and issue, we need to make sure we have a valid burn transaction
                         // of the correct amount before any of the referrals
@@ -2322,6 +2409,7 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
     bool validReservation = false;
     bool validIdentity = false;
     bool validImport = false;
+    bool idMayBeImported = true;
     bool validSourceSysImport = false;
     bool validCrossChainImport = false;
 
@@ -2336,6 +2424,7 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
     bool isPBaaS = networkVersion >= CActivationHeight::ACTIVATE_PBAAS; // this is only PBaaS differences, not Verus Vault
     bool advancedIdentity = networkVersion >= CActivationHeight::ACTIVATE_VERUSVAULT;
     bool isCoinbase = tx.IsCoinBase();
+    bool isInSync = chainActive.Height() >= (height - 1);
 
     for (int i = 0; i < tx.vout.size(); i++)
     {
@@ -2390,6 +2479,26 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                         return state.Error("Invalid identity on transaction output " + std::to_string(i));
                     }
 
+                    if (isPBaaS && isInSync)
+                    {
+                        std::set<uint160> primaryDests;
+                        for (auto &oneDest : checkIdentity.primaryAddresses)
+                        {
+                            if (oneDest.which() == COptCCParams::ADDRTYPE_PK ||
+                                oneDest.which() == COptCCParams::ADDRTYPE_PKH)
+                            {
+                                primaryDests.insert(GetDestinationID(oneDest));
+                            }
+                        }
+                        if (primaryDests.size() != checkIdentity.primaryAddresses.size())
+                        {
+                            if (!PBAAS_TESTMODE || chainActive[height - 1]->nTime >= PBAAS_TESTFORK_TIME)
+                            {
+                                return state.Error("Duplicate or invalid primary address in identity " + ConnectedChains.GetFriendlyIdentityName(checkIdentity));
+                            }
+                        }
+                    }
+
                     // twice through used to make it invalid
                     if (!advancedIdentity && validIdentity)
                     {
@@ -2425,6 +2534,14 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                         return state.Error("Invalid import on transaction output " + std::to_string(i));
                     }
 
+                    // if identity comes before an import and we're not on block 1, the import can't be source of validation
+                    if (height != 1 &&
+                        (identity.IsValid() ||
+                         cci.IsDefinitionImport()))
+                    {
+                        idMayBeImported = false;
+                    }
+
                     // twice through makes it invalid
                     if (!(isPBaaS && (height == 1 || cci.IsDefinitionImport())) && (validSourceSysImport || (validImport && !cci.IsSourceSystemImport())))
                     {
@@ -2434,12 +2551,12 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                     {
                         validSourceSysImport = true;
                     }
-
-                    validImport = true;
-                    if (cci.sourceSystemID != ASSETCHAINS_CHAINID)
+                    else if (cci.sourceSystemID != ASSETCHAINS_CHAINID)
                     {
                         validCrossChainImport = true;
                     }
+
+                    validImport = true;
                 }
                 break;
             }
@@ -2715,8 +2832,6 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
         }
     }
 
-    // TODO: HARDENING - ensure that the block one coinbase only mints the IDs it is supposed to mint
-    // this may be a redundant note and may be removed when block one coinbase is fully checked
     if (isPBaaS)
     {
         if (height == 1)
@@ -2724,14 +2839,38 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
             // for block one IDs, ensure they are valid as per the launch parameters
             if (tx.IsCoinBase())
             {
-                return true;
+                // we only check coinbase on the first identity
+                int i;
+                for (i = 0; i < tx.vout.size(); i++)
+                {
+                    if (CIdentity(tx.vout[i].scriptPubKey).IsValid())
+                    {
+                        break;
+                    }
+                }
+                if (i == outNum)
+                {
+                    if (ConnectedChains.FirstNotaryChain().IsValid() &&
+                        IsValidBlockOneCoinbase(tx.vout, ConnectedChains.FirstNotaryChain(), ConnectedChains.ThisChain(), state))
+                    {
+                        return true;
+                    }
+                    else
+                    {
+                        return state.Error("Invalid block 1 coinbase");
+                    }
+                }
+                else
+                {
+                    return true;
+                }
             }
             else
             {
                 return state.Error("Invalid ID minting in block 1");
             }
         }
-        else if (validCrossChainImport)
+        else if (idMayBeImported && validCrossChainImport)
         {
             // ensure that we are importing IDs from a source system that can send us these IDs
             return true;
@@ -2776,6 +2915,33 @@ CIdentity GetOldIdentity(const CTransaction &spendingTx, uint32_t nIn, CTransact
     return oldIdentity;
 }
 
+bool ValidateIdentitySpendMutation(Eval* eval, const CTransaction &spendingTx, const CIdentity &oldIdentity, const CIdentity &newIdentity)
+{
+    uint160 idID = oldIdentity.GetID();
+    CCurrencyDefinition matchingCurDef;
+    for (auto &oneOut : spendingTx.vout)
+    {
+        if ((matchingCurDef = CCurrencyDefinition(oneOut.scriptPubKey)).IsValid() &&
+            matchingCurDef.GetID() == idID)
+        {
+            break;
+        }
+    }
+
+    bool isCurrencyDef = matchingCurDef.IsValid() && matchingCurDef.GetID() == idID;
+
+    if ((oldIdentity.HasActiveCurrency() && !newIdentity.HasActiveCurrency()) ||
+        (oldIdentity.HasTokenizedControl() && !newIdentity.HasTokenizedControl()) ||
+        (!isCurrencyDef &&
+            (oldIdentity.HasActiveCurrency() != oldIdentity.HasActiveCurrency() ||
+            oldIdentity.HasTokenizedControl() != newIdentity.HasTokenizedControl())) ||
+        (isCurrencyDef && !matchingCurDef.IsNFTToken() && newIdentity.HasTokenizedControl()))
+    {
+        return false;
+    }
+    return true;
+}
+
 bool ValidateIdentityPrimary(struct CCcontract_info *cp, Eval* eval, const CTransaction &spendingTx, uint32_t nIn, bool fulfilled)
 {
     CTransaction sourceTx;
@@ -2794,7 +2960,8 @@ bool ValidateIdentityPrimary(struct CCcontract_info *cp, Eval* eval, const CTran
     bool advancedIdentity = CVerusSolutionVector::GetVersionByHeight(height) >= CActivationHeight::ACTIVATE_VERUSVAULT;
 
     int idIndex;
-    CIdentity newIdentity(spendingTx, &idIndex, advancedIdentity ? oldIdentity.GetID() : uint160());
+    uint160 idID = oldIdentity.GetID();
+    CIdentity newIdentity(spendingTx, &idIndex, advancedIdentity ? idID : uint160());
     if (!newIdentity.IsValid())
     {
         return eval->Error("Attempting to define invalid identity");
@@ -2804,6 +2971,11 @@ bool ValidateIdentityPrimary(struct CCcontract_info *cp, Eval* eval, const CTran
     {
         LogPrintf("Invalid identity modification %s\n", spendingTx.GetHash().GetHex().c_str());
         return eval->Error("Invalid identity modification");
+    }
+
+    if (!ValidateIdentitySpendMutation(eval, spendingTx, oldIdentity, newIdentity))
+    {
+        return eval->Error("Invalid ID currency state modification");
     }
 
     // if not fullfilled and not revoked, we are responsible for rejecting any modification of
@@ -2871,6 +3043,11 @@ bool ValidateIdentityRevoke(struct CCcontract_info *cp, Eval* eval, const CTrans
     if (oldIdentity.IsRevocation(newIdentity) && oldIdentity.recoveryAuthority == oldIdentity.GetID() && !oldIdentity.HasTokenizedControl())
     {
         return eval->Error("Cannot revoke an identity with self as the recovery authority");
+    }
+
+    if (!ValidateIdentitySpendMutation(eval, spendingTx, oldIdentity, newIdentity))
+    {
+        return eval->Error("Invalid ID currency state modification");
     }
 
     // make sure that spend conditions are valid and revocation spend conditions are not modified
@@ -3012,6 +3189,11 @@ bool ValidateIdentityRecover(struct CCcontract_info *cp, Eval* eval, const CTran
     if (oldIdentity.IsInvalidMutation(newIdentity, height, spendingTx.nExpiryHeight))
     {
         return eval->Error("Invalid identity modification");
+    }
+
+    if (!ValidateIdentitySpendMutation(eval, spendingTx, oldIdentity, newIdentity))
+    {
+        return eval->Error("Invalid ID currency state modification");
     }
 
     // make sure that spend conditions are valid and revocation spend conditions are not modified

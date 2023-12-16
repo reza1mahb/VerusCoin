@@ -59,7 +59,14 @@ CTxMemPoolEntry::GetPriority(unsigned int currentHeight) const
     AssertLockHeld(cs_main);
     if (hasReserve && (currencyState = ConnectedChains.GetCurrencyState(currentHeight - 1, false)).IsValid())
     {
-        nValueIn += currencyState.ReserveToNative(tx->GetReserveValueOut());
+        try
+        {
+            nValueIn += currencyState.ReserveToNative(tx->GetReserveValueOut());
+        }
+        catch(const std::exception& e)
+        {
+            nValueIn = 0;
+        }
     }
     double deltaPriority = ((double)(currentHeight-nHeight)*nValueIn)/nModSize;
     double dResult = dPriority + deltaPriority;
@@ -305,114 +312,6 @@ std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> CTxMemPool
     return retVal;
 }
 
-std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> CTxMemPool::FilterAddressDeltas(const std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> &memPoolOutputs,
-                                                                                                      std::map<COutPoint, uint256> &spentTxOuts)
-{
-    std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> retVal;
-    std::map<uint256, std::pair<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>, CTransaction>> txOuts;
-
-    for (const auto &oneOut : memPoolOutputs)
-    {
-        CTransaction curTx;
-        // get last one in spending list
-        if (oneOut.first.spending)
-        {
-            auto txOutIt = txOuts.find(oneOut.first.txhash);
-            if (txOutIt != txOuts.end())
-            {
-                curTx = txOutIt->second.second;
-            }
-            if ((txOutIt != txOuts.end() ||
-                 (mempool.lookup(oneOut.first.txhash, curTx))) &&
-                 curTx.vin.size() > oneOut.first.index)
-            {
-                spentTxOuts.insert(std::make_pair(curTx.vin[oneOut.first.index].prevout, oneOut.first.txhash));
-                if (!txOuts.count(curTx.GetHash()))
-                {
-                    std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> emptyEntry(std::make_pair(CMempoolAddressDeltaKey(0, uint160()),
-                                                                                                       CMempoolAddressDelta(0, 0)));
-                    txOuts.insert(std::make_pair(curTx.GetHash(), std::make_pair(emptyEntry,
-                                                                                 curTx)));
-                }
-            }
-            else
-            {
-                LogPrint("mempool","Unable to retrieve data for mempool transaction\n");
-                return retVal;
-            }
-        }
-        else
-        {
-            auto txOutIt = txOuts.find(oneOut.first.txhash);
-            if (txOutIt != txOuts.end())
-            {
-                txOutIt->second.first = oneOut;
-            }
-            else if (mempool.lookup(oneOut.first.txhash, curTx) &&
-                        curTx.vout.size() > oneOut.first.index)
-            {
-                txOuts.insert(std::make_pair(oneOut.first.txhash, std::make_pair(oneOut, curTx)));
-            }
-            else
-            {
-                LogPrint("mempool","Unable to retrieve data for mempool tx\n");
-                return retVal;
-            }
-        }
-    }
-
-    // go through spenttx outs
-    // the one not spending an entry in the txOuts map is the
-    // first, and once we have that, we should be able to add it to the beginning of the vector and then
-    // do the following steps to get an ordered vector:
-    // if one is spending it:
-    //   add the one spending it
-    //   remove that one from the map and add the one spending it
-    //   repeat
-    // else
-    //   there should be one left, add it
-    //
-    auto spentTxOutIt = spentTxOuts.begin();
-    for (; spentTxOutIt != spentTxOuts.end(); spentTxOutIt++)
-    {
-        auto txOutIt = txOuts.find(spentTxOutIt->first.hash);
-        if (txOutIt != txOuts.end())
-        {
-            retVal.push_back(txOutIt->second.first);
-            txOuts.erase(txOutIt);
-            break;
-        }
-    }
-
-    // now, we have the first one that spends from outside the mempool, follow those that spend until the tip
-    while (txOuts.size() && retVal.size() && spentTxOuts.size())
-    {
-        auto spentOutIt = spentTxOuts.find(COutPoint(retVal.back().first.txhash, retVal.back().first.index));
-        auto txOutIt = (spentOutIt == spentTxOuts.end()) ? txOuts.end() : txOuts.find(spentTxOutIt->first.hash);
-        if (spentOutIt == spentTxOuts.end() && txOuts.size() == 1)
-        {
-            retVal.push_back(txOuts.begin()->second.first);
-        }
-        else if (txOutIt != txOuts.end())
-        {
-            retVal.push_back(txOutIt->second.first);
-        }
-        else
-        {
-            LogPrint("mempool","Unable to correlate mempool deltas\n");
-            retVal.clear();
-            return retVal;
-        }
-        txOuts.erase(txOutIt);
-    }
-    if (txOuts.size())
-    {
-        LogPrint("mempool", "Cannot correlate mempool deltas\n");
-        retVal.clear();
-    }
-    return retVal;
-}
-
 bool CTxMemPool::removeAddressIndex(const uint256 txhash)
 {
     LOCK(cs);
@@ -566,99 +465,113 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
 
                 if (!coins || (coins->IsCoinBase() &&
                                (((signed long)nMemPoolHeight) - coins->nHeight < COINBASE_MATURITY) ||
-                                    ((signed long)nMemPoolHeight < komodo_block_unlocktime(coins->nHeight) &&
+                                    (_IsVerusMainnetActive() &&
+                                        (signed long)nMemPoolHeight < komodo_block_unlocktime(coins->nHeight) &&
                                         coins->IsAvailable(0) && coins->vout[0].nValue >= ASSETCHAINS_TIMELOCKGTE))) {
                     transactionsToRemove.push_back(tx);
                     break;
                 }
             }
         }
-        bool oneRemoved = false;
-        for (auto &oneOut : tx.vout)
+
+        CValidationState state;
+        if (!ContextualCheckTransaction(tx, state, Params(), nMemPoolHeight, 0))
         {
-            COptCCParams p;
-
-            if (oneOut.scriptPubKey.IsPayToCryptoCondition(p))
+            transactionsToRemove.push_back(tx);
+        }
+        else
+        {
+            bool oneRemoved = false;
+            for (auto &oneOut : tx.vout)
             {
-                switch(p.evalCode)
-                {
-                    case EVAL_EARNEDNOTARIZATION:
-                    case EVAL_ACCEPTEDNOTARIZATION:
-                    {
-                        CPBaaSNotarization notarization;
+                COptCCParams p;
 
-                        if (p.vData.size() && (notarization = CPBaaSNotarization(p.vData[0])).IsValid())
+                if (oneOut.scriptPubKey.IsPayToCryptoCondition(p))
+                {
+                    switch(p.evalCode)
+                    {
+                        case EVAL_EARNEDNOTARIZATION:
+                        case EVAL_ACCEPTEDNOTARIZATION:
                         {
-                            uint32_t rootHeight;
-                            auto mmv = chainActive.GetMMV();
-                            if ((!notarization.IsMirror() &&
-                                 notarization.IsSameChain() &&
-                                 notarization.notarizationHeight >= nMemPoolHeight) ||
-                                (notarization.proofRoots.count(ASSETCHAINS_CHAINID) &&
-                                 ((rootHeight = notarization.proofRoots[ASSETCHAINS_CHAINID].rootHeight) > (nMemPoolHeight - 1) ||
-                                   (mmv.resize(rootHeight + 1), rootHeight != (mmv.size() - 1)) ||
-                                   notarization.proofRoots[ASSETCHAINS_CHAINID].blockHash != chainActive[rootHeight]->GetBlockHash() ||
-                                   notarization.proofRoots[ASSETCHAINS_CHAINID].stateRoot != mmv.GetRoot())))
+                            CPBaaSNotarization notarization;
+
+                            if (p.vData.size() && (notarization = CPBaaSNotarization(p.vData[0])).IsValid())
+                            {
+                                uint32_t rootHeight;
+                                auto mmv = chainActive.GetMMV();
+                                if ((!notarization.IsMirror() &&
+                                    notarization.IsSameChain() &&
+                                    notarization.notarizationHeight >= nMemPoolHeight) ||
+                                    (notarization.proofRoots.count(ASSETCHAINS_CHAINID) &&
+                                    ((rootHeight = notarization.proofRoots[ASSETCHAINS_CHAINID].rootHeight) > (nMemPoolHeight - 1) ||
+                                    (mmv.resize(rootHeight + 1), rootHeight != (mmv.size() - 1)) ||
+                                    notarization.proofRoots[ASSETCHAINS_CHAINID].blockHash != chainActive[rootHeight]->GetBlockHash() ||
+                                    notarization.proofRoots[ASSETCHAINS_CHAINID].stateRoot != mmv.GetRoot())))
+                                {
+                                    transactionsToRemove.push_back(tx);
+                                    oneRemoved = true;
+                                }
+                            }
+                            else
                             {
                                 transactionsToRemove.push_back(tx);
                                 oneRemoved = true;
                             }
+                            break;
                         }
-                        else
-                        {
-                            transactionsToRemove.push_back(tx);
-                            oneRemoved = true;
-                        }
-                        break;
-                    }
 
-                    // TODO: HARDENING - we need to make it so that once a transaction is proven as valid,
-                    // its proof remains valid, even when the blockchain is unwound backwards to the point
-                    // where that transaction originally exists on chain
-                    case EVAL_NOTARY_EVIDENCE:
-                    case EVAL_FINALIZE_NOTARIZATION:
-                    case EVAL_RESERVE_TRANSFER:
-                    case EVAL_IDENTITY_PRIMARY:
-                    case EVAL_IDENTITY_RESERVATION:
-                    case EVAL_IDENTITY_ADVANCEDRESERVATION:
-                    case EVAL_FINALIZE_EXPORT:
+                        // TODO: POST HARDENING - we need to make it so that once a transaction is proven as valid,
+                        // its proof remains valid, even when the blockchain is unwound backwards to the point
+                        // where that transaction originally exists on chain
+                        // this is an optimization, not hardening issue pre-PBaaS, and may possibly be addressed as easily
+                        // as calling ContextualCheckTransaction on the transaction without all of this.
+                        // currently, transactions rendered invalid by reorgs will end up removed at block creation and are
+                        // not accepted when relayed once invalid.
+                        case EVAL_NOTARY_EVIDENCE:
+                        case EVAL_FINALIZE_NOTARIZATION:
+                        case EVAL_RESERVE_TRANSFER:
+                        case EVAL_IDENTITY_PRIMARY:
+                        case EVAL_IDENTITY_RESERVATION:
+                        case EVAL_IDENTITY_ADVANCEDRESERVATION:
+                        case EVAL_FINALIZE_EXPORT:
+                        {
+                            break;
+                        }
+
+                        case EVAL_CROSSCHAIN_EXPORT:
+                        {
+                            CCrossChainExport ccx;
+
+                            if (!(p.vData.size() &&
+                                (ccx = CCrossChainExport(p.vData[0])).IsValid() &&
+                                (ccx.sourceSystemID != ASSETCHAINS_CHAINID ||
+                                ccx.sourceHeightEnd < nMemPoolHeight)))
+                            {
+                                transactionsToRemove.push_back(tx);
+                                oneRemoved = true;
+                            }
+                            break;
+                        }
+
+                        case EVAL_CROSSCHAIN_IMPORT:
+                        {
+                            CCrossChainImport cci;
+
+                            if (!(p.vData.size() &&
+                                (cci = CCrossChainImport(p.vData[0])).IsValid() &&
+                                (cci.sourceSystemID != ASSETCHAINS_CHAINID ||
+                                cci.sourceSystemHeight < nMemPoolHeight)))
+                            {
+                                transactionsToRemove.push_back(tx);
+                                oneRemoved = true;
+                            }
+                            break;
+                        }
+                    }
+                    if (oneRemoved)
                     {
                         break;
                     }
-
-                    case EVAL_CROSSCHAIN_EXPORT:
-                    {
-                        CCrossChainExport ccx;
-
-                        if (!(p.vData.size() &&
-                             (ccx = CCrossChainExport(p.vData[0])).IsValid() &&
-                             (ccx.sourceSystemID != ASSETCHAINS_CHAINID ||
-                              ccx.sourceHeightEnd < nMemPoolHeight)))
-                        {
-                            transactionsToRemove.push_back(tx);
-                            oneRemoved = true;
-                        }
-                        break;
-                    }
-
-                    case EVAL_CROSSCHAIN_IMPORT:
-                    {
-                        CCrossChainImport cci;
-
-                        if (!(p.vData.size() &&
-                             (cci = CCrossChainImport(p.vData[0])).IsValid() &&
-                             (cci.sourceSystemID != ASSETCHAINS_CHAINID ||
-                              cci.sourceSystemHeight < nMemPoolHeight)))
-                        {
-                            transactionsToRemove.push_back(tx);
-                            oneRemoved = true;
-                        }
-                        break;
-                    }
-                }
-                if (oneRemoved)
-                {
-                    break;
                 }
             }
         }
