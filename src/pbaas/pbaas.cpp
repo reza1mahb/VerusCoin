@@ -2852,6 +2852,8 @@ bool ValidateReserveTransfer(struct CCcontract_info *cp, Eval* eval, const CTran
             return eval->Error("Invalid currency definition for reserve transfer being spent");
         }
 
+        uint32_t nHeight = chainActive.Height();
+
         CCrossChainExport ccx;
         CCrossChainImport cci;
         int32_t primaryExportOut, nextOutput;
@@ -2897,7 +2899,7 @@ bool ValidateReserveTransfer(struct CCcontract_info *cp, Eval* eval, const CTran
                         rt.IsArbitrageOnly())
             {
                 std::vector<CUTXORef> arbOuts;
-                std::vector<CReserveTransfer> arbTransfers = cci.GetArbitrageTransfers(tx, eval->state, nullptr, &arbOuts);
+                std::vector<CReserveTransfer> arbTransfers = cci.GetArbitrageTransfers(tx, eval->state, nHeight, nullptr, &arbOuts);
                 CUTXORef thisUTXORef(tx.vin[nIn].prevout);
                 for (auto &oneOut : arbOuts)
                 {
@@ -3100,6 +3102,7 @@ bool ValidateReserveDeposit(struct CCcontract_info *cp, Eval* eval, const CTrans
             }
 
             CReserveDeposit oneBeingSpent;
+            bool afterNotarization = false;
 
             if (pCoins->vout[tx.vin[i].prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
                 p.IsValid() &&
@@ -3110,6 +3113,29 @@ bool ValidateReserveDeposit(struct CCcontract_info *cp, Eval* eval, const CTrans
                 {
                     return eval->Error(std::string(__func__) + ": reserve deposit being spent by input (" + tx.vin[i].ToString() + ") is invalid in view");
                 }
+            }
+            else if (p.IsValid() &&
+                     importNotarization.currencyID == sourceRD.controllingCurrencyID &&
+                     p.evalCode == EVAL_RESERVE_TRANSFER &&
+                     !afterNotarization &&
+                     p.vData.size())
+            {
+                CReserveTransfer arbRt(p.vData[0]);
+                if (arbRt.IsArbitrageOnly() &&
+                    importNotarization.IsValid() &&
+                    arbRt.GetImportCurrency() == importNotarization.currencyID)
+                {
+                    totalDeposits += pCoins->vout[tx.vin[i].prevout.n].scriptPubKey.ReserveOutValue();
+                    if (pCoins->vout[tx.vin[i].prevout.n].nValue)
+                    {
+                        totalDeposits.valueMap[ASSETCHAINS_CHAINID] += pCoins->vout[tx.vin[i].prevout.n].nValue;
+                    }
+                }
+            }
+            else if (p.IsValid() &&
+                     p.evalCode == EVAL_ACCEPTEDNOTARIZATION)
+            {
+                afterNotarization = true;
             }
 
             if (oneBeingSpent.IsValid() &&
@@ -6491,6 +6517,24 @@ bool CConnectedChains::CheckClearConvert(uint32_t height) const
            (!PBAAS_TESTMODE && (!IsVerusActive() || height >= PBAAS_CLEARCONVERT_HEIGHT));
 }
 
+uint32_t CConnectedChains::AutoArbitrageEnabledHeight(bool getVerusHeight) const
+{
+    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 339711 : 2870202) : 2;
+}
+
+bool CConnectedChains::AutoArbitrageEnabled(uint32_t height) const
+{
+    if (PBAAS_TESTMODE && !IsVerusActive())
+    {
+        height = std::min(((uint32_t)chainActive.Height()), height);
+        return height > 0 ? chainActive[height]->nTime >= PBAAS_TESTFORK10_TIME : false;
+    }
+    else
+    {
+        return height >= AutoArbitrageEnabledHeight(false);
+    }
+}
+
 bool CConnectedChains::ConfigureEthBridge(bool callToCheck)
 {
     // first time through, we initialize the VETH gateway config file
@@ -7799,7 +7843,7 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
         // provide a callout for arbitrage and potentially get an additional reserve transfer
         // input for this import. we should also add it to the exportTransfers vector
         // with the arbitrage flag set
-        std::vector<std::pair<CInputDescriptor, CReserveTransfer>> arbitrageTransfersIn;
+        std::vector<std::tuple<CInputDescriptor, CReserveTransfer, CTransaction>> arbitrageTransfersIn;
         if (VERUS_ARBITRAGE_CURRENCIES.size() &&
             destCur.IsFractional() &&
             lastNotarization.IsLaunchComplete() &&
@@ -7841,24 +7885,26 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
                 }
             }
 
-            if (SelectArbitrageFromOffers(arbOffers,
-                                          lastNotarization,
-                                          sourceSystemDef,
-                                          destCur,
-                                          ccx.sourceHeightStart,
-                                          nextHeight,
-                                          exportTransfers,
-                                          transferHash,
-                                          newNotarization,
-                                          newOutputs,
-                                          importedCurrency,
-                                          gatewayDepositsUsed,
-                                          spentCurrencyOut,
-                                          ccx.exporter,
-                                          arbitrageCurrencies,
-                                          arbitrageTransfersIn))
+            if (!SelectArbitrageFromOffers(arbOffers,
+                                           lastNotarization,
+                                           sourceSystemDef,
+                                           destCur,
+                                           ccx.sourceHeightStart,
+                                           nextHeight,
+                                           exportTransfers,
+                                           transferHash,
+                                           newNotarization,
+                                           newOutputs,
+                                           importedCurrency,
+                                           gatewayDepositsUsed,
+                                           spentCurrencyOut,
+                                           ccx.exporter,
+                                           arbitrageCurrencies,
+                                           arbitrageTransfersIn))
             {
-
+                LogPrintf("%s: invalid export or arbitrage offers for currency %s on system %s\n", __func__, destCur.name.c_str(), EncodeDestination(CIdentityID(destCur.systemID)).c_str());
+                failedCurrencyDest = ccx.destCurrencyID;
+                continue;
             }
         }
         else
@@ -8115,15 +8161,9 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
 
             // if we qualify to add and also have an additional reserve transfer
             // add it as an input
-            if (lastNotarization.currencyState.IsFractional() &&
-                lastNotarization.IsLaunchComplete() &&
-                !lastNotarization.IsRefunding() &&
-                !arbitrageTransfersIn.size())
+            if (arbitrageTransfersIn.size())
             {
-                for (auto &arbitrageTransferIn : arbitrageTransfersIn)
-                {
-                    tb.AddTransparentInput(arbitrageTransferIn.first.txIn.prevout, arbitrageTransferIn.first.scriptPubKey, arbitrageTransferIn.first.nValue);
-                }
+                tb.AddTransparentInput(std::get<0>(arbitrageTransfersIn[0]).txIn.prevout, std::get<0>(arbitrageTransfersIn[0]).scriptPubKey, std::get<0>(arbitrageTransfersIn[0]).nValue);
             }
 
             if (!lastNotarizationOut.txIn.prevout.hash.IsNull())
@@ -8268,7 +8308,18 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
                 }
             }
 
-            newLocalReserveDeposits = ((totalDepositsInput + incomingCurrency) - spentCurrencyOut).CanonicalMap();
+            CCurrencyValueMap arbitrageDeposits;
+            // all currencies from arbitragetransfers are local reserve deposits
+            if (arbitrageTransfersIn.size())
+            {
+                arbitrageDeposits = std::get<0>(arbitrageTransfersIn[0]).scriptPubKey.ReserveOutValue();
+                if (std::get<0>(arbitrageTransfersIn[0]).nValue)
+                {
+                    arbitrageDeposits.valueMap[ASSETCHAINS_CHAINID] = std::get<0>(arbitrageTransfersIn[0]).nValue;
+                }
+            }
+
+            newLocalReserveDeposits += ((totalDepositsInput + incomingCurrency + arbitrageDeposits) - spentCurrencyOut).CanonicalMap();
 
             LogPrint("crosschainimports", "%s: totalDepositsInput: %s\nincomingPlusDepositsMinusSpent: %s\n",
                 __func__,
@@ -8355,10 +8406,25 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
                 ccx.totalAmounts.ToUniValue().write(1,2).c_str(),
                 ccx.totalFees.ToUniValue().write(1,2).c_str());
 
+        if (arbitrageTransfersIn.size())
+        {
+            if (!myAddtomempool(std::get<2>(arbitrageTransfersIn[0]), &state))
+            {
+                LogPrintf("%s: arbitrage transaction failure %s\n", __func__, state.GetRejectReason().c_str());
+                failedCurrencyDest = ccx.destCurrencyID;
+                continue;
+            }
+        }
+
         // pay the fee out to the miner
         CReserveTransactionDescriptor rtxd(tb.mtx, view, nHeight + 1);
         if (!rtxd.IsValid())
         {
+            if (arbitrageTransfersIn.size())
+            {
+                std::list<CTransaction> removedTxes;
+                mempool.remove(std::get<2>(arbitrageTransfersIn[0]), removedTxes, true);
+            }
             printf("%s: Created invalid import transaction for currency %s\n", __func__, EncodeDestination(CIdentityID(ccx.destCurrencyID)).c_str());
             LogPrintf("%s: Created invalid import transaction for currency %s\n", __func__, EncodeDestination(CIdentityID(ccx.destCurrencyID)).c_str());
             failedCurrencyDest = ccx.destCurrencyID;
@@ -8419,6 +8485,11 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
         TransactionBuilderResult result = tb.Build();
         if (result.IsError())
         {
+            if (arbitrageTransfersIn.size())
+            {
+                std::list<CTransaction> removedTxes;
+                mempool.remove(std::get<2>(arbitrageTransfersIn[0]), removedTxes, true);
+            }
             if (LogAcceptCategory("crosschainimports"))
             {
                 UniValue jsonTx(UniValue::VOBJ);
@@ -8441,6 +8512,11 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
         }
         catch(const std::exception& e)
         {
+            if (arbitrageTransfersIn.size())
+            {
+                std::list<CTransaction> removedTxes;
+                mempool.remove(std::get<2>(arbitrageTransfersIn[0]), removedTxes, true);
+            }
             LogPrintf("%s: failure to build transaction for export to %s\n", __func__, EncodeDestination(CIdentityID(ccx.destCurrencyID)).c_str());
             failedCurrencyDest = ccx.destCurrencyID;
             continue;
@@ -8497,6 +8573,11 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
             // add to mem pool and relay
             if (!myAddtomempool(newImportTx, &state))
             {
+                if (arbitrageTransfersIn.size())
+                {
+                    std::list<CTransaction> removedTxes;
+                    mempool.remove(std::get<2>(arbitrageTransfersIn[0]), removedTxes, true);
+                }
                 LogPrintf("%s: %s\n", __func__, state.GetRejectReason().c_str());
                 if (state.GetRejectReason() == "bad-txns-inputs-missing" || state.GetRejectReason() == "bad-txns-inputs-duplicate")
                 {
@@ -8511,7 +8592,10 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
             else
             {
                 //printf("%s: success adding %s to mempool\n", __func__, newImportTx.GetHash().GetHex().c_str());
-                RelayTransaction(newImportTx);
+                if (!arbitrageTransfersIn.size())
+                {
+                    RelayTransaction(newImportTx);
+                }
             }
 
             if (!mempool.mapTx.count(newImportTx.GetHash()))

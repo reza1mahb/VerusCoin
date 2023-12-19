@@ -1319,7 +1319,8 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     VERUS_NODEID = nodeIDDest.which() == COptCCParams::ADDRTYPE_ID ? GetDestinationID(nodeIDDest) : uint160();
 
     UniValue arbitrageArr(UniValue::VARR);
-    if (arbitrageArr.read(GetArg("-arbitragecurrencies", "")) && arbitrageArr.isArray() && arbitrageArr.size())
+    std::string arbString = GetArg("-arbitragecurrencies", "");
+    if (arbitrageArr.read(arbString) && arbitrageArr.isArray() && arbitrageArr.size())
     {
         for (int i = 0; i < arbitrageArr.size(); i++)
         {

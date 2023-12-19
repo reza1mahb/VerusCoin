@@ -2149,6 +2149,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
 
         // This vector will be sorted into a priority queue:
         vector<TxPriority> vecPriority;
+        std::map<uint256, int> vecPriTxMap;
         vecPriority.reserve(mempool.mapTx.size() + 1);
 
         {
@@ -2856,6 +2857,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
         std::set<std::tuple<uint160, uint160>> tmpCurrencySecondLegExport;
 
         std::list<CTransaction> txesToRemove;
+        std::set<CUTXORef> orphanArbs;
 
         // now add transactions from the mem pool to the priority heap
         for (CTxMemPool::indexed_transaction_set::iterator mi = mempool.mapTx.begin();
@@ -2898,7 +2900,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                 totalReserveIn = rtxd.ReserveInputMap();
                 assert(!totalReserveIn.valueMap.count(ASSETCHAINS_CHAINID));
 
-                if (rtxd.IsReserveTransfer())
+                if (rtxd.IsReserveTransfer() || rtxd.IsImport())
                 {
                     for (int j = 0; j < tx.vout.size(); j++)
                     {
@@ -2908,74 +2910,102 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                         if (oneOut.scriptPubKey.IsPayToCryptoCondition(p) &&
                             p.IsValid() &&
                             p.version >= p.VERSION_V3 &&
-                            p.vData.size() &&
-                            p.evalCode == EVAL_RESERVE_TRANSFER)
+                            p.vData.size())
                         {
-                            //if the destination currency is fractional, this considers the total fee that
-                            // will actually be realized on import as fee for prioritization
-
-                            // make sure we don't export the same identity or currency to the same destination more than once in any block
-                            // we cover the single block case here, and the protocol for each must reject anything relating to prior blocks
-                            CReserveTransfer rt;
-                            CCurrencyDefinition destSystem;
-                            if ((rt = CReserveTransfer(p.vData[0])).IsValid())
+                            if (p.evalCode == EVAL_CROSSCHAIN_IMPORT)
                             {
-                                uint160 destCurrencyID = rt.GetImportCurrency();
-                                CCurrencyDefinition destCurrency = ConnectedChains.GetCachedCurrency(destCurrencyID);
-                                CCurrencyDefinition destSystem = ConnectedChains.GetCachedCurrency(destCurrency.SystemOrGatewayID());
-                                CCurrencyDefinition secondLegSystem;
-
-                                if (!destCurrency.IsValid() || !destSystem.IsValid())
+                                // make sure we spend all of our arbs via imports
+                                CCrossChainImport cci, sysCCI;
+                                CCrossChainExport ccx;
+                                int primaryImportOut;
+                                int32_t sysCCIOut, notarizationOut, evidenceOutStart, evidenceOutEnd;
+                                CPBaaSNotarization importNotarization;
+                                CCurrencyDefinition destSystem;
+                                std::vector<CReserveTransfer> reserveTransfers;
+                                std::vector<CTransaction> arbTxes;
+                                std::vector<CUTXORef> arbTxOuts;
+                                if ((cci = CCrossChainImport(p.vData[0])).IsValid() &&
+                                    !cci.IsSourceSystemImport() &&
+                                    (reserveTransfers = cci.GetArbitrageTransfers(tx, state, nHeight, &arbTxes, &arbTxOuts)).size())
                                 {
-                                    if (LogAcceptCategory("crosschainexports"))
+                                    for (auto &oneRef : arbTxOuts)
                                     {
-                                        UniValue jsonTx(UniValue::VOBJ);
-                                        TxToUniv(tx, uint256(), jsonTx);
-                                        printf("%s: invalid or inaccessible destination currency/system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
-                                        LogPrintf("%s: invalid or inaccessible destination currency/system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
+                                        orphanArbs.erase(oneRef);
                                     }
-                                    txesToRemove.push_back(tx);
-                                    continue;
                                 }
+                            }
+                            else if (p.evalCode == EVAL_RESERVE_TRANSFER)
+                            {
+                                //if the destination currency is fractional, this considers the total fee that
+                                // will actually be realized on import as fee for prioritization
 
-                                // determine second system dest if there is any, and enforce limits to that system as well
-                                if (rt.destination.HasGatewayLeg() && rt.destination.gatewayID != destSystem.GetID())
+                                // make sure we don't export the same identity or currency to the same destination more than once in any block
+                                // we cover the single block case here, and the protocol for each must reject anything relating to prior blocks
+                                CReserveTransfer rt;
+                                CCurrencyDefinition destSystem;
+                                if ((rt = CReserveTransfer(p.vData[0])).IsValid())
                                 {
-                                    secondLegSystem = ConnectedChains.GetCachedCurrency(rt.destination.gatewayID);
-                                    if (!secondLegSystem.IsValid())
+                                    if (rt.IsArbitrageOnly())
+                                    {
+                                        orphanArbs.insert(CUTXORef(tx.GetHash(), j));
+                                    }
+                                    uint160 destCurrencyID = rt.GetImportCurrency();
+                                    CCurrencyDefinition destCurrency = ConnectedChains.GetCachedCurrency(destCurrencyID);
+                                    CCurrencyDefinition destSystem = ConnectedChains.GetCachedCurrency(destCurrency.SystemOrGatewayID());
+                                    CCurrencyDefinition secondLegSystem;
+
+                                    if (!destCurrency.IsValid() || !destSystem.IsValid())
                                     {
                                         if (LogAcceptCategory("crosschainexports"))
                                         {
                                             UniValue jsonTx(UniValue::VOBJ);
                                             TxToUniv(tx, uint256(), jsonTx);
-                                            printf("%s: invalid or inaccessible second leg destination system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
-                                            LogPrintf("%s: invalid or inaccessible second leg destination system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
+                                            printf("%s: invalid or inaccessible destination currency/system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
+                                            LogPrintf("%s: invalid or inaccessible destination currency/system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
                                         }
                                         txesToRemove.push_back(tx);
                                         continue;
                                     }
-                                }
 
-                                // if this is a conversion, estimate delayed converted fees
-                                if (destCurrency.IsFractional() &&
-                                    rt.IsConversion() &&
-                                    !rt.IsPreConversion() &&
-                                    nHeight > destCurrency.startBlock)
-                                {
-                                    CCurrencyValueMap delayedFees = rt.CalculateFee();
-                                    if (delayedFees.valueMap.count(ASSETCHAINS_CHAINID))
+                                    // determine second system dest if there is any, and enforce limits to that system as well
+                                    if (rt.destination.HasGatewayLeg() && rt.destination.gatewayID != destSystem.GetID())
                                     {
-                                        delayedFee += delayedFees.valueMap[ASSETCHAINS_CHAINID];
-                                        delayedFees.valueMap.erase(ASSETCHAINS_CHAINID);
-                                    }
-                                    if (delayedFees.valueMap.size())
-                                    {
-                                        CCoinbaseCurrencyState pricingState = ConnectedChains.GetCurrencyState(destCurrency, nHeight);
-                                        for (auto &oneCurFee : delayedFees.valueMap)
+                                        secondLegSystem = ConnectedChains.GetCachedCurrency(rt.destination.gatewayID);
+                                        if (!secondLegSystem.IsValid())
                                         {
-                                            delayedFee += pricingState.ReserveToNativeRaw(
-                                                                oneCurFee.second,
-                                                                pricingState.TargetConversionPrice(oneCurFee.first, ASSETCHAINS_CHAINID));
+                                            if (LogAcceptCategory("crosschainexports"))
+                                            {
+                                                UniValue jsonTx(UniValue::VOBJ);
+                                                TxToUniv(tx, uint256(), jsonTx);
+                                                printf("%s: invalid or inaccessible second leg destination system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
+                                                LogPrintf("%s: invalid or inaccessible second leg destination system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
+                                            }
+                                            txesToRemove.push_back(tx);
+                                            continue;
+                                        }
+                                    }
+
+                                    // if this is a conversion, estimate delayed converted fees
+                                    if (destCurrency.IsFractional() &&
+                                        rt.IsConversion() &&
+                                        !rt.IsPreConversion() &&
+                                        nHeight > destCurrency.startBlock)
+                                    {
+                                        CCurrencyValueMap delayedFees = rt.CalculateFee();
+                                        if (delayedFees.valueMap.count(ASSETCHAINS_CHAINID))
+                                        {
+                                            delayedFee += delayedFees.valueMap[ASSETCHAINS_CHAINID];
+                                            delayedFees.valueMap.erase(ASSETCHAINS_CHAINID);
+                                        }
+                                        if (delayedFees.valueMap.size())
+                                        {
+                                            CCoinbaseCurrencyState pricingState = ConnectedChains.GetCurrencyState(destCurrency, nHeight);
+                                            for (auto &oneCurFee : delayedFees.valueMap)
+                                            {
+                                                delayedFee += pricingState.ReserveToNativeRaw(
+                                                                    oneCurFee.second,
+                                                                    pricingState.TargetConversionPrice(oneCurFee.first, ASSETCHAINS_CHAINID));
+                                            }
                                         }
                                     }
                                 }
@@ -2985,8 +3015,9 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                 }
             }
 
-            BOOST_FOREACH(const CTxIn& txin, tx.vin)
+            for (int inNum = 0; inNum < tx.vin.size(); inNum++)
             {
+                const CTxIn &txin = tx.vin[inNum];
                 CAmount nValueIn = 0;
                 CCurrencyValueMap reserveValueIn;
 
@@ -3002,7 +3033,42 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                         LogPrint("mempool", "mempool transaction missing input");
                         fMissingInputs = true;
                         if (porphan)
+                        {
+                            for (int inNumStart = 0; inNumStart < inNum; inNumStart++)
+                            {
+                                auto depIt = mapDependers.find(tx.vin[inNumStart].prevout.hash);
+                                if (depIt != mapDependers.end())
+                                {
+                                    for (auto orphanIt = depIt->second.end(); orphanIt != depIt->second.begin(); )
+                                    {
+                                        orphanIt--;
+                                        if (*orphanIt == porphan)
+                                        {
+                                            bool isPriorIt = orphanIt != depIt->second.begin();
+                                            auto nextIt = !isPriorIt ? depIt->second.end() : orphanIt;
+                                            if (isPriorIt)
+                                            {
+                                                nextIt--;
+                                            }
+                                            depIt->second.erase(orphanIt);
+                                            if (isPriorIt)
+                                            {
+                                                orphanIt = ++nextIt;
+                                            }
+                                            else
+                                            {
+                                                orphanIt = depIt->second.begin();
+                                            }
+                                        }
+                                    }
+                                    if (!depIt->second.size())
+                                    {
+                                        mapDependers.erase(tx.vin[inNumStart].prevout.hash);
+                                    }
+                                }
+                            }
                             vOrphan.pop_back();
+                        }
                         break;
                     }
 
@@ -3040,6 +3106,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                 dPriority += ((double)((reserveValueIn.valueMap.size() ? currencyState.ReserveToNative(reserveValueIn) : 1) + nValueIn)) * nConf;
                 nTotalIn += nValueIn;
             }
+
             // prioritize notarizations, finalizations, and exports for our notary chain
             if (rtxd.IsNotaryPrioritized() || rtxd.IsExport())
             {
@@ -3067,22 +3134,49 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             }
             else
             {
+                vecPriTxMap.insert({tx.GetHash(), vecPriority.size()});
                 vecPriority.push_back(TxPriority(dPriority, feeRate, &(mi->GetTx())));
             }
         }
 
+        std::set<uint256> arbTxOrphans;
+        for (auto &oneOrphanArb : orphanArbs)
+        {
+            arbTxOrphans.insert(oneOrphanArb.hash);
+        }
+        for (auto &oneTxToRemove : arbTxOrphans)
+        {
+            txesToRemove.push_back(*mempool.get(oneTxToRemove));
+        }
+
         // remove transactions that we should from the mempool
+        std::set<int> toRemoveFromPriVec;
         for (auto &oneTx : txesToRemove)
         {
+            auto txPriLoc = vecPriTxMap.find(oneTx.GetHash());
+            if (txPriLoc != vecPriTxMap.end())
+            {
+                toRemoveFromPriVec.insert(txPriLoc->second);
+            }
             std::list<CTransaction> removed;
             mempool.remove(oneTx, removed, true);
             mapDependers.erase(oneTx.GetHash());
             for (auto &oneRemovedTx : removed)
             {
+                txPriLoc = vecPriTxMap.find(oneRemovedTx.GetHash());
+                if (txPriLoc != vecPriTxMap.end())
+                {
+                    toRemoveFromPriVec.insert(txPriLoc->second);
+                }
                 mapDependers.erase(oneRemovedTx.GetHash());
             }
         }
         txesToRemove.clear();
+
+        for (auto rIt = toRemoveFromPriVec.rbegin(); rIt != toRemoveFromPriVec.rend(); rIt++)
+        {
+            vecPriority.erase(vecPriority.begin() + *rIt);
+        }
 
         //
         // NOW -- REALLY START TO FILL THE BLOCK

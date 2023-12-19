@@ -50,6 +50,7 @@ extern uint32_t PBAAS_TESTFORK6_TIME;
 extern uint32_t PBAAS_TESTFORK7_TIME;
 extern uint32_t PBAAS_TESTFORK8_TIME;
 extern uint32_t PBAAS_TESTFORK9_TIME;
+extern uint32_t PBAAS_TESTFORK10_TIME;
 extern uint32_t PBAAS_MAINDEFI3_HEIGHT;
 extern uint32_t PBAAS_CLEARCONVERT_HEIGHT;
 extern uint32_t PBAAS_LASTKNOWNCLEARORACLE_HEIGHT;
@@ -828,6 +829,7 @@ public:
 
     std::vector<CReserveTransfer> GetArbitrageTransfers(const CTransaction &tx,
                                                         CValidationState &state,
+                                                        uint32_t nHeight,
                                                         std::vector<CTransaction> *pArbTxes=nullptr,
                                                         std::vector<CUTXORef> *pArbOuts=nullptr,
                                                         std::vector<uint256> *pArbTxBlockHash=nullptr) const;

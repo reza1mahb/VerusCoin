@@ -1303,7 +1303,7 @@ GetOfferMap(const uint160 &currencyOrId, bool isCurrency, bool acceptOnlyCurrenc
                                                          std::make_pair(std::make_pair((int64_t)0, CCurrencyValueMap(std::vector<uint160>({weTransfer.GetID()}), std::vector<int64_t>({0}))),
                                                                         std::make_pair(CInputDescriptor(offerOuts.second.scriptPubKey,
                                                                                                         offerOuts.second.nValue,
-                                                                                                        CTxIn(COutPoint(offerTx.GetHash(), 0))),
+                                                                                                        CTxIn(COutPoint(oneOffer.first.txhash, 0))),
                                                                                        offerTx))));
                         }
                         else // this is an offer to buy the ID specified in currencyOrId for either currency or another ID, which is in the first output
@@ -1324,7 +1324,7 @@ GetOfferMap(const uint160 &currencyOrId, bool isCurrency, bool acceptOnlyCurrenc
                                                              std::make_pair(std::make_pair((int64_t)0, CCurrencyValueMap(std::vector<uint160>({currencyOrId}), std::vector<int64_t>({0}))),
                                                                             std::make_pair(CInputDescriptor(offerOuts.second.scriptPubKey,
                                                                                                             offerOuts.second.nValue,
-                                                                                                            CTxIn(COutPoint(offerTx.GetHash(), 0))),
+                                                                                                            CTxIn(COutPoint(oneOffer.first.txhash, 0))),
                                                                                            offerTx))));
                             }
                             else if (!acceptOnlyId && !offerToTransfer.IsValid())
@@ -1350,7 +1350,7 @@ GetOfferMap(const uint160 &currencyOrId, bool isCurrency, bool acceptOnlyCurrenc
                                                             std::make_pair(std::make_pair((int64_t)0, CCurrencyValueMap(std::vector<uint160>({weTransfer.GetID()}), std::vector<int64_t>({0}))),
                                                                             std::make_pair(CInputDescriptor(offerOuts.second.scriptPubKey,
                                                                                                             offerOuts.second.nValue,
-                                                                                                            CTxIn(COutPoint(offerTx.GetHash(), 0))),
+                                                                                                            CTxIn(COutPoint(oneOffer.first.txhash, 0))),
                                                                                         offerTx))));
                             }
                         }
@@ -1384,7 +1384,7 @@ GetOfferMap(const uint160 &currencyOrId, bool isCurrency, bool acceptOnlyCurrenc
                                                              std::make_pair(std::make_pair((int64_t)1, CCurrencyValueMap(std::vector<uint160>({currencyOrId}), std::vector<int64_t>({wePay.valueMap[currencyOrId]}))),
                                                                             std::make_pair(CInputDescriptor(offerOuts.second.scriptPubKey,
                                                                                                             offerOuts.second.nValue,
-                                                                                                            CTxIn(COutPoint(offerTx.GetHash(), 0))),
+                                                                                                            CTxIn(COutPoint(oneOffer.first.txhash, 0))),
                                                                                            offerTx))));
                             }
                             // exchange with other currency
@@ -1440,8 +1440,6 @@ GetOfferMap(const uint160 &currencyOrId, bool isCurrency, bool acceptOnlyCurrenc
                                     wePayAmount = nonNative.valueMap.begin()->second;
                                 }
 
-                                CAmount price = CCurrencyState::NativeToReserveRaw(wePayAmount, offerAmount);
-
                                 wePay = offerOuts.second.ReserveOutValue();
                                 if (offerOuts.second.nValue > 0)
                                 {
@@ -1449,14 +1447,14 @@ GetOfferMap(const uint160 &currencyOrId, bool isCurrency, bool acceptOnlyCurrenc
                                 }
 
                                 retVal.insert(std::make_pair(std::tuple<int, uint160, uint160, int64_t, int64_t>({1,
-                                                                                                                  offerToTransfer.GetID(),
+                                                                                                                  currencyID,
                                                                                                                   currencyOrId,
-                                                                                                                  price,
+                                                                                                                  offerAmount,
                                                                                                                   wePayAmount}),
                                                              std::make_pair(std::make_pair(1, CCurrencyValueMap(std::vector<uint160>({currencyOrId}), std::vector<int64_t>({wePay.valueMap[currencyOrId]}))),
                                                                             std::make_pair(CInputDescriptor(offerOuts.second.scriptPubKey,
                                                                                                             offerOuts.second.nValue,
-                                                                                                            CTxIn(COutPoint(offerTx.GetHash(), 0))),
+                                                                                                            CTxIn(COutPoint(oneOffer.first.txhash, 0))),
                                                                                            offerTx))));
                             }
                         }
@@ -1496,17 +1494,15 @@ GetOfferMap(const uint160 &currencyOrId, bool isCurrency, bool acceptOnlyCurrenc
                                 continue;
                             }
 
-                            CAmount price = CCurrencyState::NativeToReserveRaw(payAmount, offerToPay.valueMap[currencyOrId]);
-
                             retVal.insert(std::make_pair(std::tuple<int, uint160, uint160, int64_t, int64_t>({1,
                                                                                                               currencyOrId,
                                                                                                               currencyID,
-                                                                                                              price,
-                                                                                                              offerToPay.valueMap[currencyOrId]}),
+                                                                                                              offerToPay.valueMap[currencyOrId],
+                                                                                                              payAmount}),
                                                          std::make_pair(std::make_pair(1, CCurrencyValueMap(std::vector<uint160>({currencyID}), std::vector<int64_t>({payAmount}))),
                                                                         std::make_pair(CInputDescriptor(offerOuts.second.scriptPubKey,
                                                                                                         offerOuts.second.nValue,
-                                                                                                        CTxIn(COutPoint(offerTx.GetHash(), 0))),
+                                                                                                        CTxIn(COutPoint(oneOffer.first.txhash, 0))),
                                                                                        offerTx))));
                         }
                         // offer to sell the specified ID for a currency
@@ -1535,7 +1531,7 @@ GetOfferMap(const uint160 &currencyOrId, bool isCurrency, bool acceptOnlyCurrenc
                                                             std::make_pair(std::make_pair(1, CCurrencyValueMap(std::vector<uint160>({currencyID}), std::vector<int64_t>({payAmount}))),
                                                                         std::make_pair(CInputDescriptor(offerOuts.second.scriptPubKey,
                                                                                                         offerOuts.second.nValue,
-                                                                                                        CTxIn(COutPoint(offerTx.GetHash(), 0))),
+                                                                                                        CTxIn(COutPoint(oneOffer.first.txhash, 0))),
                                                                                         offerTx))));
                         }
                     }
@@ -1555,6 +1551,8 @@ GetOfferMap(const uint160 &currencyOrId, bool isCurrency, bool acceptOnlyCurrenc
     return retVal;
 }
 
+UniValue takeoffer(const UniValue& params, bool fHelp);
+
 // this takes a number of on-chain offers for the arbitrageCurrencySet, each paying in one of the reserves
 // or the primary currency of the the notarization, which must be fractional.
 bool SelectArbitrageFromOffers(const std::vector<
@@ -1565,7 +1563,7 @@ bool SelectArbitrageFromOffers(const std::vector<
                                                         const CCurrencyDefinition &destCurrency,
                                                         uint32_t startHeight,
                                                         uint32_t nextHeight,
-                                                        std::vector<CReserveTransfer> exportTransfers,
+                                                        std::vector<CReserveTransfer> &exportTransfers,
                                                         uint256 &transferHash,
                                                         CPBaaSNotarization &newNotarization,
                                                         std::vector<CTxOut> &newOutputs,
@@ -1574,9 +1572,9 @@ bool SelectArbitrageFromOffers(const std::vector<
                                                         CCurrencyValueMap &spentCurrencyOut,
                                                         const CTransferDestination &rewardDest,
                                                         const CCurrencyValueMap &arbitrageCurrencies,
-                                                        std::vector<std::pair<CInputDescriptor, CReserveTransfer>> &arbitrageInputs)
+                                                        std::vector<std::tuple<CInputDescriptor, CReserveTransfer, CTransaction>> &arbitrageInputs)
 {
-    if (pwalletMain)
+    if (pwalletMain && VERUS_DEFAULT_ARBADDRESS.which() != COptCCParams::ADDRTYPE_INVALID)
     {
         LOCK(pwalletMain->cs_wallet);
 
@@ -1588,7 +1586,7 @@ bool SelectArbitrageFromOffers(const std::vector<
                                            nullptr,
                                            true,
                                            true,
-                                           VERUS_DEFAULT_ARBADDRESS.which() != COptCCParams::ADDRTYPE_INVALID ? &VERUS_DEFAULT_ARBADDRESS : nullptr,
+                                           &VERUS_DEFAULT_ARBADDRESS,
                                            &arbitrageCurrencies, false);
 
         CCurrencyValueMap availableCurrencies;
@@ -1649,7 +1647,8 @@ bool SelectArbitrageFromOffers(const std::vector<
             CCoinbaseCurrencyState previewState = newNotarization.currencyState;
 
             uint160 currencyInID, currencyOutID;
-            std::map<std::pair<uint160, uint160>, std::tuple<int64_t, int64_t, std::pair<CInputDescriptor, CReserveTransfer>>> mostProfitablePairs;
+            std::map<std::pair<uint160, uint160>, std::tuple<int64_t, int64_t, int64_t, std::pair<CInputDescriptor, CReserveTransfer>>> mostProfitablePairs;
+            std::tuple<int64_t, int64_t, int64_t, std::pair<CInputDescriptor, CReserveTransfer>> mostProfitablePair;
 
             for (auto offerIt = offers.begin(); offerIt != offers.end(); offerIt++)
             {
@@ -1666,136 +1665,202 @@ bool SelectArbitrageFromOffers(const std::vector<
                 if (rIt != offerIt->begin())
                 {
                     rIt--;
-                    currencyInID = std::get<1>(rIt->first);
-                    currencyOutID = std::get<2>(rIt->first);
-
-                    while (true)
+                    do
                     {
-                        CAmount profit = 0;
-                        auto lastProfitIt = mostProfitablePairs.find(std::make_pair(currencyInID, currencyOutID));
-                        CAmount profitToBeat = (lastProfitIt == mostProfitablePairs.end()) ? 0 : std::get<0>(lastProfitIt->second);
-                        CAmount sizeToBeat = profitToBeat ? std::get<1>(lastProfitIt->second) : 0;
-                        CAmount thisSize = std::get<4>(rIt->first);
+                        currencyInID = std::get<1>(rIt->first);
+                        currencyOutID = std::get<2>(rIt->first);
 
-                        // basic sanity check to see if profit is possible
-                        CCurrencyValueMap lastConversionPrices = newNotarization.currencyState.TargetLastConversionPrices(currencyOutID);
-                        CAmount noSlipConversion = newNotarization.currencyState.ReserveToNativeRaw(thisSize, lastConversionPrices.valueMap[currencyInID]);
-                        bool isOneStep = currencyInID == newNotarization.currencyID || currencyOutID == newNotarization.currencyID;
-                        int64_t discountFactor = (isOneStep ? (SATOSHIDEN - 25000) : (SATOSHIDEN - 50000));
-                        noSlipConversion = CCurrencyDefinition::CalculateRatioOfValue(noSlipConversion, isOneStep ? (SATOSHIDEN - 25000) : (SATOSHIDEN - 50000));
-
-                        // if the no-slip conversion is bigger than the the input we'd provide,
-                        // we have a possibility of getting a positive output, so try it, otherwise, skip to the next pair
-                        if (rIt->second.first.second.valueMap.count(currencyOutID) && (noSlipConversion -
-                                                                                    rIt->second.first.second.valueMap.find(currencyOutID)->second) > 0)
+                        CCurrencyValueMap neededCurrency;
+                        neededCurrency.valueMap[ASSETCHAINS_CHAINID] = ConnectedChains.ThisChain().GetTransactionImportFee();
+                        neededCurrency.valueMap[currencyOutID] += std::get<4>(rIt->first);
+                        if (!(availableCurrencies - neededCurrency).HasNegative())
                         {
-                            uint32_t transferFlags = CReserveTransfer::VALID + CReserveTransfer::ARBITRAGE_ONLY + CReserveTransfer::CONVERT;
-                            if (std::get<1>(rIt->first) == newNotarization.currencyID)
+                            CAmount profit = 0;
+                            auto lastProfitIt = mostProfitablePairs.find(std::make_pair(currencyInID, currencyOutID));
+
+                            // TODO: for now, we are only going for the absolute most profit
+                            CAmount profitToBeat = (lastProfitIt == mostProfitablePairs.end()) ? 0 : std::get<0>(mostProfitablePair);
+                            CAmount thisSize = std::get<3>(rIt->first);
+
+                            // basic sanity check to see if profit is possible
+                            CCurrencyValueMap lastConversionPrices = newNotarization.currencyState.TargetLastConversionPrices(currencyOutID);
+                            CAmount noSlipConversion = newNotarization.currencyState.NativeToReserveRaw(thisSize, lastConversionPrices.valueMap[currencyInID]);
+                            bool isOneStep = currencyInID == newNotarization.currencyID || currencyOutID == newNotarization.currencyID;
+                            int64_t discountFactor = (isOneStep ? (SATOSHIDEN - 25000) : (SATOSHIDEN - 50000));
+                            noSlipConversion = CCurrencyDefinition::CalculateRatioOfValue(noSlipConversion, isOneStep ? (SATOSHIDEN - 25000) : (SATOSHIDEN - 50000));
+
+                            // if the no-slip conversion is bigger than the the input we'd provide,
+                            // we have a possibility of getting a positive output, so try it, otherwise, skip to the next pair
+                            if (currencyInID == std::get<1>(rIt->first) &&
+                                currencyOutID == std::get<2>(rIt->first) &&
+                                rIt->second.first.second.valueMap.count(currencyOutID) &&
+                                (noSlipConversion - neededCurrency.valueMap[currencyOutID]) > 0)
                             {
-                                transferFlags |= CReserveTransfer::IMPORT_TO_SOURCE;
-                            }
-
-                            // add the new arb transfer as a what-if, determine how much it costs us to execute it,
-                            // how much comes out the end of the transfers, and how much potential profit we make
-                            CReserveTransfer oneTransfer(transferFlags,
-                                                        CCurrencyValueMap(std::vector<uint160>({std::get<1>(rIt->first)}), std::vector<int64_t>({std::get<4>(rIt->first)})),
-                                                        ASSETCHAINS_CHAINID,
-                                                        ConnectedChains.ThisChain().GetTransactionImportFee(),
-                                                        (transferFlags & CReserveTransfer::IMPORT_TO_SOURCE) ? std::get<2>(rIt->first) : newNotarization.currencyID,
-                                                        DestinationToTransferDestination(VERUS_DEFAULT_ARBADDRESS),
-                                                        ((transferFlags & CReserveTransfer::IMPORT_TO_SOURCE) ||
-                                                        std::get<2>(rIt->first) == newNotarization.currencyID) ? uint160() : std::get<2>(rIt->first));
-
-                            exportTransfers.push_back(oneTransfer);
-                            testOutputs.clear();
-
-                            if (lastNotarization.NextNotarizationInfo(sourceSystem,
-                                                                    destCurrency,
-                                                                    startHeight,
-                                                                    nextHeight,
-                                                                    exportTransfers,
-                                                                    transferHash,
-                                                                    newNotarization,
-                                                                    testOutputs,
-                                                                    importedCurrency,
-                                                                    gatewayDepositsUsed,
-                                                                    spentCurrencyOut,
-                                                                    rewardDest))
-                            {
-                                if (testOutputs.size())
+                                uint32_t transferFlags = CReserveTransfer::VALID + CReserveTransfer::ARBITRAGE_ONLY + CReserveTransfer::CONVERT;
+                                if (std::get<1>(rIt->first) == newNotarization.currencyID)
                                 {
-                                    CTxDestination ourDest;
-                                    if (ExtractDestination(testOutputs.back().scriptPubKey, ourDest) && ourDest == VERUS_DEFAULT_ARBADDRESS)
+                                    transferFlags |= CReserveTransfer::IMPORT_TO_SOURCE;
+                                }
+
+                                // add the new arb transfer as a what-if, determine how much it costs us to execute it,
+                                // how much comes out the end of the transfers, and how much potential profit we make
+                                CReserveTransfer oneTransfer(transferFlags,
+                                                             CCurrencyValueMap(std::vector<uint160>({std::get<1>(rIt->first)}), std::vector<int64_t>({thisSize})),
+                                                             ASSETCHAINS_CHAINID,
+                                                             ConnectedChains.ThisChain().GetTransactionTransferFee(),
+                                                             (transferFlags & CReserveTransfer::IMPORT_TO_SOURCE) ? std::get<2>(rIt->first) : newNotarization.currencyID,
+                                                             DestinationToTransferDestination(VERUS_DEFAULT_ARBADDRESS),
+                                                             ((transferFlags & CReserveTransfer::IMPORT_TO_SOURCE) ||
+                                                            std::get<1>(rIt->first) == newNotarization.currencyID) ? uint160() : std::get<1>(rIt->first));
+
+                                exportTransfers.insert(exportTransfers.begin(), oneTransfer);
+                                testOutputs.clear();
+
+                                if (lastNotarization.NextNotarizationInfo(sourceSystem,
+                                                                        destCurrency,
+                                                                        startHeight,
+                                                                        nextHeight,
+                                                                        exportTransfers,
+                                                                        transferHash,
+                                                                        newNotarization,
+                                                                        testOutputs,
+                                                                        importedCurrency,
+                                                                        gatewayDepositsUsed,
+                                                                        spentCurrencyOut,
+                                                                        rewardDest))
+                                {
+                                    if (testOutputs.size())
                                     {
-                                        CCurrencyValueMap outputVal = testOutputs.back().ReserveOutValue();
-                                        if (testOutputs.back().nValue > 0)
+                                        CTxDestination ourDest;
+                                        if (ExtractDestination(testOutputs.begin()->scriptPubKey, ourDest) && ourDest == VERUS_DEFAULT_ARBADDRESS)
                                         {
-                                            outputVal.valueMap[ASSETCHAINS_CHAINID] = testOutputs.back().nValue;
+                                            CCurrencyValueMap outputVal = testOutputs.begin()->ReserveOutValue();
+                                            if (testOutputs.begin()->nValue > 0)
+                                            {
+                                                outputVal.valueMap[ASSETCHAINS_CHAINID] = testOutputs.begin()->nValue;
+                                            }
+                                            profit = newNotarization.currencyState.ReserveToNative(outputVal) - newNotarization.currencyState.ReserveToNative(neededCurrency);
                                         }
-                                        auto costIt = rIt->second.first.second.valueMap.find(std::get<2>(rIt->first));
-                                        profit = (costIt == rIt->second.first.second.valueMap.end() ? 0 : outputVal.valueMap[std::get<2>(rIt->first)] - costIt->second);
+                                        else
+                                        {
+                                            profit = 0;
+                                        }
                                     }
-                                    else
+                                }
+
+                                // remove test transfer
+                                exportTransfers.erase(exportTransfers.begin());
+
+                                if (profit > profitToBeat)
+                                {
+                                    if (oneTransfer.IsValid())
                                     {
-                                        profit = 0;
+                                        mostProfitablePairs.insert(std::make_pair(std::make_pair(currencyInID, currencyOutID),
+                                                                                std::tuple<int64_t, int64_t, int64_t, std::pair<CInputDescriptor, CReserveTransfer>>(
+                                                                                    {profit, thisSize, neededCurrency.valueMap[currencyOutID], std::make_pair(rIt->second.second.first, oneTransfer)})));
+                                        mostProfitablePair = {profit, thisSize, neededCurrency.valueMap[currencyOutID], std::make_pair(rIt->second.second.first, oneTransfer)};
                                     }
-                                }
-                            }
-
-                            // remove test transfer
-                            exportTransfers.pop_back();
-
-                            if (profit > profitToBeat)
-                            {
-                                COptCCParams rtP;
-                                if (rIt->second.second.first.scriptPubKey.IsPayToCryptoCondition(rtP) &&
-                                    rtP.evalCode == EVAL_RESERVE_TRANSFER &&
-                                    rtP.vData.size())
-                                {
-                                    oneTransfer = CReserveTransfer(rtP.vData[0]);
-                                }
-                                if (oneTransfer.IsValid())
-                                {
-                                    mostProfitablePairs.insert(std::make_pair(std::make_pair(currencyInID, currencyOutID),
-                                                                            std::tuple<int64_t, int64_t, std::pair<CInputDescriptor, CReserveTransfer>>(
-                                                                                {profit, thisSize, std::make_pair(rIt->second.second.first, oneTransfer)})));
                                 }
                             }
                         }
-                        else
+
+                        if (currencyInID != std::get<1>(rIt->first) || currencyOutID != std::get<2>(rIt->first))
                         {
-                            // if we can't beat the current price with zero slippage, we're done with this pair
+                            // if we're done with this pair, go to the earliest to go backwards below
                             rIt = offerIt->lower_bound({1, currencyInID, currencyOutID, 0, 0});
                         }
 
-                        // if out of space behind us, move to next set of offers
-                        if (rIt == offerIt->begin())
-                        {
-                            break;
-                        }
-                        rIt--;
-                    }
+                    // if out of space behind us, move to next set of offers
+                    } while (rIt-- != offerIt->begin());
 
-                    // if we have anything in mostProfitablePairs, select the best priced in native currency
-                    // we should be able to add multiple conversions that do not have common currencies
-                    //
-                    // pick the one or combination of multiple orthogonal currencies that results in the equivalent
-                    // of the most amount of native currency from the basket
-                    //
-                    // then put them in the arbitrageInputs and add to export transfers
-                    // arbitrageInputs.push_back(std::make_pair());
-                    //
-                    printf("%s: preview state:\n%s\n", __func__, previewState.ToUniValue().write(1,2).c_str());
-                    for (auto oneConversion : mostProfitablePairs)
+                    // now, we have a map of independently profitable pairs that we can also independently fulfill
+                    // for the first version, just pick the one that is most profitable
+
+                    // make a transaction that fulfills the offer and sends the output currency back to us via the transfer
+                    // then add it to exporttransfers to be used below
+                }
+            }
+
+            UniValue result, error;
+            // If we have a qualified arbitrage transaction, put it/them in the arbitrageInputs and add to export transfers
+            if (mostProfitablePairs.size() &&
+                newNotarization.currencyState.NativeToReserve(std::get<0>(mostProfitablePair), newNotarization.currencyState.GetReserveMap()[ASSETCHAINS_CHAINID]) > (ConnectedChains.ThisChain().GetTransactionImportFee() << 4))
+            {
+                // create a transaction for the most profitable arbitrage
+                UniValue takeOfferParams(UniValue::VARR);
+                takeOfferParams.push_back(EncodeDestination(VERUS_DEFAULT_ARBADDRESS));
+                UniValue objParam(UniValue::VOBJ);
+                objParam.pushKV("txid", std::get<3>(mostProfitablePair).first.txIn.prevout.hash.GetHex());
+                objParam.pushKV("changeaddress", EncodeDestination(VERUS_DEFAULT_ARBADDRESS));
+
+                // make a CTxOut for the reserve transfer in, and serialize it
+                CCcontract_info CC;
+                CCcontract_info *cp = CCinit(&CC, EVAL_RESERVE_TRANSFER);
+                std::vector<CTxDestination> dests({DecodeDestination(cp->unspendableCCaddr), VERUS_DEFAULT_ARBADDRESS});
+                CScript scriptOut = MakeMofNCCScript(CConditionObj<CReserveTransfer>(EVAL_RESERVE_TRANSFER, dests, 1, &std::get<3>(mostProfitablePair).second));
+
+                CCurrencyValueMap totalOut = std::get<3>(mostProfitablePair).second.reserveValues;
+                if (std::get<3>(mostProfitablePair).second.feeCurrencyID == ASSETCHAINS_CHAINID)
+                {
+                    totalOut.valueMap[ASSETCHAINS_CHAINID] += std::get<3>(mostProfitablePair).second.nFees;
+                }
+
+                std::vector<unsigned char> txOutVec = ::AsVector(CTxOut(totalOut.valueMap[ASSETCHAINS_CHAINID], scriptOut));
+                UniValue acceptParam(UniValue::VOBJ);
+                acceptParam.pushKV("txout", HexBytes(&txOutVec[0], txOutVec.size()));
+                objParam.pushKV("accept", acceptParam);
+
+                UniValue deliverParam(UniValue::VOBJ);
+                deliverParam.pushKV("currency", EncodeDestination(CIdentityID(std::get<3>(mostProfitablePair).second.IsReserveToReserve() ? std::get<3>(mostProfitablePair).second.secondReserveID : std::get<3>(mostProfitablePair).second.destCurrencyID)));
+                deliverParam.pushKV("amount", std::get<1>(mostProfitablePair));
+                objParam.pushKV("deliver", deliverParam);
+                takeOfferParams.push_back(objParam);
+                takeOfferParams.push_back(true);
+
+                LogPrint("arbitrage", "%s: params to takeoffer:\n%s\n", __func__, takeOfferParams.write(1,2).c_str());
+                try
+                {
+                    result = takeoffer(takeOfferParams, false);
+                }
+                catch(const UniValue& e)
+                {
+                    error = e;
+                }
+                LogPrint("arbitrage", "%s: result from takeoffer:\n%s\n", __func__, error.isNull() ? result.write(1,2).c_str() : std::string("ERROR: ") + error.write().c_str());
+
+                if (error.isNull())
+                {
+                    // add transaction, input, and reserve transfer to arbitrageInputs and reserve transfer to exportTransfers
+                    CTransaction offerTx;
+                    if (DecodeHexTx(offerTx, uni_get_str(find_value(result, "tx"))) &&
+                        offerTx.vout.size() > 1)
                     {
-                        printf("one profitable arb transfer converting from %s to %s and back: profit: %ld, size: %ld\nReserveTransfer:\n%s\n",
-                            ConnectedChains.GetFriendlyCurrencyName(oneConversion.first.second).c_str(),
-                            ConnectedChains.GetFriendlyCurrencyName(oneConversion.first.first).c_str(),
-                            std::get<0>(oneConversion.second),
-                            std::get<1>(oneConversion.second),
-                            std::get<2>(oneConversion.second).second.ToUniValue().write(1,2).c_str());
+                        int outIdx;
+                        for (outIdx = 1; outIdx < offerTx.vout.size(); outIdx++)
+                        {
+                            if (::AsVector(offerTx.vout[outIdx]) == txOutVec)
+                            {
+                                break;
+                            }
+                        }
+                        if (outIdx < offerTx.vout.size())
+                        {
+                            arbitrageInputs.push_back({CInputDescriptor(offerTx.vout[outIdx].scriptPubKey, offerTx.vout[outIdx].nValue, CTxIn(offerTx.GetHash(), outIdx)), std::get<3>(mostProfitablePair).second, offerTx});
+                            exportTransfers.push_back(std::get<3>(mostProfitablePair).second);
+                        }
                     }
                 }
+            }
+
+            for (auto oneConversion : mostProfitablePairs)
+            {
+                LogPrint("arbitrage", "one profitable arb transfer converting from %s to %s and back: profit: %ld, size: %ld, sourceamount: %ld\nReserveTransfer:\n%s\n",
+                    ConnectedChains.GetFriendlyCurrencyName(oneConversion.first.second).c_str(),
+                    ConnectedChains.GetFriendlyCurrencyName(oneConversion.first.first).c_str(),
+                    std::get<0>(oneConversion.second),
+                    std::get<1>(oneConversion.second),
+                    std::get<2>(oneConversion.second),
+                    std::get<3>(oneConversion.second).second.ToUniValue().write(1,2).c_str());
             }
         }
     }
@@ -6815,6 +6880,8 @@ UniValue makeoffer(const UniValue& params, bool fHelp)
         }
     }
 
+    bool isPartiallySignedTx = false;
+
     try
     {
         std:vector<COutput> vCoins;
@@ -7044,6 +7111,31 @@ UniValue makeoffer(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "To offer an identity, this wallet must have signing authority over the identity offered");
             }
 
+            if (keyAndIdentity.second.HasTokenizedControl())
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "To offer an identity that has tokenized ID control, you must offer the token, which controls the identity, not the identity directly");
+            }
+
+            isPartiallySignedTx = !keyAndIdentity.first.CanSpend();
+            if (!isPartiallySignedTx && keyAndIdentity.second.revocationAuthority != idID)
+            {
+                std::pair<CIdentityMapKey, CIdentityMapValue> checkSigKeyAndIdentity;
+                if (!pwalletMain->GetIdentity(keyAndIdentity.second.revocationAuthority, checkSigKeyAndIdentity))
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "To offer an identity directly, not through a control token, revocation authority must be defined on the current chain and will need to countersign the offer");
+                }
+                isPartiallySignedTx = !checkSigKeyAndIdentity.first.CanSpend();
+            }
+            if (!isPartiallySignedTx && keyAndIdentity.second.recoveryAuthority != idID)
+            {
+                std::pair<CIdentityMapKey, CIdentityMapValue> checkSigKeyAndIdentity;
+                if (!pwalletMain->GetIdentity(keyAndIdentity.second.recoveryAuthority, checkSigKeyAndIdentity))
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "To offer an identity directly, not through a control token, recovery authority must be defined on the current chain and will need to countersign the offer");
+                }
+                isPartiallySignedTx = !checkSigKeyAndIdentity.first.CanSpend();
+            }
+
             offerID = idID;
 
             uint32_t idHeight;
@@ -7112,7 +7204,16 @@ UniValue makeoffer(const UniValue& params, bool fHelp)
                 tb.SendChangeTo(changeDestination);
                 tb.SendChangeTo(libzcash::SaplingPaymentAddress(), uint256());
                 tb.SetFee(feeAmount);
-                TransactionBuilderResult preResult = tb.Build();
+
+                TransactionBuilderResult preResult = tb.Build(isPartiallySignedTx);
+
+                if (isPartiallySignedTx && preResult.IsTx())
+                {
+                    // setup to throw a partially signed tx for revocation/recovery counter signature before adding to mempool
+                    preTx = preResult.GetTxOrThrow();
+                    preResult = TransactionBuilderResult(EncodeHexTx(preTx));
+                }
+
                 preTx = preResult.GetTxOrThrow();
 
                 bool relayTx;
@@ -7487,7 +7588,7 @@ UniValue takeoffer(const UniValue& params, bool fHelp)
     if (fHelp || params.size() < 2 || params.size() > 4)
     {
         throw runtime_error(
-            "takeoffer fromaddress '{\"txid\":\"txid\" | \"tx\":\"hextx\", \"changeaddress\":\"transparentoriaddress\", \"deliver\":\"fullidnameoriaddresstodeliver\" | {\"currency\":\"currencynameorid\",\"amount\":n}, \"accept\":{\"address\":\"addressorid\",\"currency\":\"currencynameorid\",\"amount\":n} | {identitydefinition}}' (returntx) (feeamount)\n"
+            "takeoffer fromaddress '{\"txid\":\"txid\" | \"tx\":\"hextx\", \"changeaddress\":\"transparentoriaddress\", \"deliver\":\"fullidnameoriaddresstodeliver\" | {\"currency\":\"currencynameorid\",\"amount\":n}, \"accept\":{\"address\":\"addressorid\",\"currency\":\"currencynameorid\",\"amount\":n} | {identitydefinition} | {\"txout\":{\"serializedtxout\"}}}' (returntx) (feeamount)\n"
             "\nIf the current wallet can afford the swap, this accepts a swap offer on the blockchain, creates a transaction\n"
             "to execute it, and posts the transaction to the blockchain.\n"
 
@@ -7661,6 +7762,9 @@ UniValue takeoffer(const UniValue& params, bool fHelp)
     CCurrencyValueMap acceptedCurrency, currencyToDeliver;
     CAmount subsidizedFees = 0;
 
+    bool isRawTxOut = false;
+    CTxOut rawTxOut;
+
     if (accept.isNull() || !accept.isObject())
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Identity or currency to accept must be a valid json object");
@@ -7719,24 +7823,43 @@ UniValue takeoffer(const UniValue& params, bool fHelp)
     }
     else
     {
-        std::string acceptCurrencyStr = uni_get_str(find_value(accept, "currency"));
-        std::string acceptToDestStr = uni_get_str(find_value(accept, "address"));
-        uint160 currencyID = ValidateCurrencyName(acceptCurrencyStr, true);
-        if (acceptCurrencyStr.empty())
+        std::string acceptTxOutStr = uni_get_str(find_value(accept, "txout"));
+        if (!acceptTxOutStr.empty() && IsHex(acceptTxOutStr) && acceptTxOutStr.length() > 30 && !(acceptTxOutStr.length() % 2))
         {
-            currencyID = ASSETCHAINS_CHAINID;
+            bool success = false;
+            ::FromVector(ParseHex(acceptTxOutStr), rawTxOut, &success);
+            if (!(success && rawTxOut.scriptPubKey.size() && MoneyRange(rawTxOut.nValue)))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid serialized hexadecimal txout object");
+            }
+            acceptedCurrency = rawTxOut.scriptPubKey.ReserveOutValue();
+            if (rawTxOut.nValue)
+            {
+                acceptedCurrency.valueMap[ASSETCHAINS_CHAINID] = rawTxOut.nValue;
+            }
+            isRawTxOut = true;
         }
-        CAmount currencyAmount;
-        if (currencyID.IsNull() || (currencyAmount = AmountFromValue(find_value(accept, "amount"))) <= 0)
+        else
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "One of identity or currency to accept must be valid");
-        }
-        acceptedCurrency.valueMap[currencyID] = currencyAmount;
+            std::string acceptCurrencyStr = uni_get_str(find_value(accept, "currency"));
+            std::string acceptToDestStr = uni_get_str(find_value(accept, "address"));
+            uint160 currencyID = ValidateCurrencyName(acceptCurrencyStr, true);
+            if (acceptCurrencyStr.empty())
+            {
+                currencyID = ASSETCHAINS_CHAINID;
+            }
+            CAmount currencyAmount;
+            if (currencyID.IsNull() || (currencyAmount = AmountFromValue(find_value(accept, "amount"))) <= 0)
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "One of identity or currency to accept must be valid");
+            }
+            acceptedCurrency.valueMap[currencyID] = currencyAmount;
 
-        LOCK(cs_main);
-        if ((acceptToAddress = ValidateDestination(acceptToDestStr)).which() == COptCCParams::ADDRTYPE_INVALID)
-        {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameters. To accept an offer of currency, the accept address must be a transparent address or identity. See help.");
+            LOCK(cs_main);
+            if ((acceptToAddress = ValidateDestination(acceptToDestStr)).which() == COptCCParams::ADDRTYPE_INVALID)
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameters. To accept an offer of currency, the accept address must be a transparent address or identity. See help.");
+            }
         }
     }
 
@@ -7865,7 +7988,14 @@ UniValue takeoffer(const UniValue& params, bool fHelp)
         {
             if (offeredIdentity.GetID() != acceptedIdentity.GetID())
             {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "Identity offered: " + EncodeDestination(CIdentityID(offeredIdentity.GetID())) + ", is not the same as accepted: " + EncodeDestination(CIdentityID(acceptedIdentity.GetID())));
+                if (isRawTxOut)
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Identity offers cannot be accepted with a txout parameter");
+                }
+                else
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Identity offered: " + EncodeDestination(CIdentityID(offeredIdentity.GetID())) + ", is not the same as accepted: " + EncodeDestination(CIdentityID(acceptedIdentity.GetID())));
+                }
             }
         }
         else if (inputTxToOffer.vout[txToTake.vin[0].prevout.n].scriptPubKey.IsSpendableOutputType())
@@ -7890,19 +8020,26 @@ UniValue takeoffer(const UniValue& params, bool fHelp)
         }
         else if ((acceptedCurrency = acceptedCurrency.CanonicalMap()).valueMap.size())
         {
-            // if our accepted currency is native, no reserve output
-            CAmount nativeOut = acceptedCurrency.valueMap.count(ASSETCHAINS_CHAINID) ? acceptedCurrency.valueMap[ASSETCHAINS_CHAINID] : 0;
-
-            if (acceptedCurrency.valueMap.size() == 1 && nativeOut)
+            if (isRawTxOut)
             {
-                mtx.vout.push_back(CTxOut(nativeOut, GetScriptForDestination(acceptToAddress)));
+                mtx.vout.push_back(rawTxOut);
             }
             else
             {
-                acceptedCurrency.valueMap.erase(ASSETCHAINS_CHAINID);
-                std::vector<CTxDestination> dest({acceptToAddress});
-                CTokenOutput to(acceptedCurrency);
-                mtx.vout.push_back(CTxOut(nativeOut, MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, dest, 1, &to))));
+                // if our accepted currency is native, no reserve output
+                CAmount nativeOut = acceptedCurrency.valueMap.count(ASSETCHAINS_CHAINID) ? acceptedCurrency.valueMap[ASSETCHAINS_CHAINID] : 0;
+
+                if (acceptedCurrency.valueMap.size() == 1 && nativeOut)
+                {
+                    mtx.vout.push_back(CTxOut(nativeOut, GetScriptForDestination(acceptToAddress)));
+                }
+                else
+                {
+                    acceptedCurrency.valueMap.erase(ASSETCHAINS_CHAINID);
+                    std::vector<CTxDestination> dest({acceptToAddress});
+                    CTokenOutput to(acceptedCurrency);
+                    mtx.vout.push_back(CTxOut(nativeOut, MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, dest, 1, &to))));
+                }
             }
         }
         else
