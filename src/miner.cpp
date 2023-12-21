@@ -1663,7 +1663,7 @@ bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &_outputs,
     CCurrencyValueMap blockOneMinerFunds;
 
     int64_t converterIssuance = 0;
-    bool updatedProtocol = !PBAAS_TESTMODE;
+    bool updatedProtocol = !PBAAS_TESTMODE || (newChainCurrency.GetID() != ASSETCHAINS_CHAINID && ConnectedChains.AutoArbitrageEnabled(chainActive.Height()));
 
     int firstPBaaSOut = 0;
     bool doneMinerOuts = false;
@@ -1868,22 +1868,48 @@ bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &_outputs,
             {
                 if (::AsVector(outputs[i]) != ::AsVector(checkOutputs[i - firstPBaaSOut]))
                 {
-                    if (LogAcceptCategory("notarization"))
+                    // we will tolerate if this is a notary evidence output and the only difference here is
+                    // that the output number is off by the delta of the variable outputs
+                    COptCCParams chkP1, chkP2;
+                    CNotaryEvidence chkEvidence1, chkEvidence2;
+                    bool oneOutOK = false;
+                    if (outputs[i].scriptPubKey.IsPayToCryptoCondition(chkP1) &&
+                        chkP1.evalCode == EVAL_NOTARY_EVIDENCE &&
+                        (chkEvidence1 = CNotaryEvidence(chkP1.vData[0])).IsValid() &&
+                        checkOutputs[i - firstPBaaSOut].scriptPubKey.IsPayToCryptoCondition(chkP2) &&
+                        chkP2.evalCode == EVAL_NOTARY_EVIDENCE &&
+                        chkP1.vData.size() == chkP2.vData.size() &&
+                        (chkEvidence2 = CNotaryEvidence(chkP2.vData[0])).IsValid())
                     {
-                        UniValue uniScript1(UniValue::VOBJ);
-                        UniValue uniScript2(UniValue::VOBJ);
-                        ScriptPubKeyToUniv(outputs[i].scriptPubKey, uniScript1, false, false);
-                        ScriptPubKeyToUniv(checkOutputs[i - firstPBaaSOut].scriptPubKey, uniScript2, false, false);
-                        LogPrintf("%s: mismatched block one outputs, values:\nactual: %ld\nexpected: %ld\nscripts:\nactual: %s\nexpected: %s\n",
-                                  __func__,
-                                  outputs[i].nValue,
-                                  checkOutputs[i - firstPBaaSOut].nValue,
-                                  uniScript1.write(1,2).c_str(),
-                                  uniScript2.write(1,2).c_str());
+                        CCcontract_info CC;
+                        CCcontract_info *cp;
+
+                        chkEvidence2.output.n = chkEvidence1.output.n;
+                        chkP2.vData[0] = ::AsVector(chkEvidence2);
+
+                        cp = CCinit(&CC, EVAL_NOTARY_EVIDENCE);
+                        std::vector<CTxDestination> dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
+                        oneOutOK = ::AsVector(outputs[i]) == ::AsVector(CTxOut(0, MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &chkEvidence2))));
                     }
-                    if (updatedProtocol)
+                    if (!oneOutOK)
                     {
-                        return state.Error("Mismatched block one output at #" + std::to_string(i));
+                        if (LogAcceptCategory("notarization"))
+                        {
+                            UniValue uniScript1(UniValue::VOBJ);
+                            UniValue uniScript2(UniValue::VOBJ);
+                            ScriptPubKeyToUniv(outputs[i].scriptPubKey, uniScript1, false, false);
+                            ScriptPubKeyToUniv(checkOutputs[i - firstPBaaSOut].scriptPubKey, uniScript2, false, false);
+                            LogPrintf("%s: mismatched block one outputs, values:\nactual: %ld\nexpected: %ld\nscripts:\nactual: %s\nexpected: %s\n",
+                                    __func__,
+                                    outputs[i].nValue,
+                                    checkOutputs[i - firstPBaaSOut].nValue,
+                                    uniScript1.write(1,2).c_str(),
+                                    uniScript2.write(1,2).c_str());
+                        }
+                        if (updatedProtocol)
+                        {
+                            return state.Error("Mismatched block one output at #" + std::to_string(i));
+                        }
                     }
                 }
             }

@@ -7832,7 +7832,7 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
 
         // entropy hash calculation & import verification depends on our import notarization height not exceeding chain active height
         uint32_t nextHeight = useProofs && destCur.SystemOrGatewayID() == ASSETCHAINS_CHAINID || destCurID == ASSETCHAINS_CHAINID ?
-            nextHeight = nHeight : std::min(nHeight, std::max(ccx.sourceHeightEnd, lastNotarization.notarizationHeight));
+            nHeight : std::min(nHeight, std::max(ccx.sourceHeightEnd, lastNotarization.notarizationHeight));
 
         if (ccx.IsPostlaunch() || lastNotarization.IsLaunchComplete())
         {
@@ -8319,7 +8319,7 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
                 }
             }
 
-            newLocalReserveDeposits += ((totalDepositsInput + incomingCurrency + arbitrageDeposits) - spentCurrencyOut).CanonicalMap();
+            newLocalReserveDeposits = ((totalDepositsInput + incomingCurrency + arbitrageDeposits) - spentCurrencyOut).CanonicalMap();
 
             LogPrint("crosschainimports", "%s: totalDepositsInput: %s\nincomingPlusDepositsMinusSpent: %s\n",
                 __func__,
