@@ -7844,7 +7844,8 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
         // input for this import. we should also add it to the exportTransfers vector
         // with the arbitrage flag set
         std::vector<std::tuple<CInputDescriptor, CReserveTransfer, CTransaction>> arbitrageTransfersIn;
-        if (VERUS_ARBITRAGE_CURRENCIES.size() &&
+        if (ConnectedChains.AutoArbitrageEnabled(nHeight) &&
+            VERUS_ARBITRAGE_CURRENCIES.size() &&
             destCur.IsFractional() &&
             lastNotarization.IsLaunchComplete() &&
             !lastNotarization.IsRefunding())
