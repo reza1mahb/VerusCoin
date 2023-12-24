@@ -4121,9 +4121,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
     bool isFractional = importCurrencyDef.IsFractional();
 
     int arbitrageCount = 0;
-    int maxArbitrage = importCurrencyState.IsFractional() && importCurrencyState.IsLaunchCompleteMarker() ?
-                            ((importCurrencyState.currencies.size() >> 1) + (importCurrencyState.currencies.size() & 1)) :
-                            0;
+    int maxArbitrage = importCurrencyState.IsFractional() && importCurrencyState.IsLaunchCompleteMarker() ? 10 : 0;
 
     // reserve currency amounts converted to fractional
     CCurrencyValueMap reserveConverted;
