@@ -4681,6 +4681,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     if (curTransfer.IsCurrencyExport() ||
                         curTransfer.IsIdentityExport() ||
                         curTransfer.IsPreConversion() ||
+                        curTransfer.HasNextLeg() ||
                         !curTransfer.IsConversion())
                     {
                         printf("%s: invalid arbitrage transaction for %s\n", __func__, importCurrencyDef.name.c_str());
