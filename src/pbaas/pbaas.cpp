@@ -6446,12 +6446,12 @@ bool CConnectedChains::IsUpgradeActive(const uint160 &upgradeID, uint32_t blockH
 
 uint32_t CConnectedChains::GetZeroViaHeight(bool getVerusHeight) const
 {
-    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 1 : 2578653) : 0;
+    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 69013 : 2578653) : 0;
 }
 
 uint32_t CConnectedChains::GetOptimizedETHProofHeight(bool getVerusHeight) const
 {
-    return (getVerusHeight || _IsVerusActive()) ? (PBAAS_TESTMODE && PBAAS_OPTIMIZE_ETH_HEIGHT > 1 ? 1 : PBAAS_OPTIMIZE_ETH_HEIGHT) : 0;
+    return (getVerusHeight || _IsVerusActive()) ? (PBAAS_TESTMODE && PBAAS_OPTIMIZE_ETH_HEIGHT > 285700 ? 285700 : PBAAS_OPTIMIZE_ETH_HEIGHT) : 0;
 }
 
 bool CConnectedChains::ShouldOptimizeETHProof() const
@@ -6466,7 +6466,7 @@ bool CConnectedChains::CheckZeroViaOnlyPostLaunch(uint32_t height) const
 
 uint32_t CConnectedChains::IncludePostLaunchFeeHeight(bool getVerusHeight) const
 {
-    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 1 : 2606532) : 0;
+    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 94091 : 2606532) : 0;
 }
 
 bool CConnectedChains::IncludePostLaunchFees(uint32_t height) const
@@ -6484,7 +6484,7 @@ bool CConnectedChains::IncludePostLaunchFees(uint32_t height) const
 
 uint32_t CConnectedChains::StrictCheckIDExportHeight(bool getVerusHeight) const
 {
-    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 1 : 2634460) : 0;
+    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 187000 : 2634460) : 0;
 }
 
 bool CConnectedChains::StrictCheckIDExport(uint32_t height) const
@@ -6502,7 +6502,7 @@ bool CConnectedChains::StrictCheckIDExport(uint32_t height) const
 
 uint32_t CConnectedChains::DiscernBlockOneLaunchInfoHeight(bool getVerusHeight) const
 {
-    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 1 : 2824790) : 0;
+    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 302170 : 2824790) : 0;
 }
 
 bool CConnectedChains::DiscernBlockOneLaunchInfo(uint32_t height) const
@@ -6519,7 +6519,7 @@ bool CConnectedChains::CheckClearConvert(uint32_t height) const
 
 uint32_t CConnectedChains::AutoArbitrageEnabledHeight(bool getVerusHeight) const
 {
-    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 1 : 2870202) : 2;
+    return (getVerusHeight || IsVerusActive()) ? (PBAAS_TESTMODE ? 350468 : 2873057) : 2;
 }
 
 bool CConnectedChains::AutoArbitrageEnabled(uint32_t height) const
