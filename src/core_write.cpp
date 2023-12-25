@@ -686,7 +686,8 @@ CAmount CCurrencyState::ReserveToNative(const CCurrencyValueMap &reserveAmounts)
             nativeOut += ReserveToNative(it->second, i);
         }
     }
-    return nativeOut;
+    auto selfIt = reserveAmounts.valueMap.find(currencyID);
+    return selfIt == reserveAmounts.valueMap.end() ? nativeOut : nativeOut + selfIt->second;
 }
 
 template <typename INNERVECTOR>

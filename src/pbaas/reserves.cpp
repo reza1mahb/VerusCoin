@@ -693,7 +693,7 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
         {
             // if we don't have arbitrage reserve transfers, this is an error that the hashes don't match
             // if we do, they cannot match, so get it
-            std::vector<CReserveTransfer> arbitrageTransfers = GetArbitrageTransfers(importTx, state);
+            std::vector<CReserveTransfer> arbitrageTransfers = GetArbitrageTransfers(importTx, state, nHeight);
             if (!arbitrageTransfers.size())
             {
                 return state.Error(strprintf("%s: export and import hash mismatch without valid arbitrage transfer(s)",__func__));
@@ -1013,13 +1013,14 @@ CCurrencyValueMap CCoinbaseCurrencyState::TargetConversionPricesReverse(const ui
 // returns the arbitrage transfer for a given import
 std::vector<CReserveTransfer> CCrossChainImport::GetArbitrageTransfers(const CTransaction &tx,
                                                                        CValidationState &state,
+                                                                       uint32_t nHeight,
                                                                        std::vector<CTransaction> *pArbTxes,
                                                                        std::vector<CUTXORef> *pArbOuts,
                                                                        std::vector<uint256> *pArbTxBlockHashes) const
 {
     std::vector<CReserveTransfer> retVal;
 
-    if (!IsDefinitionImport())
+    if (!IsDefinitionImport() && ConnectedChains.AutoArbitrageEnabled(nHeight))
     {
         // get the prior import
         CReserveTransfer rt;
@@ -1032,10 +1033,10 @@ std::vector<CReserveTransfer> CCrossChainImport::GetArbitrageTransfers(const CTr
             uint256 arbTxBlockHash;
             if (myGetTransaction(oneIn.prevout.hash, arbTx, arbTxBlockHash))
             {
-                if (cci.IsValid() &&
-                    arbTx.vout.size() > oneIn.prevout.n &&
+                if (arbTx.vout.size() > oneIn.prevout.n &&
                     arbTx.vout[oneIn.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
                     p.IsValid() &&
+                    cci.IsValid() &&
                     p.evalCode == EVAL_RESERVE_TRANSFER &&
                     p.vData.size() &&
                     (rt = CReserveTransfer(p.vData[0])).IsValid() &&
@@ -4120,9 +4121,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
     bool isFractional = importCurrencyDef.IsFractional();
 
     int arbitrageCount = 0;
-    int maxArbitrage = importCurrencyState.IsFractional() && importCurrencyState.IsLaunchCompleteMarker() ?
-                            ((importCurrencyState.currencies.size() >> 1) + (importCurrencyState.currencies.size() & 1)) :
-                            0;
+    int maxArbitrage = importCurrencyState.IsFractional() && importCurrencyState.IsLaunchCompleteMarker() ? 10 : 0;
 
     // reserve currency amounts converted to fractional
     CCurrencyValueMap reserveConverted;
@@ -4682,6 +4681,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     if (curTransfer.IsCurrencyExport() ||
                         curTransfer.IsIdentityExport() ||
                         curTransfer.IsPreConversion() ||
+                        curTransfer.HasNextLeg() ||
                         !curTransfer.IsConversion())
                     {
                         printf("%s: invalid arbitrage transaction for %s\n", __func__, importCurrencyDef.name.c_str());

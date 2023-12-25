@@ -4074,6 +4074,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         std::set<uint160> currencyDefinitions;
         std::set<std::pair<uint160, uint160>> idDestAndExport;
         std::set<std::pair<uint160, uint160>> currencyDestAndExport;
+        std::set<CUTXORef> orphanArbs;
 
         for (unsigned int i = 0; i < block.vtx.size(); i++)
         {
@@ -4245,6 +4246,30 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                 break;
                             }
 
+                            case EVAL_CROSSCHAIN_IMPORT:
+                            {
+                                // make sure we spend all of our arbs via imports
+                                CCrossChainImport cci, sysCCI;
+                                CCrossChainExport ccx;
+                                int primaryImportOut;
+                                int32_t sysCCIOut, notarizationOut, evidenceOutStart, evidenceOutEnd;
+                                CPBaaSNotarization importNotarization;
+                                CCurrencyDefinition destSystem;
+                                std::vector<CReserveTransfer> reserveTransfers;
+                                std::vector<CTransaction> arbTxes;
+                                std::vector<CUTXORef> arbTxOuts;
+                                if ((cci = CCrossChainImport(p.vData[0])).IsValid() &&
+                                    !cci.IsSourceSystemImport() &&
+                                    (reserveTransfers = cci.GetArbitrageTransfers(tx, state, nHeight, &arbTxes, &arbTxOuts)).size())
+                                {
+                                    for (auto &oneRef : arbTxOuts)
+                                    {
+                                        orphanArbs.erase(oneRef);
+                                    }
+                                }
+                                break;
+                            }
+
                             case EVAL_RESERVE_TRANSFER:
                             {
                                 // make sure we don't export the same identity or currency to the same destination more than once in any block
@@ -4252,6 +4277,10 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                 CReserveTransfer rt;
                                 if ((rt = CReserveTransfer(p.vData[0])).IsValid())
                                 {
+                                    if (rt.IsArbitrageOnly())
+                                    {
+                                        orphanArbs.insert(CUTXORef(tx.GetHash(), j));
+                                    }
                                     uint160 destCurrencyID = rt.GetImportCurrency();
                                     CCurrencyDefinition destCurrency = ConnectedChains.GetCachedCurrency(destCurrencyID);
                                     CCurrencyDefinition destSystem = ConnectedChains.GetCachedCurrency(destCurrency.SystemOrGatewayID());
@@ -4856,6 +4885,14 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             vPos.push_back(std::make_pair(tx.GetHash(), pos));
             pos.nTxOffset += ::GetSerializeSize(tx, SER_DISK, CLIENT_VERSION);
         }
+
+        // we don't allow orphaned arbs
+        if (orphanArbs.size())
+        {
+            return state.DoS(10,
+                         error("ConnectBlock(): block contains orphaned arbitrage transactions"),
+                               REJECT_INVALID, "bad-arb-txes-in-block");
+        }
     }
 
     view.PushAnchor(sprout_tree);
@@ -5407,17 +5444,32 @@ bool static DisconnectTip(CValidationState &state, const CChainParams& chainpara
             list<CTransaction> removed;
             CValidationState stateDummy;
 
-            // don't keep coinbase, staking, or invalid transactions
+            // don't keep coinbase, staking, invalid transactions, or arbitrage only transfers
             if (!(tx.IsCoinBase() || ((i == (block.vtx.size() - 1)) && block.IsVerusPOSBlock())))
             {
+                bool isArbitrageOnly = false;
+                for (auto &oneOut : tx.vout)
+                {
+                    COptCCParams p;
+                    CReserveTransfer rt;
+                    if (oneOut.scriptPubKey.IsPayToCryptoCondition(p) &&
+                        p.evalCode == EVAL_RESERVE_TRANSFER &&
+                        p.vData.size() &&
+                        (rt = p.vData[0]).IsValid() && rt.IsArbitrageOnly())
+                    {
+                        isArbitrageOnly = true;
+                        break;
+                    }
+                }
+                if (isArbitrageOnly)
+                {
+                    continue;
+                }
                 AcceptToMemoryPool(mempool, stateDummy, tx, false, NULL);
             }
-
             // if this is a staking tx, and we are on Verus Sapling with nothing at stake solution,
             // save staking tx as a possible cheat
-            if (chainparams.GetConsensus().NetworkUpgradeActive(pindexDelete->GetHeight(), Consensus::UPGRADE_SAPLING) &&
-                ASSETCHAINS_LWMAPOS && (i == (block.vtx.size() - 1)) &&
-                (block.IsVerusPOSBlock()))
+            else if (((i == (block.vtx.size() - 1)) && block.IsVerusPOSBlock()) && chainparams.GetConsensus().NetworkUpgradeActive(pindexDelete->GetHeight(), Consensus::UPGRADE_SAPLING))
             {
                 CTxHolder txh = CTxHolder(block.vtx[i], pindexDelete->GetHeight());
                 cheatList.Add(txh);
