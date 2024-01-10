@@ -429,6 +429,8 @@ std::string HelpMessage(HelpMessageMode mode)
 
 #ifdef ENABLE_WALLET
     strUsage += HelpMessageGroup(_("Wallet options:"));
+    strUsage += HelpMessageOpt("-arbitragecurrencies", _("Either a JSON array or a comma separated list of currency names."));
+    strUsage += HelpMessageOpt("-arbitrageaddress", _("A valid wallet address or identity controlled by this wallet that will hold the arbitrage currencies to use."));
     strUsage += HelpMessageOpt("-cheatcatcher=<sapling-address>", _("same as \"-defaultzaddr\""));
     strUsage += HelpMessageOpt("-defaultid=<i-address>", _("VerusID used for default change out and staking reward recipient"));
     strUsage += HelpMessageOpt("-defaultzaddr=<sapling-address>", _("sapling address to receive fraud proof rewards and if used with \"-privatechange=1\", z-change address for the sendcurrency command"));
@@ -1319,6 +1321,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     VERUS_NODEID = nodeIDDest.which() == COptCCParams::ADDRTYPE_ID ? GetDestinationID(nodeIDDest) : uint160();
 
     UniValue arbitrageArr(UniValue::VARR);
+    std::vector<std::string> arbCurrencyNames;
     std::string arbString = GetArg("-arbitragecurrencies", "");
     if (arbitrageArr.read(arbString) && arbitrageArr.isArray() && arbitrageArr.size())
     {
@@ -1327,7 +1330,19 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             uint160 oneCurID = ValidateCurrencyName(uni_get_str(arbitrageArr[i]), false);
             if (oneCurID.IsNull())
             {
-                return InitError(_("If arbitragecurrencies are specified, it must be as an array of currency names"));
+                return InitError(_("If arbitragecurrencies are specified, it must be as an array of currency names or a comma separated string of names"));
+            }
+            VERUS_ARBITRAGE_CURRENCIES.push_back(oneCurID);
+        }
+    }
+    else if (boost::split(arbCurrencyNames, arbString, boost::is_any_of(",")).size() && !arbCurrencyNames[0].empty())
+    {
+        for (int i = 0; i < arbCurrencyNames.size(); i++)
+        {
+            uint160 oneCurID = ValidateCurrencyName(uni_get_str(arbCurrencyNames[i]), false);
+            if (oneCurID.IsNull())
+            {
+                return InitError(_("If arbitragecurrencies are specified, it must be as an array or a comma separated string of valid currency names"));
             }
             VERUS_ARBITRAGE_CURRENCIES.push_back(oneCurID);
         }
