@@ -9276,9 +9276,11 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
 
         for (auto &oneProofRoot : oneNotarization.second.proofRoots)
         {
-            uint32_t adjustedNotarizationModulo = CPBaaSNotarization::GetAdjustedNotarizationModulo(externalSystem.chainDefinition.blockNotarizationModulo,
-                                                                                  oneProofRoot.second.rootHeight,
-                                                                                  cnd.vtx[cnd.lastConfirmed].second.proofRoots[oneProofRoot.first].rootHeight);
+            uint32_t adjustedNotarizationModulo = externalSystem.chainDefinition.IsPBaaSChain() ?
+                                                    CPBaaSNotarization::GetAdjustedNotarizationModulo(externalSystem.chainDefinition.blockNotarizationModulo,
+                                                                                    oneProofRoot.second.rootHeight,
+                                                                                    cnd.vtx[cnd.lastConfirmed].second.proofRoots[oneProofRoot.first].rootHeight) :
+                                                    CCurrencyDefinition::BLOCK_NOTARIZATION_MODULO;
 
             if (oneProofRoot.first == ASSETCHAINS_CHAINID)
             {
