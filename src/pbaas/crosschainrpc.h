@@ -794,6 +794,10 @@ public:
                 READWRITE(halving);
                 READWRITE(eraEnd);
             }
+            else if (ser_action.ForRead())
+            {
+                blockNotarizationModulo = BLOCK_NOTARIZATION_MODULO;
+            }
         }
         else
         {
