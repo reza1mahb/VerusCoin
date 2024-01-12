@@ -6139,6 +6139,7 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
     {
         UniValue oneCurrency(UniValue::VOBJ);
         oneCurrency.push_back(Pair(EncodeDestination(CIdentityID(std::get<0>(oneConverter.second).GetID())), std::get<0>(oneConverter.second).ToUniValue()));
+        oneCurrency.pushKV("fullyqualifiedname", ConnectedChains.GetFriendlyCurrencyName(std::get<0>(oneConverter.second).GetID()));
         std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastNotarization = GetLastConfirmedNotarization(oneConverter.first, chainActive.Height());
         oneCurrency.push_back(Pair("height", int64_t(std::get<0>(lastNotarization))));
         oneCurrency.push_back(Pair("output", std::get<1>(lastNotarization).ToUniValue()));
