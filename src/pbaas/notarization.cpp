@@ -8387,7 +8387,7 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                             continue;
                         }
                         printf("Signing notarization (%s:%u) to confirm for %s\n", mergedEvidence.output.hash.GetHex().c_str(), mergedEvidence.output.n, EncodeDestination(oneID).c_str());
-                        LogPrint("notarization", "Signing notarization (%s:%u) to confirm for %s\n", mergedEvidence.output.hash.GetHex().c_str(), mergedEvidence.output.n, EncodeDestination(oneID).c_str());
+                        LogPrintf("Signing notarization (%s:%u) to confirm for %s\n", mergedEvidence.output.hash.GetHex().c_str(), mergedEvidence.output.n, EncodeDestination(oneID).c_str());
 
                         CNotaryEvidence newSigEvidence;
                         signResult = signatureEvidence.SignConfirmed(notarySet, minimumNotariesConfirm, *pWallet, txes[idx].first, oneID, signingHeight, hashType, &newSigEvidence);
@@ -9731,8 +9731,8 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
         shuffle(notaryVec.begin(), notaryVec.end(), prandom);
         if (notaryVec[0] != VERUS_NOTARYID)
         {
-            LogPrintf("skipping notarization submission - was not selected for submission lottery\n");
-            printf("skipping notarization submission - was not selected for submission lottery\n");
+            LogPrintf("skipping notarization submission - was not selected for submission lottery (%s selected)\n", EncodeDestination(CIdentityID(notaryVec[0])));
+            printf("skipping notarization submission - was not selected for submission lottery (%s selected)\n", EncodeDestination(CIdentityID(notaryVec[0])));
             return retVal;
         }
     }
