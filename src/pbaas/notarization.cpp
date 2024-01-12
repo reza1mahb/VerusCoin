@@ -9731,8 +9731,8 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
         shuffle(notaryVec.begin(), notaryVec.end(), prandom);
         if (notaryVec[0] != VERUS_NOTARYID)
         {
-            LogPrintf("skipping notarization submission - was not selected for submission lottery (%s selected)\n", EncodeDestination(CIdentityID(notaryVec[0])));
-            printf("skipping notarization submission - was not selected for submission lottery (%s selected)\n", EncodeDestination(CIdentityID(notaryVec[0])));
+            LogPrintf("skipping notarization submission - was not selected for submission lottery (%s selected)\n", EncodeDestination(CIdentityID(notaryVec[0])).c_str());
+            printf("skipping notarization submission - was not selected for submission lottery (%s selected)\n", EncodeDestination(CIdentityID(notaryVec[0])).c_str());
             return retVal;
         }
     }
