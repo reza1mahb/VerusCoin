@@ -5804,7 +5804,15 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
     int64_t slippageTarget = 0;
 
     UniValue firstParam;
-    firstParam.read(uni_get_str(params[0]));
+
+    if (params[0].isObject())
+    {
+        firstParam = params[0];
+    }
+    else
+    {
+        firstParam.read(uni_get_str(params[0]));
+    }
 
     bool checkIntersect = false;
 
@@ -6130,7 +6138,8 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
     for (auto &oneConverter : converterCurrencyOptions)
     {
         UniValue oneCurrency(UniValue::VOBJ);
-        oneCurrency.push_back(Pair(std::get<0>(oneConverter.second).name, std::get<0>(oneConverter.second).ToUniValue()));
+        oneCurrency.push_back(Pair(EncodeDestination(CIdentityID(std::get<0>(oneConverter.second).GetID())), std::get<0>(oneConverter.second).ToUniValue()));
+        oneCurrency.pushKV("fullyqualifiedname", ConnectedChains.GetFriendlyCurrencyName(std::get<0>(oneConverter.second).GetID()));
         std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastNotarization = GetLastConfirmedNotarization(oneConverter.first, chainActive.Height());
         oneCurrency.push_back(Pair("height", int64_t(std::get<0>(lastNotarization))));
         oneCurrency.push_back(Pair("output", std::get<1>(lastNotarization).ToUniValue()));
