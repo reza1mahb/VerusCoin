@@ -5457,7 +5457,7 @@ CPBaaSNotarization::GetBlockCommitmentRanges(uint32_t fromHeight, uint32_t toHei
 
     // if our range is larger than 256, break it into up to 5, 256 block ranges and
     // spread them randomly over the target proof space
-    if ((toHeight - priorHeight) >= numBlocksPerCommitmentRange)
+    if ((toHeight - priorHeight) > numBlocksPerCommitmentRange)
     {
         int totalRange = toHeight - priorHeight;
         int rangeLeft = totalRange;
@@ -5487,6 +5487,10 @@ CPBaaSNotarization::GetBlockCommitmentRanges(uint32_t fromHeight, uint32_t toHei
             // last is inclusive in proof, so subtract 1 to get a total of numBlocksPerCommitmentRange
             retVal.push_back(std::make_pair(rangeStart, rangeStart + (numBlocksPerCommitmentRange - 1)));
         }
+    }
+    else if ((toHeight - priorHeight) == numBlocksPerCommitmentRange && numBlocksPerCommitmentRange > 1)
+    {
+        retVal.push_back(std::make_pair(priorHeight, priorHeight + (numBlocksPerCommitmentRange - 1)));
     }
     return retVal;
 }
