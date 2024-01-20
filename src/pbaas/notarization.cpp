@@ -5488,6 +5488,10 @@ CPBaaSNotarization::GetBlockCommitmentRanges(uint32_t fromHeight, uint32_t toHei
             retVal.push_back(std::make_pair(rangeStart, rangeStart + (numBlocksPerCommitmentRange - 1)));
         }
     }
+    else if ((toHeight - priorHeight) == numBlocksPerCommitmentRange && numBlocksPerCommitmentRange > 1)
+    {
+        retVal.push_back(std::make_pair(priorHeight, priorHeight + (numBlocksPerCommitmentRange - 1)));
+    }
     return retVal;
 }
 
@@ -9501,8 +9505,33 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
             proofRequest.pushKV("evidence", allEvidence.ToUniValue());
             proofRequest.pushKV("confirmnotarizationref", cnd.vtx[cnd.lastConfirmed].first.ToUniValue());
             proofRequest.pushKV("entropyhash", blockHashes[confirmingIdx].GetHex());
-            int64_t fromHeight = crosschainCND.vtx[confirmingIdx ? confirmingIdx - 1 : 0].second.proofRoots.count(ASSETCHAINS_CHAINID) ?
-                                    crosschainCND.vtx[confirmingIdx ? confirmingIdx - 1 : 0].second.proofRoots[ASSETCHAINS_CHAINID].rootHeight :
+
+            // find which fork the one we are confirming is on, and set from height to the one before us on the same fork or 0
+            int fromHeightIdx = 0;
+            if (confirmingIdx > 1)
+            {
+                int forkIdx;
+                int sameForkIdx;
+                for (forkIdx = 0; forkIdx < crosschainCND.forks.size(); forkIdx++)
+                {
+                    bool forkBreak = false;
+                    for (sameForkIdx = 1; sameForkIdx < crosschainCND.forks[forkIdx].size(); sameForkIdx++)
+                    {
+                        if (crosschainCND.forks[forkIdx][sameForkIdx] == confirmingIdx)
+                        {
+                            forkBreak = true;
+                            fromHeightIdx = crosschainCND.forks[forkIdx][sameForkIdx - 1];
+                            break;
+                        }
+                    }
+                    if (forkBreak)
+                    {
+                        break;
+                    }
+                }
+            }
+            int64_t fromHeight = crosschainCND.vtx[fromHeightIdx].second.proofRoots.count(ASSETCHAINS_CHAINID) ?
+                                    crosschainCND.vtx[fromHeightIdx].second.proofRoots[ASSETCHAINS_CHAINID].rootHeight :
                                     1;
             proofRequest.pushKV("fromheight", fromHeight);
             proofRequest.pushKV("toheight", (int64_t)cnd.vtx[cnd.lastConfirmed].second.proofRoots[ASSETCHAINS_CHAINID].rootHeight);

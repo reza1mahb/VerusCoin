@@ -1666,7 +1666,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         useBootstrap = true;
     }
 
-    if (IsVerusMainnetActive() && useBootstrap) {
+    if (IsVerusActive() && useBootstrap) {
         fReindex = false;
         //wipe transactions from wallet to create a clean slate
         OverrideSetArg("-zappwallettxes","2");

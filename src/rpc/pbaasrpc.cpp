@@ -5928,32 +5928,39 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
             {
                 throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Cannot read currency notarization in transaction " + activeFractionals[i].first.txhash.GetHex());
             }
-            auto curMap = pbn.currencyState.GetReserveMap();
-            if (checkIntersect)
+            if (!(pbn.currencyState.IsLaunchConfirmed() && pbn.currencyState.IsLaunchCompleteMarker()))
             {
-                for (auto it = resIt; it != reserves.end(); it++)
-                {
-                    if (it->first != pbn.currencyState.GetID() && !curMap.count(it->first))
-                    {
-                        toRemove.insert(i);
-                        break;
-                    }
-                }
+                toRemove.insert(i);
             }
             else
             {
-                bool foundReserve = false;
-                for (auto it = resIt; it != reserves.end(); it++)
+                auto curMap = pbn.currencyState.GetReserveMap();
+                if (checkIntersect)
                 {
-                    if (it->first == pbn.currencyState.GetID() || curMap.count(it->first))
+                    for (auto it = resIt; it != reserves.end(); it++)
                     {
-                        foundReserve = true;
-                        break;
+                        if (it->first != pbn.currencyState.GetID() && !curMap.count(it->first))
+                        {
+                            toRemove.insert(i);
+                            break;
+                        }
                     }
                 }
-                if (!foundReserve)
+                else
                 {
-                    toRemove.insert(i);
+                    bool foundReserve = false;
+                    for (auto it = resIt; it != reserves.end(); it++)
+                    {
+                        if (it->first == pbn.currencyState.GetID() || curMap.count(it->first))
+                        {
+                            foundReserve = true;
+                            break;
+                        }
+                    }
+                    if (!foundReserve)
+                    {
+                        toRemove.insert(i);
+                    }
                 }
             }
         }
@@ -5977,7 +5984,7 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
 
     // if toCurrency is fractional and contains all reserves to check, add it as well
     std::map<uint160, int32_t> toCurMap = toCurrencyDef.GetCurrenciesMap();
-    if (toCurrencyDef.IsFractional())
+    if (toCurrencyDef.IsFractional() && toState.IsLaunchCompleteMarker())
     {
         bool addThis = true;
         for (auto oneReserve : reserves)
@@ -6074,6 +6081,13 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
     {
         for (auto &oneConverter : converterCurrencyOptions)
         {
+            // only include currencies on the current chain
+            if (std::get<0>((oneConverter.second)).systemID != ASSETCHAINS_CHAINID)
+            {
+                removeIDs.insert(oneConverter.first);
+                continue;
+            }
+
             auto curMap = std::get<0>((oneConverter.second)).GetCurrenciesMap();
 
             for (auto &oneReserve : reserves)
