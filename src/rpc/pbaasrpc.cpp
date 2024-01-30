@@ -11930,6 +11930,7 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
             "         \"endblock\"      : n,            (int,    optional) chain or currency intended to end life after this height, 0 = no end\n"
 
             "         \"currencies\"    : \"[\"VRSC\",..]\", (list, optional) reserve currencies backing this chain in equal amounts\n"
+            "         \"weights\"       : \"[\"xx.xx\",..]\", (list, optional) the weight of each reserve currency in a fractional currency\n"
             "         \"conversions\"   : \"[\"xx.xx\",..]\", (list, optional) if present, must be same size as currencies. pre-launch conversion ratio overrides\n"
             "         \"minpreconversion\" : \"[\"xx.xx\",..]\", (list, optional) must be same size as currencies. minimum in each currency to launch\n"
             "         \"maxpreconversion\" : \"[\"xx.xx\",..]\", (list, optional) maximum in each currency allowed\n"
