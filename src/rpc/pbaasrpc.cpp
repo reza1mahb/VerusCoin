@@ -11656,9 +11656,13 @@ CCurrencyDefinition ValidateNewUnivalueCurrencyDefinition(const UniValue &uniObj
     //    newCurrency.startBlock = chainActive.Height() + (PBAAS_MINSTARTBLOCKDELTA + 5);    // give a little time to send the tx
     //}
 
-    if (!newCurrency.startBlock || newCurrency.startBlock < (chainActive.Height() + 10))
+    UniValue expiryUni = find_value(uniObj, "expiryheight");
+    UniValue startBlockUni = find_value(uniObj, "startblock");
+    uint32_t expiryHeight = uni_get_int(expiryUni, chainActive.Height() + PBAAS_MINSTARTBLOCKDELTA);
+
+    if (expiryUni.isNull() || (startBlockUni.isNull() && newCurrency.startBlock < expiryHeight))
     {
-        newCurrency.startBlock = chainActive.Height() + DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA;  // give a little time to send the tx
+        newCurrency.startBlock = std::max(expiryHeight, chainActive.Height() + DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA);  // give a little time to send the tx
     }
 
     if (newCurrency.endBlock && newCurrency.endBlock < (newCurrency.startBlock + CCurrencyDefinition::MIN_CURRENCY_LIFE))
@@ -11926,7 +11930,8 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
             "                                                           2 = PROOF_CHAINID - chain ID is sole notary for proof, no evidence required\n"
             "                                                           3 = PROOF_ETHNOTARIZATION - Ethereum notarization & PATRICIA TRIE proof\n"
             "\n"
-            "         \"startblock\"    : n,            (int,    optional) VRSC block must be notarized into block 1 of PBaaS chain, default curheight + 15\n"
+            "         \"expiryheight\"  : n,            (int,    optional) block height at which the transaction expires, default: curheight + 20\n"
+            "         \"startblock\"    : n,            (int,    optional) VRSC block must be notarized into block 1 of PBaaS chain, default: expiryheight\n"
             "         \"endblock\"      : n,            (int,    optional) chain or currency intended to end life after this height, 0 = no end\n"
 
             "         \"currencies\"    : \"[\"VRSC\",..]\", (list, optional) reserve currencies backing this chain in equal amounts\n"
@@ -11954,7 +11959,7 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
             "         }\n"
             "         \"nodes\"         : \"[obj, ..]\", (objectarray, optional) up to 5 nodes that can be used to connect to the blockchain"
             "         [{\n"
-            "            \"networkaddress\" : \"ip:port\", (string,  optional) internet, TOR, or other supported address for node\n"
+            "            \"networkaddress\" : \"ip:port\", (string,  optional) internet or other supported address for node\n"
             "            \"nodeidentity\" : \"name@\",  (string, optional) published node identity\n"
             "         }, .. ]\n"
             "      }\n"
@@ -11998,6 +12003,9 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
 
     std::map<uint160, std::string> requiredCurrencyDefinitions;
     CCurrencyDefinition newChain(ValidateNewUnivalueCurrencyDefinition(params[0], height, ASSETCHAINS_CHAINID, requiredCurrencyDefinitions));
+
+    UniValue expiryUni = find_value(params[0], "expiryheight");
+    uint32_t expiryHeight = uni_get_int(expiryUni, chainActive.Height() + PBAAS_MINSTARTBLOCKDELTA);
 
     if (requiredCurrencyDefinitions.size())
     {
@@ -12065,6 +12073,7 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot load ID transaction for " + VERUS_CHAINNAME);
     }
     TransactionBuilder tb = TransactionBuilder(Params().GetConsensus(), height + 1, pwalletMain);
+    tb.SetExpiryHeight(expiryHeight);
     tb.AddTransparentInput(idTxIn.prevout, idTx.vout[idTxIn.prevout.n].scriptPubKey, idTx.vout[idTxIn.prevout.n].nValue);
 
     // if this is a PBaaS chain definition, and we have a gateway converter currency to also start,
