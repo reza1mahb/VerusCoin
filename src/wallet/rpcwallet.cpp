@@ -4313,11 +4313,14 @@ UniValue fundrawtransaction(const UniValue& params, bool fHelp)
             if (!coins ||
                 (coins->fCoinBase && coins->nHeight != 1 && (coins->nHeight < COINBASE_MATURITY)) ||
                 coins->vout.size() <= oneRef.n ||
-                !(coins->vout[oneRef.n].nValue > 0 ||
-                  (coins->vout[oneRef.n].scriptPubKey.size() &&
-                   coins->vout[oneRef.n].scriptPubKey.ReserveOutValue() > CCurrencyValueMap())))
+                !coins->vout[oneRef.n].scriptPubKey.size())
             {
                 throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid or spent UTXO in UTXO list. Please see help.");
+            }
+            if (!(coins->vout[oneRef.n].nValue > 0 || (coins->vout[oneRef.n].scriptPubKey.ReserveOutValue() > CCurrencyValueMap())))
+            {
+                // nothing to spend, skip this one
+                continue;
             }
             utxos[oneRef] = coins->vout[oneRef.n].scriptPubKey.ReserveOutValue();
             if (coins->vout[oneRef.n].nValue)
