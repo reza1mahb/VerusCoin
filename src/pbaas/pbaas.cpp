@@ -11157,6 +11157,8 @@ void CConnectedChains::SubmissionThread()
     {
         arith_uint256 lastHash;
         int64_t lastImportTime = 0;
+        bool isVerusActive = IsVerusActive();
+        bool isVerusMainnetActive = IsVerusMainnetActive();
 
         // wait for something to check on, then submit blocks that should be submitted
         while (true)
@@ -11330,7 +11332,7 @@ void CConnectedChains::SubmissionThread()
                             {
                                 CNativeHashWriter hw;
                                 hw << height;
-                                if (height >= 2930000)
+                                if (!isVerusMainnetActive || height >= 2930000)
                                 {
                                     hw << exports[0].first.first.txIn.prevout;
                                 }
@@ -11361,7 +11363,7 @@ void CConnectedChains::SubmissionThread()
                                 auto &oneExport = exports[i];
 
                                 // use a different random selection for every import and only continue if we are selected again
-                                if (amNotary && height >= 2930000 && i > 0)
+                                if (amNotary && (!isVerusMainnetActive || (height >= 2930000 && i > 0)))
                                 {
                                     CNativeHashWriter hw;
                                     hw << height;
