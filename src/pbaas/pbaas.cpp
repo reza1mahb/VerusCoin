@@ -11342,8 +11342,8 @@ void CConnectedChains::SubmissionThread()
                                 shuffle(notaryVec.begin(), notaryVec.end(), prandom);
                                 if (notaryVec[0] != VERUS_NOTARYID)
                                 {
-                                    LogPrintf("skipping import submission - was not selected for submission lottery, %s selected\n", EncodeDestination(CIdentityID(notaryVec[0])));
-                                    printf("skipping import submission - was not selected for submission lottery\n");
+                                    LogPrintf("skipping import submission - was not selected for submission lottery, %s selected\n", EncodeDestination(CIdentityID(notaryVec[0])).c_str());
+                                    printf("skipping import submission - was not selected for submission lottery, %s selected\n", EncodeDestination(CIdentityID(notaryVec[0])).c_str());
                                     submitImport = false;
                                 }
                             }
@@ -11374,8 +11374,8 @@ void CConnectedChains::SubmissionThread()
                                     shuffle(notaryVec.begin(), notaryVec.end(), prandom);
                                     if (notaryVec[0] != VERUS_NOTARYID)
                                     {
-                                        LogPrintf("skipping next import submission for #%d of valid exports - was not selected for submission lottery, %s selected\n", i, EncodeDestination(CIdentityID(notaryVec[i])));
-                                        printf("skipping next import submission for #%d of valid exports - was not selected for submission lottery, %s selected\n", i, EncodeDestination(CIdentityID(notaryVec[i])));
+                                        LogPrintf("skipping next import submission for #%d of valid exports - was not selected for submission lottery, %s selected\n", i, EncodeDestination(CIdentityID(notaryVec[i])).c_str());
+                                        printf("skipping next import submission for #%d of valid exports - was not selected for submission lottery, %s selected\n", i, EncodeDestination(CIdentityID(notaryVec[i])).c_str());
                                         break;
                                     }
                                 }
