@@ -13225,7 +13225,7 @@ UniValue registeridentity(const UniValue& params, bool fHelp)
             "    {\n"
             "        \"name\": \"namestr\",     (string) the unique name in this commitment\n"
             "        \"salt\": \"hexstr\",      (hex)    salt used to hide the commitment\n"
-            "        \"referrer\": \"identityID\", (name@ or address) must be a valid ID to use as a referrer to receive a discount\n"
+            "        \"referral\": \"identityID\", (name@ or address) must be a valid ID to use as a referrer to receive a discount\n"
             "    },\n"
             "    \"identity\" :\n"
             "    {\n"
