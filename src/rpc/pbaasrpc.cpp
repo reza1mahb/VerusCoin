@@ -640,6 +640,7 @@ void CurrencyNotarizationTypeQuery(CCurrencyDefinition::EQueryOptions launchStat
         std::vector<CAddressUnspentDbEntry> unspentAddressIndex;
         if (GetAddressUnspent(queryID, CScript::P2IDX, unspentAddressIndex) && unspentAddressIndex.size())
         {
+            uint32_t curHeight = chainActive.Height();
             for (auto &oneOut : unspentAddressIndex)
             {
                 CPBaaSNotarization pbn(oneOut.second.script);
@@ -658,9 +659,9 @@ void CurrencyNotarizationTypeQuery(CCurrencyDefinition::EQueryOptions launchStat
                     continue;
                 }
                 if (!currenciesFound.count(curDefUTXO) &&
-                    (!endBlock || currencyHeight < endBlock) &&
-                    (!startBlock || curDef.startBlock >= startBlock) &&
-                    !(launchStateQuery == CCurrencyDefinition::QUERY_LAUNCHSTATE_PRELAUNCH && curDef.startBlock >= chainActive.Height()))
+                    (!endBlock || curHeight < endBlock) &&
+                    (!startBlock || currencyHeight >= startBlock) &&
+                    !(launchStateQuery == CCurrencyDefinition::QUERY_LAUNCHSTATE_PRELAUNCH && curDef.startBlock < curHeight))
                 {
                     currenciesFound[curDefUTXO] = curDefVec.size();
                     curDefVec.push_back(std::make_pair(std::make_pair(curDefUTXO, goodNodes), curDef));
