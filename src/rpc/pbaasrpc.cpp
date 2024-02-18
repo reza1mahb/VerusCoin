@@ -640,6 +640,7 @@ void CurrencyNotarizationTypeQuery(CCurrencyDefinition::EQueryOptions launchStat
         std::vector<CAddressUnspentDbEntry> unspentAddressIndex;
         if (GetAddressUnspent(queryID, CScript::P2IDX, unspentAddressIndex) && unspentAddressIndex.size())
         {
+            uint32_t curHeight = chainActive.Height();
             for (auto &oneOut : unspentAddressIndex)
             {
                 CPBaaSNotarization pbn(oneOut.second.script);
@@ -658,9 +659,9 @@ void CurrencyNotarizationTypeQuery(CCurrencyDefinition::EQueryOptions launchStat
                     continue;
                 }
                 if (!currenciesFound.count(curDefUTXO) &&
-                    (!endBlock || currencyHeight < endBlock) &&
-                    (!startBlock || curDef.startBlock >= startBlock) &&
-                    !(launchStateQuery == CCurrencyDefinition::QUERY_LAUNCHSTATE_PRELAUNCH && curDef.startBlock >= chainActive.Height()))
+                    (!endBlock || curHeight < endBlock) &&
+                    (!startBlock || currencyHeight >= startBlock) &&
+                    !(launchStateQuery == CCurrencyDefinition::QUERY_LAUNCHSTATE_PRELAUNCH && curDef.startBlock < curHeight))
                 {
                     currenciesFound[curDefUTXO] = curDefVec.size();
                     curDefVec.push_back(std::make_pair(std::make_pair(curDefUTXO, goodNodes), curDef));
@@ -11656,9 +11657,13 @@ CCurrencyDefinition ValidateNewUnivalueCurrencyDefinition(const UniValue &uniObj
     //    newCurrency.startBlock = chainActive.Height() + (PBAAS_MINSTARTBLOCKDELTA + 5);    // give a little time to send the tx
     //}
 
-    if (!newCurrency.startBlock || newCurrency.startBlock < (chainActive.Height() + 10))
+    UniValue expiryUni = find_value(uniObj, "expiryheight");
+    UniValue startBlockUni = find_value(uniObj, "startblock");
+    uint32_t expiryHeight = uni_get_int(expiryUni, chainActive.Height() + PBAAS_MINSTARTBLOCKDELTA);
+
+    if (expiryUni.isNull() || (startBlockUni.isNull() && newCurrency.startBlock < expiryHeight))
     {
-        newCurrency.startBlock = chainActive.Height() + DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA;  // give a little time to send the tx
+        newCurrency.startBlock = std::max(expiryHeight, chainActive.Height() + DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA);  // give a little time to send the tx
     }
 
     if (newCurrency.endBlock && newCurrency.endBlock < (newCurrency.startBlock + CCurrencyDefinition::MIN_CURRENCY_LIFE))
@@ -11926,10 +11931,12 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
             "                                                           2 = PROOF_CHAINID - chain ID is sole notary for proof, no evidence required\n"
             "                                                           3 = PROOF_ETHNOTARIZATION - Ethereum notarization & PATRICIA TRIE proof\n"
             "\n"
-            "         \"startblock\"    : n,            (int,    optional) VRSC block must be notarized into block 1 of PBaaS chain, default curheight + 15\n"
+            "         \"expiryheight\"  : n,            (int,    optional) block height at which the transaction expires, default: curheight + 20\n"
+            "         \"startblock\"    : n,            (int,    optional) VRSC block must be notarized into block 1 of PBaaS chain, default: expiryheight\n"
             "         \"endblock\"      : n,            (int,    optional) chain or currency intended to end life after this height, 0 = no end\n"
 
             "         \"currencies\"    : \"[\"VRSC\",..]\", (list, optional) reserve currencies backing this chain in equal amounts\n"
+            "         \"weights\"       : \"[\"xx.xx\",..]\", (list, optional) the weight of each reserve currency in a fractional currency\n"
             "         \"conversions\"   : \"[\"xx.xx\",..]\", (list, optional) if present, must be same size as currencies. pre-launch conversion ratio overrides\n"
             "         \"minpreconversion\" : \"[\"xx.xx\",..]\", (list, optional) must be same size as currencies. minimum in each currency to launch\n"
             "         \"maxpreconversion\" : \"[\"xx.xx\",..]\", (list, optional) maximum in each currency allowed\n"
@@ -11954,7 +11961,7 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
             "         }\n"
             "         \"nodes\"         : \"[obj, ..]\", (objectarray, optional) up to 5 nodes that can be used to connect to the blockchain"
             "         [{\n"
-            "            \"networkaddress\" : \"ip:port\", (string,  optional) internet, TOR, or other supported address for node\n"
+            "            \"networkaddress\" : \"ip:port\", (string,  optional) internet or other supported address for node\n"
             "            \"nodeidentity\" : \"name@\",  (string, optional) published node identity\n"
             "         }, .. ]\n"
             "      }\n"
@@ -11998,6 +12005,9 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
 
     std::map<uint160, std::string> requiredCurrencyDefinitions;
     CCurrencyDefinition newChain(ValidateNewUnivalueCurrencyDefinition(params[0], height, ASSETCHAINS_CHAINID, requiredCurrencyDefinitions));
+
+    UniValue expiryUni = find_value(params[0], "expiryheight");
+    uint32_t expiryHeight = uni_get_int(expiryUni, chainActive.Height() + PBAAS_MINSTARTBLOCKDELTA);
 
     if (requiredCurrencyDefinitions.size())
     {
@@ -12065,6 +12075,7 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot load ID transaction for " + VERUS_CHAINNAME);
     }
     TransactionBuilder tb = TransactionBuilder(Params().GetConsensus(), height + 1, pwalletMain);
+    tb.SetExpiryHeight(expiryHeight);
     tb.AddTransparentInput(idTxIn.prevout, idTx.vout[idTxIn.prevout.n].scriptPubKey, idTx.vout[idTxIn.prevout.n].nValue);
 
     // if this is a PBaaS chain definition, and we have a gateway converter currency to also start,
@@ -13215,7 +13226,7 @@ UniValue registeridentity(const UniValue& params, bool fHelp)
             "    {\n"
             "        \"name\": \"namestr\",     (string) the unique name in this commitment\n"
             "        \"salt\": \"hexstr\",      (hex)    salt used to hide the commitment\n"
-            "        \"referrer\": \"identityID\", (name@ or address) must be a valid ID to use as a referrer to receive a discount\n"
+            "        \"referral\": \"identityID\", (name@ or address) must be a valid ID to use as a referrer to receive a discount\n"
             "    },\n"
             "    \"identity\" :\n"
             "    {\n"

@@ -11157,6 +11157,8 @@ void CConnectedChains::SubmissionThread()
     {
         arith_uint256 lastHash;
         int64_t lastImportTime = 0;
+        bool isVerusActive = IsVerusActive();
+        bool isVerusMainnetActive = IsVerusMainnetActive();
 
         // wait for something to check on, then submit blocks that should be submitted
         while (true)
@@ -11310,13 +11312,14 @@ void CConnectedChains::SubmissionThread()
 
                     if (notaryRevokeID.IsNull() && exports.size())
                     {
-                        bool submitImports = true;
+                        bool submitImport = true;
+                        bool amNotary = false;
+
                         const CCurrencyDefinition &notaryCurrency = ConnectedChains.FirstNotaryChain().chainDefinition;
                         // if this is an ETH protocol, we could get reverted and still have to pay, so if we are a notary,
                         // to prevent funds loss, sort notaries and make sure we are in the top 2 before we try to submit
                         if (notaryCurrency.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION)
                         {
-                            bool amNotary = false;
                             for (auto &oneNotary : notaryCurrency.notaries)
                             {
                                 if (oneNotary == VERUS_NOTARYID)
@@ -11329,22 +11332,25 @@ void CConnectedChains::SubmissionThread()
                             {
                                 CNativeHashWriter hw;
                                 hw << height;
+                                if (!isVerusMainnetActive || height >= 2930000)
+                                {
+                                    hw << exports[0].first.first.txIn.prevout;
+                                }
                                 uint256 prHash = hw.GetHash();
                                 std::vector<uint160> notaryVec = notaryCurrency.notaries;
                                 auto prandom = std::minstd_rand0(UintToArith256(prHash).GetLow64());
                                 shuffle(notaryVec.begin(), notaryVec.end(), prandom);
                                 if (notaryVec[0] != VERUS_NOTARYID)
                                 {
-                                    LogPrintf("skipping import submission - was not selected for submission lottery\n");
-                                    printf("skipping import submission - was not selected for submission lottery\n");
-                                    submitImports = false;
+                                    LogPrintf("skipping import submission - was not selected for submission lottery, %s selected\n", EncodeDestination(CIdentityID(notaryVec[0])).c_str());
+                                    printf("skipping import submission - was not selected for submission lottery, %s selected\n", EncodeDestination(CIdentityID(notaryVec[0])).c_str());
+                                    submitImport = false;
                                 }
                             }
                         }
 
-                        if (submitImports)
+                        if (submitImport)
                         {
-                            bool success = true;
                             UniValue exportParamObj(UniValue::VOBJ);
 
                             exportParamObj.pushKV("sourcesystemid", EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID)));
@@ -11352,11 +11358,30 @@ void CConnectedChains::SubmissionThread()
                             exportParamObj.pushKV("notarizationtxoutnum", (int)lastConfirmedUTXO.n);
 
                             UniValue exportArr(UniValue::VARR);
-                            for (auto &oneExport : exports)
+                            for (int i = 0; i < exports.size(); i++)
                             {
+                                auto &oneExport = exports[i];
+
+                                // use a different random selection for every import and only continue if we are selected again
+                                if (amNotary && (!isVerusMainnetActive || (height >= 2930000 && i > 0)))
+                                {
+                                    CNativeHashWriter hw;
+                                    hw << height;
+                                    hw << exports[i].first.first.txIn.prevout;
+                                    uint256 prHash = hw.GetHash();
+                                    std::vector<uint160> notaryVec = notaryCurrency.notaries;
+                                    auto prandom = std::minstd_rand0(UintToArith256(prHash).GetLow64());
+                                    shuffle(notaryVec.begin(), notaryVec.end(), prandom);
+                                    if (notaryVec[0] != VERUS_NOTARYID)
+                                    {
+                                        LogPrintf("skipping next import submission for #%d of valid exports - was not selected for submission lottery, %s selected\n", i, EncodeDestination(CIdentityID(notaryVec[i])).c_str());
+                                        printf("skipping next import submission for #%d of valid exports - was not selected for submission lottery, %s selected\n", i, EncodeDestination(CIdentityID(notaryVec[i])).c_str());
+                                        break;
+                                    }
+                                }
+
                                 if (!oneExport.first.second.IsValid())
                                 {
-                                    success = false;
                                     break;
                                 }
                                 UniValue oneExportUni(UniValue::VOBJ);
@@ -11385,17 +11410,20 @@ void CConnectedChains::SubmissionThread()
                                 exportArr.push_back(oneExportUni);
                             }
 
-                            exportParamObj.pushKV("exports", exportArr);
+                            if (exportArr.size())
+                            {
+                                exportParamObj.pushKV("exports", exportArr);
 
-                            UniValue params(UniValue::VARR);
-                            params.push_back(exportParamObj);
-                            UniValue result = NullUniValue;
-                            try
-                            {
-                                result = find_value(RPCCallRoot("submitimports", params), "result");
-                            } catch (exception e)
-                            {
-                                LogPrintf("%s: Error submitting imports to notary chain %s\n", uni_get_str(params[0]).c_str());
+                                UniValue params(UniValue::VARR);
+                                params.push_back(exportParamObj);
+                                UniValue result = NullUniValue;
+                                try
+                                {
+                                    result = find_value(RPCCallRoot("submitimports", params), "result");
+                                } catch (exception e)
+                                {
+                                    LogPrintf("%s: Error submitting imports to notary chain %s\n", uni_get_str(params[0]).c_str());
+                                }
                             }
                         }
                     }
