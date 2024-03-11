@@ -4,6 +4,7 @@
 #include "streams.h"
 #include "zcash/NoteEncryption.hpp"
 #include "zcash/prf.h"
+#include "pbaas/crosschainrpc.h"
 
 #include <librustzcash.h>
 
@@ -18,6 +19,17 @@ uint256 SaplingPaymentAddress::GetHash() const {
     CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
     ss << *this;
     return Hash(ss.begin(), ss.end());
+}
+
+uint160 SaplingPaymentAddress::ShortSaltedFingerprint(const uint160 &saltOrFingerprint) const
+{
+    CHashWriterSHA256 hw(SER_GETHASH, PROTOCOL_VERSION);
+
+    std::vector<unsigned char> saltVec = std::vector<unsigned char>(saltOrFingerprint.begin(), saltOrFingerprint.end());
+    saltVec.insert(saltVec.end() - 12, (size_t)12, 0);
+    uint160 salt = CCrossChainRPCData::GetConditionID(uint160(saltVec), GetHash());
+    saltVec.insert(saltVec.end() - 12, salt.end() - 12, salt.end());
+    return uint160(saltVec);
 }
 
 boost::optional<SaplingPaymentAddress> SaplingIncomingViewingKey::address(diversifier_t d) const {

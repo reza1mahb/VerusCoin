@@ -1147,6 +1147,31 @@ CUTXORef::CUTXORef(const UniValue &uni)
     n = uni_get_int(find_value(uni, "voutnum"));
 }
 
+CPBaaSEvidenceRef::CPBaaSEvidenceRef(const UniValue &uni) :
+    version(uni_get_int64(find_value(uni, "version"), CVDXF_Data::DEFAULT_VERSION)),
+    flags(uni_get_int64(find_value(uni, "flags"), FLAG_ISEVIDENCE)),
+    output(CUTXORef(find_value(uni, "output"))),
+    systemID(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "output"))))),
+    objectNum(uni_get_int(find_value(uni, "objectnum"), 0)),
+    startOffset(uni_get_int64(find_value(uni, "startoffset"), 0)),
+    endOffset(uni_get_int64(find_value(uni, "endoffset"), 0))
+{
+}
+
+UniValue CPBaaSEvidenceRef::ToUniValue() const
+{
+    UniValue obj(UniValue::VOBJ);
+
+    obj.pushKV("version", (int64_t)version);
+    obj.pushKV("flags", (int64_t)flags);
+    obj.pushKV("output", output.ToUniValue());
+    obj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
+    obj.pushKV("objectnum", objectNum);
+    obj.pushKV("startoffset", startOffset);
+    obj.pushKV("endoffset", endOffset);
+    return obj;
+}
+
 UniValue CObjectFinalization::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);

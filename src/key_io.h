@@ -48,6 +48,7 @@ CTxDestination ValidateDestination(const std::string &destStr);
 bool IsValidDestinationString(const std::string& str);
 bool IsValidDestinationString(const std::string& str, const CChainParams& params);
 uint160 ParseVDXFKey(const std::string &keyString);
+std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &obj);
 
 std::string EncodePaymentAddress(const libzcash::PaymentAddress& zaddr);
 libzcash::PaymentAddress DecodePaymentAddress(const std::string& str);

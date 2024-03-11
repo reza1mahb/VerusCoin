@@ -981,9 +981,11 @@ CRating::CRating(const UniValue uni) :
     }
 }
 
-std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &obj)
+std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &_obj)
 {
     CDataStream ss(PROTOCOL_VERSION, SER_DISK);
+
+    UniValue obj = _obj;
 
     std::string serializedHex = uni_get_str(find_value(obj, "serializedhex"));
     if (!serializedHex.empty())
@@ -1001,6 +1003,22 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &obj)
         bool isValid = false;
         auto retVec = DecodeBase64(serializedBase64.c_str(), &isValid);
         return isValid ? retVec : std::vector<unsigned char>();
+    }
+    std::string serializedMessage = uni_get_str(find_value(obj, "serializedmessage"));
+    if (!serializedMessage.empty())
+    {
+        ss << uni_get_str(serializedMessage);
+        return std::vector<unsigned char>(ss.begin(), ss.end());
+    }
+
+    if (obj.isStr())
+    {
+        std::string objStr = uni_get_str(obj);
+        if (IsHex(objStr))
+        {
+            return ParseHex(objStr);
+        }
+        return std::vector<unsigned char>(objStr.begin(), objStr.end());
     }
 
     // this should be an object with "vdxfkey" as the key and {object} as the json object to serialize

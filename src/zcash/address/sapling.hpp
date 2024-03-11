@@ -36,6 +36,11 @@ public:
     //! Get the 256-bit SHA256d hash of this payment address.
     uint256 GetHash() const;
 
+    //! Salted hash of this payment address with the following organization:
+    //!   low 64 bits - truncated sha256 of hash
+    //!   high 96 bits - the same high 96 bits of the uint160 salt parameter used for hash, original low 64 bits are unused
+    uint160 ShortSaltedFingerprint(const uint160 &saltOrFingerPrint) const;
+
     friend inline bool operator==(const SaplingPaymentAddress& a, const SaplingPaymentAddress& b) {
         return a.d == b.d && a.pk_d == b.pk_d;
     }

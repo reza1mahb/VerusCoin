@@ -1703,18 +1703,6 @@ public:
         READWRITE(*(COutPoint *)this);
     }
 
-    static std::string UtxoReferenceKeyName()
-    {
-        return "vrsc::system.utxo.reference";
-    }
-
-    static uint160 UtxoReferenceKey()
-    {
-        static uint160 nameSpace;
-        static uint160 signatureKey = CVDXF::GetDataKey(UtxoReferenceKeyName(), nameSpace);
-        return signatureKey;
-    }
-
     bool IsValid() const
     {
         return n != UINT32_MAX;

@@ -2410,4 +2410,106 @@ public:
     }
 };
 
+class CPBaaSEvidenceRef
+{
+public:
+    enum {
+        FLAG_ISEVIDENCE = 1
+    };
+
+    uint32_t version;
+    uint32_t flags;
+    CUTXORef output;
+    uint160 systemID;
+    int32_t objectNum;
+    int64_t startOffset;
+    int64_t endOffset;
+
+    CPBaaSEvidenceRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), flags(FLAG_ISEVIDENCE), startOffset(0), endOffset(0) {}
+    CPBaaSEvidenceRef(const COutPoint &op, const uint160 &SystemID=uint160(), int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+        version(Version), flags(Flags), output(op), systemID(SystemID), objectNum(ObjectNum), startOffset(StartOffset), endOffset(EndOffset) {}
+    CPBaaSEvidenceRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, const uint160 &SystemID=uint160(), int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+        version(Version), flags(Flags), output(HashIn, nIn), systemID(SystemID), objectNum(ObjectNum), startOffset(StartOffset), endOffset(EndOffset) {}
+
+    CPBaaSEvidenceRef(const UniValue &uni);
+
+    CPBaaSEvidenceRef(const std::vector<unsigned char> &asVector)
+    {
+        ::FromVector(asVector, *this);
+    }
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(*(COutPoint *)this);
+    }
+
+    bool IsValid() const
+    {
+        return output.IsValid() && version >= CVDXF_Data::FIRST_VERSION && version <= CVDXF_Data::LAST_VERSION && (flags & FLAG_ISEVIDENCE) == FLAG_ISEVIDENCE;
+    }
+
+    bool IsOnSameTransaction() const
+    {
+        return IsValid() && output.IsOnSameTransaction() && (systemID.IsNull() || systemID == ASSETCHAINS_CHAINID);
+    }
+
+    // returns false if hash is null
+    bool GetOutputTransaction(CTransaction &tx, uint256 &blockHash, bool checkMemPool=true) const;
+
+    // returns false if hash is null
+    bool GetOutputData(std::vector<unsigned char> &data, bool checkMemPool=true) const;
+
+    UniValue ToUniValue() const;
+};
+
+class CCrossChainDataRef : CVDXF_Data
+{
+public:
+    CPBaaSEvidenceRef crosschainDataRef;
+
+    CCrossChainDataRef(uint32_t Version=VERSION_INVALID) : crosschainDataRef(Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), ::AsVector(crosschainDataRef), Version) {}
+    CCrossChainDataRef(const COutPoint &op, const uint160 &SystemID=uint160(), int64_t StartOffset=0, int64_t EndOffset=0, uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+        crosschainDataRef(op, SystemID, StartOffset, EndOffset, Flags, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), ::AsVector(crosschainDataRef), Version) {}
+    CCrossChainDataRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, const uint160 &SystemID=uint160(), int64_t StartOffset=0, int64_t EndOffset=0, uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+        crosschainDataRef(HashIn, nIn, SystemID, StartOffset, EndOffset, Flags, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), ::AsVector(crosschainDataRef), Version) {}
+    CCrossChainDataRef(const UniValue &uni);
+
+    CCrossChainDataRef(const std::vector<unsigned char> &asVector)
+    {
+        ::FromVector(asVector, *this);
+    }
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(*(COutPoint *)this);
+    }
+
+    bool IsValid() const
+    {
+        return version >= CVDXF_Data::FIRST_VERSION && version <= CVDXF_Data::LAST_VERSION && crosschainDataRef.IsValid();
+    }
+
+    bool IsOnSameTransaction() const
+    {
+        return IsValid() && crosschainDataRef.IsOnSameTransaction();
+    }
+
+    // returns false if hash is null
+    bool GetOutputTransaction(CTransaction &tx, uint256 &blockHash, bool checkMemPool=true) const
+    {
+        return crosschainDataRef.GetOutputTransaction(tx, blockHash, checkMemPool);
+    }
+
+    bool GetOutputData(std::vector<unsigned char> &data, bool checkMemPool=true) const
+    {
+        return crosschainDataRef.GetOutputData(data, checkMemPool);
+    }
+
+    UniValue ToUniValue() const;
+};
+
 #endif // BITCOIN_PRIMITIVES_BLOCK_H

@@ -990,6 +990,57 @@ CNotaryEvidence::CNotaryEvidence(const CTransaction &tx, int outputNum, int &aft
     }
 }
 
+// returns false if hash is null
+bool CPBaaSEvidenceRef::GetOutputData(std::vector<unsigned char> &data, bool checkMemPool) const
+{
+    CTransaction tx;
+    uint256 blockHash;
+    if (GetOutputTransaction(tx, blockHash, checkMemPool))
+    {
+        // get output data and pull this out of it
+        int32_t afterData;
+        uint8_t evidenceType;
+        CNotaryEvidence evidenceData(tx, output.n, afterData, CNotaryEvidence::TYPE_IMPORT_PROOF);
+        if (evidenceData.IsValid() &&
+            evidenceData.type == CNotaryEvidence::TYPE_IMPORT_PROOF &&
+            evidenceData.evidence.chainObjects.size() > objectNum)
+        {
+            if (evidenceData.evidence.chainObjects[objectNum]->objectType == CHAINOBJ_EVIDENCEDATA)
+            {
+                if (startOffset > 0 || endOffset > 0)
+                {
+                    data = ((CChainObject<CEvidenceData> *)evidenceData.evidence.chainObjects[objectNum])->object.dataVec;
+                    return true;
+                }
+                else
+                {
+                    try
+                    {
+                        data = std::vector<unsigned char>(((CChainObject<CEvidenceData> *)evidenceData.evidence.chainObjects[objectNum])->object.dataVec.data(),
+                                                        ((CChainObject<CEvidenceData> *)evidenceData.evidence.chainObjects[objectNum])->object.dataVec.data() + ((endOffset == 0) ? ((CChainObject<CEvidenceData> *)evidenceData.evidence.chainObjects[objectNum])->object.dataVec.size() : endOffset));
+                        return true;
+                    }
+                    catch(...)
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+// returns false if hash is null
+bool CPBaaSEvidenceRef::GetOutputTransaction(CTransaction &tx, uint256 &blockHash, bool checkMemPool) const
+{
+    if (systemID.IsNull() || systemID == ASSETCHAINS_CHAINID)
+    {
+        return output.GetOutputTransaction(tx, blockHash, checkMemPool);
+    }
+    return false;
+}
+
 bool CPBaaSNotarization::GetLastNotarization(const uint160 &currencyID,
                                              int32_t startHeight,
                                              int32_t endHeight,

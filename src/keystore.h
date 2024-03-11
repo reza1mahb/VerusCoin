@@ -362,6 +362,8 @@ public:
         const libzcash::SaplingPaymentAddress &addr,
         libzcash::SaplingIncomingViewingKey& ivkOut) const;
 
+    virtual bool DecryptWithSaplingViewingKey(const CDataDescriptor &dataDescr, CDataDescriptor &decryptedDescr, libzcash::SaplingIncomingViewingKey *pIvkOut=nullptr) const;
+
     bool GetSaplingExtendedSpendingKey(
         const libzcash::SaplingPaymentAddress &addr,
         libzcash::SaplingExtendedSpendingKey &extskOut) const;

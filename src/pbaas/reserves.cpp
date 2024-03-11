@@ -3334,6 +3334,12 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
                 }
                 break;
 
+                case EVAL_NOTARY_EVIDENCE:
+                {
+                    flags |= IS_EVIDENCE_STORAGE;
+                    flags |= IS_HIGH_FEE;
+                }
+
                 default:
                 {
                     CCurrencyValueMap output = tx.vout[i].scriptPubKey.ReserveOutValue();

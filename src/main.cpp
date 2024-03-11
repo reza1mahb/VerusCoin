@@ -1814,14 +1814,32 @@ CAmount GetMinRelayFeeByOutputs(const CReserveTransactionDescriptor &txDesc, con
     if (!(identityFeeFactor && tx.vout.size() <= (3 + idExtraLimit)) && !txDesc.IsImport() && !txDesc.IsNotaryPrioritized())
     {
         int64_t extraOutputCostThreshold = CScript::MAX_SCRIPT_ELEMENT_SIZE / 3;
-        for (auto &oneOut : tx.vout)
+        int64_t extraStorageSpace = 0;
+        bool isStorageTx = txDesc.IsEvidenceOrStorage() && !(txDesc.IsImport() || txDesc.IsNotaryPrioritized());
+        for (int i = 0; i < tx.vout.size(); i++)
         {
+            auto &oneOut = tx.vout[i];
             int64_t extraSize = std::max((int64_t)oneOut.scriptPubKey.size() - extraOutputCostThreshold, (int64_t)0);
-            if (extraSize)
+            bool isOpRet = (i == (tx.vout.size() - 1)) && oneOut.scriptPubKey.IsOpReturn();
+
+            if (extraSize || isStorageTx)
             {
-                minFee += DEFAULT_TRANSACTION_FEE + ((extraSize - extraOutputCostThreshold) > 0 ? DEFAULT_TRANSACTION_FEE : 0);
+                COptCCParams evP;
+                if ((isStorageTx &&
+                     ((extraSize && isOpRet) ||
+                      (oneOut.scriptPubKey.IsPayToCryptoCondition(evP) &&
+                       evP.IsValid() &&
+                       evP.evalCode == EVAL_NOTARY_EVIDENCE))))
+                {
+                    extraStorageSpace += (int64_t)oneOut.scriptPubKey.size();
+                }
+                else if (extraSize)
+                {
+                    minFee += DEFAULT_TRANSACTION_FEE + ((extraSize - extraOutputCostThreshold) > 0 ? DEFAULT_TRANSACTION_FEE : 0);
+                }
             }
         }
+        minFee += (((int64_t)(extraStorageSpace)) * (CCurrencyDefinition::DEFAULT_STORAGE_OUTPUT_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
     }
     return minFee;
 }
