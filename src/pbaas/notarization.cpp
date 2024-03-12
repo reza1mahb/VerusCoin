@@ -1041,6 +1041,38 @@ bool CPBaaSEvidenceRef::GetOutputTransaction(CTransaction &tx, uint256 &blockHas
     return false;
 }
 
+// get data out of an ID entry
+bool CIdentityMultimapRef::GetOutputData(std::vector<unsigned char> &data, bool checkMemPool) const
+{
+    auto dataFromID = CIdentity::GetAggregatedIdentityMultimap(idID, heightStart, heightEnd, checkMemPool, false, 0, key, flags & FLAG_NO_DELETION);
+    if (HasDataHash())
+    {
+        for (auto &oneDataRef : dataFromID)
+        {
+            CNativeHashWriter hw;
+            hw.write((char *)&(std::get<0>(oneDataRef.second)[0]), std::get<0>(oneDataRef.second).size());
+
+            if (hw.GetHash() == dataHash)
+            {
+                data = std::get<0>(oneDataRef.second);
+                return true;
+            }
+        }
+    }
+    else if (dataFromID.size())
+    {
+        // just get the last entry, which should be sorted by position
+        data = std::get<0>(dataFromID.rbegin()->second);
+    }
+    return false;
+}
+
+bool CURLRef::GetOutputData(std::vector<unsigned char> &data, bool makeRequest) const
+{
+    // if makerequest, actually make a network call to get the data
+    return false;
+}
+
 bool CPBaaSNotarization::GetLastNotarization(const uint160 &currencyID,
                                              int32_t startHeight,
                                              int32_t endHeight,

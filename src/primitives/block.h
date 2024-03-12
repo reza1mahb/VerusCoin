@@ -2506,12 +2506,14 @@ public:
     uint32_t flags;
     uint160 idID;
     uint160 key;
+    uint32_t heightStart;
+    uint32_t heightEnd;
     uint256 dataHash;
     uint160 systemID;
 
-    CIdentityMultimapRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), flags(0) {}
-    CIdentityMultimapRef(const CIdentityID &ID, const uint160 &Key, const uint256 &DataHash=uint256(), const uint160 &SystemID=uint160(), uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
-        version(Version), key(Key), dataHash(DataHash), systemID(SystemID)
+    CIdentityMultimapRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), heightStart(0), heightEnd(0), flags(0) {}
+    CIdentityMultimapRef(const CIdentityID &ID, const uint160 &Key, uint32_t HeightStart=0, uint32_t HeightEnd=0, const uint256 &DataHash=uint256(), const uint160 &SystemID=uint160(), bool keepDeleted=false, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+        version(Version), key(Key), heightStart(HeightStart), heightEnd(HeightEnd), dataHash(DataHash), systemID(SystemID), flags(keepDeleted ? FLAG_NO_DELETION : 0)
     {
         SetFlags();
     }
@@ -2548,6 +2550,8 @@ public:
         READWRITE(VARINT(flags));
         READWRITE(idID);
         READWRITE(key);
+        READWRITE(VARINT(heightStart));
+        READWRITE(VARINT(heightEnd));
         if (flags & FLAG_HAS_DATAHASH)
         {
             READWRITE(dataHash);
@@ -2556,6 +2560,21 @@ public:
         {
             READWRITE(systemID);
         }
+    }
+
+    bool KeepDeleted() const
+    {
+        return flags & FLAG_NO_DELETION;
+    }
+
+    bool HasDataHash() const
+    {
+        return flags & FLAG_HAS_DATAHASH;
+    }
+
+    bool HasSystemID() const
+    {
+        return flags & FLAG_HAS_SYSTEM;
     }
 
     bool IsValid() const
@@ -2579,6 +2598,10 @@ public:
     CURLRef(const std::string &URL, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
         version(Version), url(URL)
     {
+        if (url.size() > 4096)
+        {
+            url.resize(4096);
+        }
     }
 
     CURLRef(const UniValue &uni);
@@ -2629,8 +2652,8 @@ public:
     CCrossChainDataRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
         type(TYPE_CROSSCHAIN_DATAREF), crosschainDataRef(HashIn, nIn, ObjectNum, StartOffset, EndOffset, SystemID, Flags, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
 
-    CCrossChainDataRef(const CIdentityID &ID, const uint160 &Key, const uint256 &DataHash=uint256(), const uint160 &SystemID=uint160(), uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
-        type(TYPE_IDENTITY_DATAREF), identityMultiMapRef(ID, Key, DataHash, SystemID, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
+    CCrossChainDataRef(const CIdentityID &ID, const uint160 &Key, uint32_t HeightStart=0, uint32_t HeightEnd=0, const uint256 &DataHash=uint256(), const uint160 &SystemID=uint160(), bool keepDeleted=false, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+        type(TYPE_IDENTITY_DATAREF), identityMultiMapRef(ID, Key, HeightStart, HeightEnd, DataHash, SystemID, keepDeleted, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
 
     CCrossChainDataRef(const std::string &URL, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
         type(TYPE_URL_REF), urlRef(URL, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}

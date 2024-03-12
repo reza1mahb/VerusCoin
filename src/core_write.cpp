@@ -1176,6 +1176,55 @@ UniValue CPBaaSEvidenceRef::ToUniValue() const
     return obj;
 }
 
+CIdentityMultimapRef::CIdentityMultimapRef(const UniValue &uni) :
+    version(uni_get_int64(find_value(uni, "version"), CVDXF_Data::DEFAULT_VERSION)),
+    flags(uni_get_int64(find_value(uni, "flags"))),
+    key(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "vdxfkey"))))),
+    heightStart(uni_get_int64(find_value(uni, "startheight"))),
+    heightEnd(uni_get_int64(find_value(uni, "endheight"))),
+    dataHash(uint256S(uni_get_str(find_value(uni, "datahash")))),
+    systemID(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "systemid")))))
+{
+    SetFlags();
+}
+
+UniValue CIdentityMultimapRef::ToUniValue() const
+{
+    UniValue obj(UniValue::VOBJ);
+    obj.pushKV("version", (int64_t)version);
+    obj.pushKV("flags", (int64_t)flags);
+    obj.pushKV("vdxfkey", EncodeDestination(CIdentityID(key)));
+    if (HasDataHash())
+    {
+        obj.pushKV("datahash", dataHash.GetHex());
+    }
+    if (HasSystemID())
+    {
+        obj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
+    }
+    obj.pushKV("startheight", (int64_t)heightStart);
+    obj.pushKV("endheight", (int64_t)heightEnd);
+    return obj;
+}
+
+CURLRef::CURLRef(const UniValue &uni) :
+    version(uni_get_int64(find_value(uni, "version"), CVDXF_Data::DEFAULT_VERSION)),
+    url(uni_get_str(find_value(uni, "url")))
+{
+    if (url.size() > 4096)
+    {
+        url.resize(4096);
+    }
+}
+
+UniValue CURLRef::ToUniValue() const
+{
+    UniValue obj(UniValue::VOBJ);
+    obj.pushKV("version", (int64_t)version);
+    obj.pushKV("url", url);
+    return obj;
+}
+
 UniValue CObjectFinalization::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
