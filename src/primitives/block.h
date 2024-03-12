@@ -2592,10 +2592,6 @@ public:
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
-        if (!ser_action.ForRead())
-        {
-            SetFlags();
-        }
         READWRITE(VARINT(version));
         READWRITE(LIMITED_STRING(url, 4096));
     }
