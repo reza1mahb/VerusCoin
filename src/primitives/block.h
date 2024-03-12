@@ -2414,22 +2414,29 @@ class CPBaaSEvidenceRef
 {
 public:
     enum {
-        FLAG_ISEVIDENCE = 1
+        FLAG_ISEVIDENCE = 1,
+        FLAG_HAS_SYSTEM = 2,
     };
 
     uint32_t version;
     uint32_t flags;
     CUTXORef output;
-    uint160 systemID;
     int32_t objectNum;
     int64_t startOffset;
     int64_t endOffset;
+    uint160 systemID;
 
     CPBaaSEvidenceRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), flags(FLAG_ISEVIDENCE), startOffset(0), endOffset(0) {}
-    CPBaaSEvidenceRef(const COutPoint &op, const uint160 &SystemID=uint160(), int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
-        version(Version), flags(Flags), output(op), systemID(SystemID), objectNum(ObjectNum), startOffset(StartOffset), endOffset(EndOffset) {}
-    CPBaaSEvidenceRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, const uint160 &SystemID=uint160(), int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
-        version(Version), flags(Flags), output(HashIn, nIn), systemID(SystemID), objectNum(ObjectNum), startOffset(StartOffset), endOffset(EndOffset) {}
+    CPBaaSEvidenceRef(const COutPoint &op, int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, const uint160 &SystemID=uint160(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+        version(Version), flags(Flags), output(op), systemID(SystemID), objectNum(ObjectNum), startOffset(StartOffset), endOffset(EndOffset)
+    {
+        SetFlags();
+    }
+    CPBaaSEvidenceRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, const uint160 &SystemID=uint160(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+        version(Version), flags(Flags), output(HashIn, nIn), systemID(SystemID), objectNum(ObjectNum), startOffset(StartOffset), endOffset(EndOffset)
+    {
+        SetFlags();
+    }
 
     CPBaaSEvidenceRef(const UniValue &uni);
 
@@ -2440,9 +2447,31 @@ public:
 
     ADD_SERIALIZE_METHODS;
 
+    void SetFlags()
+    {
+        flags = flags & FLAG_ISEVIDENCE;
+        if (!systemID.IsNull())
+        {
+            flags |= FLAG_HAS_SYSTEM;
+        }
+    }
+
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(*(COutPoint *)this);
+        if (!ser_action.ForRead())
+        {
+            SetFlags();
+        }
+        READWRITE(VARINT(version));
+        READWRITE(VARINT(flags));
+        READWRITE(output);
+        READWRITE(VARINT(objectNum));
+        READWRITE(VARINT(startOffset));
+        READWRITE(VARINT(endOffset));
+        if (flags & FLAG_HAS_SYSTEM)
+        {
+            READWRITE(systemID);
+        }
     }
 
     bool IsValid() const
@@ -2464,16 +2493,152 @@ public:
     UniValue ToUniValue() const;
 };
 
+class CIdentityMultimapRef
+{
+public:
+    enum {
+        FLAG_NO_DELETION = 1,
+        FLAG_HAS_DATAHASH = 2,
+        FLAG_HAS_SYSTEM = 4
+    };
+
+    uint32_t version;
+    uint32_t flags;
+    uint160 idID;
+    uint160 key;
+    uint256 dataHash;
+    uint160 systemID;
+
+    CIdentityMultimapRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), flags(0) {}
+    CIdentityMultimapRef(const CIdentityID &ID, const uint160 &Key, const uint256 &DataHash=uint256(), const uint160 &SystemID=uint160(), uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+        version(Version), key(Key), dataHash(DataHash), systemID(SystemID)
+    {
+        SetFlags();
+    }
+
+    CIdentityMultimapRef(const UniValue &uni);
+
+    CIdentityMultimapRef(const std::vector<unsigned char> &asVector)
+    {
+        ::FromVector(asVector, *this);
+    }
+
+    void SetFlags()
+    {
+        flags = flags & FLAG_NO_DELETION;
+        if (!dataHash.IsNull())
+        {
+            flags |= FLAG_HAS_DATAHASH;
+        }
+        if (!systemID.IsNull())
+        {
+            flags |= FLAG_HAS_SYSTEM;
+        }
+    }
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        if (!ser_action.ForRead())
+        {
+            SetFlags();
+        }
+        READWRITE(VARINT(version));
+        READWRITE(VARINT(flags));
+        READWRITE(idID);
+        READWRITE(key);
+        if (flags & FLAG_HAS_DATAHASH)
+        {
+            READWRITE(dataHash);
+        }
+        if (flags & FLAG_HAS_SYSTEM)
+        {
+            READWRITE(systemID);
+        }
+    }
+
+    bool IsValid() const
+    {
+        return version >= CVDXF_Data::FIRST_VERSION && version <= CVDXF_Data::LAST_VERSION && (flags & ~(FLAG_HAS_DATAHASH + FLAG_HAS_SYSTEM)) == 0 && !idID.IsNull() && !key.IsNull();
+    }
+
+    // returns false if hash is null
+    bool GetOutputData(std::vector<unsigned char> &data, bool checkMemPool=true) const;
+
+    UniValue ToUniValue() const;
+};
+
+class CURLRef
+{
+public:
+    uint32_t version;
+    std::string url;
+
+    CURLRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version) {}
+    CURLRef(const std::string &URL, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+        version(Version), url(URL)
+    {
+    }
+
+    CURLRef(const UniValue &uni);
+
+    CURLRef(const std::vector<unsigned char> &asVector)
+    {
+        ::FromVector(asVector, *this);
+    }
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        if (!ser_action.ForRead())
+        {
+            SetFlags();
+        }
+        READWRITE(VARINT(version));
+        READWRITE(LIMITED_STRING(url, 4096));
+    }
+
+    bool IsValid() const
+    {
+        return version >= CVDXF_Data::FIRST_VERSION && version <= CVDXF_Data::LAST_VERSION && !url.empty();
+    }
+
+    // returns false if hash is null
+    bool GetOutputData(std::vector<unsigned char> &data, bool makeRequest=false) const;
+
+    UniValue ToUniValue() const;
+};
+
 class CCrossChainDataRef : CVDXF_Data
 {
 public:
-    CPBaaSEvidenceRef crosschainDataRef;
+    enum {
+        TYPE_CROSSCHAIN_DATAREF = 1,
+        TYPE_IDENTITY_DATAREF = 2,
+        TYPE_URL_REF = 3
+    };
 
-    CCrossChainDataRef(uint32_t Version=VERSION_INVALID) : crosschainDataRef(Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), ::AsVector(crosschainDataRef), Version) {}
-    CCrossChainDataRef(const COutPoint &op, const uint160 &SystemID=uint160(), int64_t StartOffset=0, int64_t EndOffset=0, uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
-        crosschainDataRef(op, SystemID, StartOffset, EndOffset, Flags, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), ::AsVector(crosschainDataRef), Version) {}
-    CCrossChainDataRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, const uint160 &SystemID=uint160(), int64_t StartOffset=0, int64_t EndOffset=0, uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
-        crosschainDataRef(HashIn, nIn, SystemID, StartOffset, EndOffset, Flags, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), ::AsVector(crosschainDataRef), Version) {}
+    uint32_t type;
+    union {
+        CPBaaSEvidenceRef crosschainDataRef;
+        CIdentityMultimapRef identityMultiMapRef;
+        CURLRef urlRef;
+    };
+
+    CCrossChainDataRef(uint32_t Version=VERSION_INVALID) : type(TYPE_CROSSCHAIN_DATAREF), crosschainDataRef(CPBaaSEvidenceRef(Version)), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
+    CCrossChainDataRef(const COutPoint &op, int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+        type(TYPE_CROSSCHAIN_DATAREF), crosschainDataRef(op, ObjectNum, StartOffset, EndOffset, SystemID, Flags, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
+    CCrossChainDataRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+        type(TYPE_CROSSCHAIN_DATAREF), crosschainDataRef(HashIn, nIn, ObjectNum, StartOffset, EndOffset, SystemID, Flags, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
+
+    CCrossChainDataRef(const CIdentityID &ID, const uint160 &Key, const uint256 &DataHash=uint256(), const uint160 &SystemID=uint160(), uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+        type(TYPE_IDENTITY_DATAREF), identityMultiMapRef(ID, Key, DataHash, SystemID, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
+
+    CCrossChainDataRef(const std::string &URL, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+        type(TYPE_URL_REF), urlRef(URL, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
+
     CCrossChainDataRef(const UniValue &uni);
 
     CCrossChainDataRef(const std::vector<unsigned char> &asVector)
@@ -2485,28 +2650,82 @@ public:
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(*(COutPoint *)this);
+        if (ser_action.ForRead())
+        {
+            READWRITE(*(CVDXF_Data *)this);
+            CDataStream ss(data, SER_DISK, PROTOCOL_VERSION);
+            data.clear();
+            ss >> VARINT(type);
+            switch (type)
+            {
+                case TYPE_CROSSCHAIN_DATAREF:
+                {
+                    ss >> crosschainDataRef;
+                    break;
+                }
+                case TYPE_IDENTITY_DATAREF:
+                {
+                    ss >> identityMultiMapRef;
+                    break;
+                }
+                case TYPE_URL_REF:
+                {
+                    ss >> urlRef;
+                    break;
+                }
+                default:
+                {
+                    version = VERSION_INVALID;
+                }
+            }
+        }
+        else
+        {
+            CDataStream ss(SER_DISK, PROTOCOL_VERSION);
+            ss << VARINT(type);
+            switch (type)
+            {
+                case TYPE_CROSSCHAIN_DATAREF:
+                {
+                    ss << crosschainDataRef;
+                    break;
+                }
+                case TYPE_IDENTITY_DATAREF:
+                {
+                    ss << identityMultiMapRef;
+                    break;
+                }
+                case TYPE_URL_REF:
+                {
+                    ss << urlRef;
+                    break;
+                }
+            }
+            data = std::vector<unsigned char>(ss.begin(), ss.end());
+            READWRITE(*(CVDXF_Data *)this);
+            data.clear();
+        }
     }
 
     bool IsValid() const
     {
-        return version >= CVDXF_Data::FIRST_VERSION && version <= CVDXF_Data::LAST_VERSION && crosschainDataRef.IsValid();
-    }
-
-    bool IsOnSameTransaction() const
-    {
-        return IsValid() && crosschainDataRef.IsOnSameTransaction();
-    }
-
-    // returns false if hash is null
-    bool GetOutputTransaction(CTransaction &tx, uint256 &blockHash, bool checkMemPool=true) const
-    {
-        return crosschainDataRef.GetOutputTransaction(tx, blockHash, checkMemPool);
+        return version >= CVDXF_Data::FIRST_VERSION && version <= CVDXF_Data::LAST_VERSION && ((type == TYPE_CROSSCHAIN_DATAREF && crosschainDataRef.IsValid()) || (type == TYPE_IDENTITY_DATAREF && identityMultiMapRef.IsValid()));
     }
 
     bool GetOutputData(std::vector<unsigned char> &data, bool checkMemPool=true) const
     {
-        return crosschainDataRef.GetOutputData(data, checkMemPool);
+        switch (type)
+        {
+            case TYPE_CROSSCHAIN_DATAREF:
+            {
+                return crosschainDataRef.GetOutputData(data, checkMemPool);
+            }
+            case TYPE_IDENTITY_DATAREF:
+            {
+                return identityMultiMapRef.GetOutputData(data, checkMemPool);
+            }
+        }
+        return false;
     }
 
     UniValue ToUniValue() const;

@@ -1151,11 +1151,12 @@ CPBaaSEvidenceRef::CPBaaSEvidenceRef(const UniValue &uni) :
     version(uni_get_int64(find_value(uni, "version"), CVDXF_Data::DEFAULT_VERSION)),
     flags(uni_get_int64(find_value(uni, "flags"), FLAG_ISEVIDENCE)),
     output(CUTXORef(find_value(uni, "output"))),
-    systemID(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "output"))))),
+    systemID(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "systemid"))))),
     objectNum(uni_get_int(find_value(uni, "objectnum"), 0)),
     startOffset(uni_get_int64(find_value(uni, "startoffset"), 0)),
     endOffset(uni_get_int64(find_value(uni, "endoffset"), 0))
 {
+    SetFlags();
 }
 
 UniValue CPBaaSEvidenceRef::ToUniValue() const
@@ -1165,7 +1166,10 @@ UniValue CPBaaSEvidenceRef::ToUniValue() const
     obj.pushKV("version", (int64_t)version);
     obj.pushKV("flags", (int64_t)flags);
     obj.pushKV("output", output.ToUniValue());
-    obj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
+    if (flags & FLAG_HAS_SYSTEM)
+    {
+        obj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
+    }
     obj.pushKV("objectnum", objectNum);
     obj.pushKV("startoffset", startOffset);
     obj.pushKV("endoffset", endOffset);
