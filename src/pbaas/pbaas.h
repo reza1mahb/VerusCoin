@@ -239,7 +239,7 @@ public:
         VERSION_CURRENT = 2,
         FINAL_CONFIRMATIONS = 9,
         DEFAULT_NOTARIZATION_FEE = 10000,               // default notarization fee when entering a signature for a notarization
-        DEFAULT_ACCEPTED_EVIDENCE_FEE = 100000,         // price of each evidence output when entering a notarization
+        DEFAULT_ACCEPTED_EVIDENCE_FEE = 100000,         // minimum price of each evidence output when entering a notarization
         MAX_NODES = 2,                                  // only provide 2 nodes per notarization
         MIN_NOTARIZATION_OUTPUT = 0,                    // minimum amount for notarization output
 

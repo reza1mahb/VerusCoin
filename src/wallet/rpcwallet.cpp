@@ -1365,6 +1365,49 @@ UniValue signfile(const UniValue& params, bool fHelp)
     }
 }
 
+int FileToVector(const std::string &filepath, std::vector<unsigned char> &dataVec, int maxBytes);
+
+size_t GetDataMessage(const UniValue &uni, CVDXF::EHashTypes hashType, std::vector<unsigned char> &dataVec, bool &isHash);
+size_t GetDataMessage(const UniValue &uni, CVDXF::EHashTypes hashType, std::vector<unsigned char> &dataVec, bool &isHash)
+{
+    auto strFileName = uni_get_str(find_value(uni, "filename"));
+    auto messageUni = find_value(uni, "message");
+    auto strDataHash = uni_get_str(find_value(uni, "datahash"));
+
+    if (!strDataHash.empty())
+    {
+        uint256 dataHash;
+        if (hashType == CVDXF::EHashTypes::HASH_SHA256)
+        {
+            dataHash = uint256(ParseHex(strDataHash));
+        }
+        else
+        {
+            dataHash.SetHex(strDataHash);
+        }
+        dataVec.insert(dataVec.end(), dataHash.begin(), dataHash.end());
+        isHash = true;
+    }
+    else if (!messageUni.isNull())
+    {
+        dataVec = VectorEncodeVDXFUni(messageUni);
+    }
+    else if (!strFileName.empty())
+    {
+        int bytesRead = FileToVector(strFileName, dataVec, MAX_TX_SIZE_AFTER_SAPLING >> 1);
+        if (!bytesRead)
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot read file: " + strFileName + " for data output");
+        }
+    }
+
+    if (!dataVec.size())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter for data output");
+    }
+    return dataVec.size();
+}
+
 UniValue signdata(const UniValue& params, bool fHelp)
 {
     if (!EnsureWalletIsAvailable(fHelp))
@@ -1372,17 +1415,22 @@ UniValue signdata(const UniValue& params, bool fHelp)
 
     if (fHelp || params.size() != 1)
         throw runtime_error(
-            "signdata '{\"address\":\"i-address or friendly name (t-address will result in simple signature w/indicated hash and prefix, nothing else)\",\n"
+            "signdata '{\"address\":\"i-address or friendly name to sign with (t-address will result in simple signature w/indicated hash and prefix, nothing else)\",\n"
             "           \"prefixstring\":\"extra string that is hashed during signature and must be supplied for verification\",\n"
-            "           \"filename\":\"filepath/filename\" |\n"
+            "             \"filename\":\"filepath/filename\" |\n"
             "             \"message\":\"any message\" |\n"
             "             \"messagehex\":\"hexdata\" |\n"
             "             \"messagebase64\":\"base64data\" |\n"
-            "             \"datahash\":\"256bithex\",\n"
+            "             \"datahash\":\"256bithex\" |\n"
+            "             \"mmrdata\":[{\"filename | serializedhex | serializedbase64 | datahash\":\"str\"} | \"strdata\"],\n"
+            "             \"mmrsalt\":[array of \"salt\" to match the mmrdata],\n"
+            "             \"mmrhash\":\"sha256\" | \"sha256D\" | \"blake2b\" | \"keccak256\",\n"
+            "             \"priormmr\":\"[array of mmr hashes prior to this data and optional prior tx reference for rev-linked MMR data]\","
             "           \"vdxfkeys\":[\"vdxfkey i-address\", ...],\n"
             "           \"vdxfkeynames\":[\"vdxfkeyname, object for getvdxfid API, or friendly name ID -- no i-addresses\", ...],\n"
             "           \"boundhashes\":[\"hexhash\", ...],\n"
             "           \"hashtype\": \"sha256\" | \"sha256D\" | \"blake2b\" | \"keccak256\"\n"
+            "           \"encrypttoaddress\": \"sapling address\"               granularly encrypt all data, either all decryptable with viewing key or parts using unique, SSKs\n"
             "           \"signature\":\"currentsig\"}'\n\n"
 
             "\nGenerates a hash (SHA256 default if \"hashtype\" not specified) of the data, returns the hash, and signs it with parameters specified"
@@ -1390,18 +1438,33 @@ UniValue signdata(const UniValue& params, bool fHelp)
             "\nArguments:\n"
             "{\n"
             "  \"address\":\"t-addr or identity\"                               (string, required) The transparent address or identity to use for signing.\n"
-            "  \"filename\" | \"message\" | \"messagehex\" | \"messagebase64\" | \"datahash\" (string, required) Data to sign\n"
+            "  \"filename\" | \"message\" | \"messagehex\" | \"messagebase64\" | \"datahash\" (string, optional) Data to sign\n"
+            "  \"mmrdata\":[{\"filename | serializedhex | serializedbase64 | datahash\":\"str\"}], (array, optional) Alternate to single data parameters, this enables an MMR signing\n"
+            "             \"mmrsalt\":[\"salt\":\"str\"],                       (string, optional) Protects privacy of leaf nodes of the MMR\n"
+            "             \"mmrhashtype\":\"sha256\" | \"sha256D\" | \"blake2b\" | \"keccak256\", (string, optional) Default is blake2b\n"
+            "             \"priormmr\":\"[{\"idxhash\":"",\"utxoref\":{}}]\",   (array, optional)  When growing an MMR, the prior hashes can be used to construct the MMR and root w/o data\n"
             "  \"vdxfkeys\":[\"vdxfkey\", ...],                                 (array, optional)  Array of vdxfkeys or ID i-addresses\n"
             "  \"vdxfkeynames\":[\"vdxfkeyname\", ...],                         (array, optional)  Array of vdxfkey names or fully qualified friendly IDs\n"
             "  \"boundhashes\":[\"hexhash\", ...],                              (array, optional)  Array of bound hash values\n"
-            "  \"hashtype\"                                                     (string, optional) one of: \"sha256\", \"sha256D\", \"blake2b\", \"keccak256\", defaults to sha256\n"
-            "  \"signature\"                                                    (string, optional) The current signature of the message encoded in base 64 if multisig ID\n"
+            "  \"hashtype\":\"str\",                                            (string, optional) one of: \"sha256\", \"sha256D\", \"blake2b\", \"keccak256\", defaults to sha256\n"
+            "  \"signature\":\"base64str\",                                     (string, optional) The current signature of the message encoded in base 64 if multisig ID\n"
+            "  \"encrypttoaddress\":\"saplingaddress\",                         (string, optional) If present, encrypts and optionally returns encrypted data.\n"
+            "                                                                                   All data can be decrypted with the incoming viewing key, and a unique decryption key can\n"
+            "                                                                                   be generated for each sub-object.\n"
+            "  \"rootsignature\":\"bool\",                                      (bool, optional)   If this is true, OR there is more than one item to sign, returns processed data, MMRs, and root signature\n"
             "}\n"
 
             "\nResult:\n"
             "{\n"
-            "  \"hash\":\"hexhash\"         (string) The hash of the message (SHA256, NOT SHA256D)\n"
-            "  \"signature\":\"base64sig\"  (string) The aggregate signature of the message encoded in base 64 if all or partial signing successful\n"
+            "  \"hash\":\"hexhash\"         (string) The hash of the message or null and returns \"hashes\", an array of hashes for an MMR\n"
+            "  \"hashes\":[\"hexhash\"]     (array)  Array of hashes for an MMR, alternate to \"hash\"\n"
+            "  \"mmrroot\":\"hexstr\"       (string) Only returned when passed an array for signing root hash of the merkle mountain range of the objects signed\n"
+            "  \"vdxfkeys\":[\"vdxfkey i-address\", ...],\n"
+            "  \"vdxfkeynames\":[\"vdxfkeyname, object for getvdxfid API, or friendly name ID -- no i-addresses\", ...],\n"
+            "  \"boundhashes\":[\"hexhash\", ...],\n"
+            "  \"hashtype\": \"sha256\" | \"sha256D\" | \"blake2b\" | \"keccak256\"\n"
+            "  \"signature\":\"base64sig\"  (string) The aggregate signature of the message or mmrroot encoded in base 64 if all or partial signing successful for MMR, it is of root\n"
+            "  \"\""
             "}\n"
             "\nExamples:\n"
             "\nCreate the signature\n"
@@ -1427,6 +1490,12 @@ UniValue signdata(const UniValue& params, bool fHelp)
     string strDataHash;
     string strSignature;
     string hashTypeStr = "sha256";
+    bool rootSignature = false;
+
+    UniValue mmrDataUni;
+    UniValue mmrSaltUni;
+    UniValue priorMMRUni;
+    string mmrHashTypeStr = "blake2b";
 
     UniValue vdxfKeys(UniValue::VNULL);
     UniValue vdxfKeyNames(UniValue::VNULL);
@@ -1435,28 +1504,117 @@ UniValue signdata(const UniValue& params, bool fHelp)
 
     CTxDestination dest;
 
+    std::vector<uint256> mmrHashes;
+    std::vector<uint256> mmrSalt;
+    std::vector<CDataDescriptor> mmrObjects;
+    CMMRDescriptor mmrDescriptor;
+    CMMRDescriptor encryptedDescriptor;
+    std::vector<std::pair<int, std::vector<unsigned char>>> ssks;
+    boost::optional<libzcash::SaplingPaymentAddress> encryptToAddress;
+    bool returnData = false;
+
     if (!params[0].isStr() && params[0].isObject())
     {
         strAddress = uni_get_str(find_value(params[0], "address"));
         strPrefix = uni_get_str(find_value(params[0], "prefixstring"), verusDataSignaturePrefix);
-        strFileName = uni_get_str(find_value(params[0], "filename"));
-        strMessage = uni_get_str(find_value(params[0], "message"));
-        strHex = uni_get_str(find_value(params[0], "messagehex"));
-        strBase64 = uni_get_str(find_value(params[0], "messagebase64"));
-        strDataHash = uni_get_str(find_value(params[0], "datahash"));
         hashTypeStr = uni_get_str(find_value(params[0], "hashtype"), hashTypeStr);
         vdxfKeys = find_value(params[0], "vdxfkeys");
         vdxfKeyNames = find_value(params[0], "vdxfkeynames");
         boundHashes = find_value(params[0], "boundhashes");
         strSignature = uni_get_str(find_value(params[0], "signature"));
-        if (((int)strFileName.empty() +
-             (int)strMessage.empty() +
-             (int)strHex.empty() +
-             (int)strBase64.empty() +
-             (int)strDataHash.empty()) != 4)
+        rootSignature = uni_get_bool(find_value(params[0], "rootsignature"));
+
+        std::string encryptZAddress = uni_get_str(find_value(params[0], "encrypttoaddress"));;
+        libzcash::PaymentAddress addr;
+        if (pwalletMain->GetAndValidateSaplingZAddress(encryptZAddress, addr))
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include one and only one of \"filename\", \"message\", \"messagehex\", \"messagebase64\", and \"datahash\"");
+            if (!IsValidPaymentAddress(addr))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "\"encrypttoaddress\" parameter must be a valid Sapling z-address");
+            }
+            try
+            {
+                encryptToAddress = boost::get<libzcash::SaplingPaymentAddress>(addr);
+            }
+            catch (...)
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "\"encrypttoaddress\" parameter must be a valid Sapling z-address");
+            }
         }
+
+        returnData = uni_get_bool(find_value(params[0], "returndata"));
+
+        mmrDataUni = find_value(params[0], "mmrdata");
+        mmrHashTypeStr = uni_get_str(find_value(params[0], "mmrhashtype"), mmrHashTypeStr);
+        if (mmrDataUni.isArray())
+        {
+            mmrSaltUni = find_value(params[0], "mmrsalt");
+            if (!mmrSaltUni.isNull() && !(mmrSaltUni.isArray() && mmrSaltUni.size() == mmrDataUni.size()))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "If mmrsalt is specified for array data, it must be as an array of salt values with the same length as the data");
+            }
+            priorMMRUni = find_value(params[0], "priormmr");
+        }
+        else if (mmrDataUni.isObject())
+        {
+            mmrSaltUni = find_value(params[0], "mmrsalt");
+            if (!mmrSaltUni.isNull() && !(mmrSaltUni.isStr() && IsHex(uni_get_str(mmrSaltUni))))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "If mmrsalt is specified for object data, it must be as a salt value in hex");
+            }
+            if (!mmrSaltUni.isNull())
+            {
+                UniValue mmrSaltUniArr(UniValue::VARR);
+                mmrSaltUniArr.push_back(mmrSaltUni);
+                mmrSaltUni = mmrSaltUniArr;
+            }
+            UniValue mmrDataUniArr = UniValue(UniValue::VARR);
+            mmrDataUniArr.push_back(mmrDataUni);
+            mmrDataUni = mmrDataUniArr;
+        }
+        else
+        {
+            strFileName = uni_get_str(find_value(params[0], "filename"));
+            strMessage = uni_get_str(find_value(params[0], "message"));
+            strHex = uni_get_str(find_value(params[0], "messagehex"));
+            strBase64 = uni_get_str(find_value(params[0], "messagebase64"));
+            strDataHash = uni_get_str(find_value(params[0], "datahash"));
+
+            if (((int)strFileName.empty() +
+                (int)strMessage.empty() +
+                (int)strHex.empty() +
+                (int)strBase64.empty() +
+                (int)strDataHash.empty()) != 4)
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include one and only one of \"filename\", \"message\", \"messagehex\", \"messagebase64\", and \"datahash\"");
+            }
+
+            UniValue mmrDataUniObj = UniValue(UniValue::VOBJ);
+            if (!strFileName.empty())
+            {
+                mmrDataUniObj.pushKV("filename", strFileName);
+            }
+            else if (!strBase64.empty())
+            {
+                mmrDataUniObj.pushKV("serializedbase64", strBase64);
+            }
+            else if (!strHex.empty())
+            {
+                mmrDataUniObj.pushKV("serializedhex", strHex);
+            }
+            else if (!strMessage.empty())
+            {
+                mmrDataUniObj.pushKV("message", strMessage);
+            }
+            else if (!strDataHash.empty())
+            {
+                mmrDataUniObj.pushKV("datahash", strDataHash);
+            }
+
+            mmrDataUni = UniValue(UniValue::VARR);
+            mmrDataUni.push_back(mmrDataUniObj);
+        }
+
         if (strAddress.empty() || hashTypeStr.empty())
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include a valid \"address\" and either no explicit \"hashtype\" or one that is valid");
@@ -1465,6 +1623,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
         if (!IsValidDestination(dest)) {
             throw JSONRPCError(RPC_TYPE_ERROR, "\"identity\" specified in object must be valid VerusID or address");
         }
+
         // if bound parameters are single strings, make them arrays of one
         if (vdxfKeys.isStr())
         {
@@ -1497,7 +1656,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
     else
     {
         strAddress = params[0].get_str();
-        strFileName = params[1].get_str();
+        strMessage = params[1].get_str();
         if (params.size() > 2)
         {
             strSignature = uni_get_str(params[2]);
@@ -1506,94 +1665,247 @@ UniValue signdata(const UniValue& params, bool fHelp)
         if (!IsValidDestination(dest)) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid address or identity");
         }
+
+        UniValue mmrDataUniObj = UniValue(UniValue::VOBJ);
+        mmrDataUniObj.pushKV("message", strMessage);
+        mmrDataUni = UniValue(UniValue::VARR);
+        mmrDataUni.push_back(mmrDataUniObj);
+        rootSignature = false;
     }
 
-    uint256 msgHash;
-    CCurrencyDefinition::EHashTypes hashType = CCurrencyDefinition::EHashTypes::HASH_SHA256;
+    rootSignature = rootSignature | mmrDataUni.size() > 1;
+
+    CVDXF::EHashTypes hashType = CVDXF::EHashTypes::HASH_SHA256;
 
     if (hashTypeStr == "sha256")
     {
-        hashType = CCurrencyDefinition::EHashTypes::HASH_SHA256;
+        hashType = CVDXF::EHashTypes::HASH_SHA256;
     }
     else if (hashTypeStr == "sha256D")
     {
-        hashType = CCurrencyDefinition::EHashTypes::HASH_SHA256D;
+        hashType = CVDXF::EHashTypes::HASH_SHA256D;
     }
     else if (hashTypeStr == "blake2b")
     {
-        hashType = CCurrencyDefinition::EHashTypes::HASH_BLAKE2BMMR;
+        hashType = CVDXF::EHashTypes::HASH_BLAKE2BMMR;
     }
     else if (hashTypeStr == "keccak256")
     {
-        hashType = CCurrencyDefinition::EHashTypes::HASH_KECCAK;
+        hashType = CVDXF::EHashTypes::HASH_KECCAK;
     }
     else
     {
         throw JSONRPCError(RPC_TYPE_ERROR, "Invalid hash type" + hashTypeStr + " must be one of -- \"sha256\", \"sha256D\", \"blake2b\", \"keccak256\"");
     }
 
+    CVDXF::EHashTypes mmrHashType = CVDXF::EHashTypes::HASH_BLAKE2BMMR;
+
+    typedef boost::variant<CMerkleMountainRange<CMMRNode<CBLAKE2bWriter>>, CMerkleMountainRange<CMMRNode<CKeccack256Writer>>, CMerkleMountainRange<CMMRNode<CHashWriterSHA256>>, CMerkleMountainRange<CMMRNode<CHashWriter>>> SigningMMR;
+
+    SigningMMR mmr;
+
+    if (mmrHashTypeStr == "sha256")
     {
-        CNativeHashWriter hw(hashType);
-        if (!strFileName.empty())
+        mmrHashType = CVDXF::EHashTypes::HASH_SHA256;
+        mmr = CMerkleMountainRange<CMMRNode<CHashWriterSHA256>>();
+    }
+    else if (mmrHashTypeStr == "sha256D")
+    {
+        mmrHashType = CVDXF::EHashTypes::HASH_SHA256D;
+        mmr = CMerkleMountainRange<CMMRNode<CHashWriter>>();
+    }
+    else if (mmrHashTypeStr == "blake2b")
+    {
+        mmrHashType = CVDXF::EHashTypes::HASH_BLAKE2BMMR;
+        mmr = CMerkleMountainRange<CMMRNode<CBLAKE2bWriter>>();
+    }
+    else if (mmrHashTypeStr == "keccak256")
+    {
+        mmrHashType = CVDXF::EHashTypes::HASH_KECCAK;
+        mmr = CMerkleMountainRange<CMMRNode<CKeccack256Writer>>();
+    }
+    else
+    {
+        throw JSONRPCError(RPC_TYPE_ERROR, "Invalid hash type" + hashTypeStr + " must be one of -- \"sha256\", \"sha256D\", \"blake2b\", \"keccak256\"");
+    }
+
+    uint256 msgHash;
+
+    for (int i = 0; i < mmrDataUni.size(); i++)
+    {
+        const UniValue &oneItem = mmrDataUni[i];
+        strFileName = uni_get_str(find_value(oneItem, "filename"));
+
+        CNativeHashWriter hw((CCurrencyDefinition::EHashTypes)hashType);
+        if (!strFileName.empty() && !rootSignature)
         {
             msgHash = HashFile(strFileName, hw);
-        }
-        else if (!strMessage.empty())
-        {
-            hw << strMessage;
-            msgHash = hw.GetHash();
-        }
-        else if (!strHex.empty())
-        {
-            if (!IsHex(strHex))
+            if (msgHash.IsNull())
             {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "\"messagehex\" must be hex string with no additional characters");
+                throw JSONRPCError(RPC_INVALID_PARAMS, "Cannot open file " + strFileName);
             }
-            std::vector<unsigned char> vmsg = ParseHex(strHex);
-            hw.write((const char *)vmsg.data(), vmsg.size());
-            msgHash = hw.GetHash();
+            mmrHashes.push_back(msgHash);
         }
-        else if (!strBase64.empty())
+        else
         {
-            std::string vString = DecodeBase64(strBase64);
-            if (vString.empty())
+            std::vector<unsigned char> dataVec;
+            bool isHash = false;
+            size_t messageSize = GetDataMessage(oneItem, hashType, dataVec, isHash);
+            if (!messageSize || messageSize != dataVec.size())
             {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "\"messagebase64\" must be a base64 string with non-empty value and no additional characters");
+                throw JSONRPCError(RPC_INVALID_PARAMS, "Cannot read message" + oneItem.write());
             }
-            hw.write(vString.data(), vString.size());
-            msgHash = hw.GetHash();
+            if (isHash)
+            {
+                // salt is not used if we already have the object hash, but retain it anyhow
+                if (mmrSaltUni.size() || rootSignature)
+                {
+                    mmrSalt.push_back(mmrSaltUni.size() > i ? uint256S(uni_get_str(mmrSaltUni[i])) : uint256());
+                }
+                msgHash = uint256(dataVec);
+                mmrObjects.push_back(CDataDescriptor());
+            }
+            else
+            {
+                if (mmrSaltUni.size() || rootSignature)
+                {
+                    CSaltedData saltedObject(dataVec);
+                    if (mmrSaltUni.size() > i)
+                    {
+                        saltedObject.salt = uint256S(uni_get_str(mmrSaltUni[i]));
+                    }
+                    mmrSalt.push_back(saltedObject.salt);
+                    msgHash = saltedObject.GetHash(hw);
+                }
+                else
+                {
+                    hw.write((const char *)dataVec.data(), dataVec.size());
+                    msgHash = hw.GetHash();
+                }
+                mmrObjects.push_back(CDataDescriptor(dataVec, false, mmrSalt.size() > i ? std::vector<unsigned char>(mmrSalt[i].begin(), mmrSalt[i].end()) : std::vector<unsigned char>()));
+            }
         }
-        else if (!strDataHash.empty() && IsHex(strDataHash))
+        mmrHashes.push_back(msgHash);
+        if (!rootSignature)
         {
-            msgHash.SetHex(strDataHash);
-            // sha256 is reversed for sha256sum compatibility
-            if (hashType == CCurrencyDefinition::EHashTypes::HASH_SHA256)
+            break;
+        }
+        switch (mmrHashType)
+        {
+            case CVDXF::EHashTypes::HASH_BLAKE2BMMR:
             {
-                std::reverse(msgHash.begin(), msgHash.end());
+                CMMRNode<CBLAKE2bWriter> newNode(msgHash);
+                boost::get<CMerkleMountainRange<CMMRNode<CBLAKE2bWriter>>>(mmr).Add(newNode);
+                break;
             }
+            case CVDXF::EHashTypes::HASH_KECCAK:
+            {
+                CMMRNode<CKeccack256Writer> newNode(msgHash);
+                boost::get<CMerkleMountainRange<CMMRNode<CKeccack256Writer>>>(mmr).Add(newNode);
+                break;
+            }
+            case CVDXF::EHashTypes::HASH_SHA256:
+            {
+                CMMRNode<CHashWriterSHA256> newNode(msgHash);
+                boost::get<CMerkleMountainRange<CMMRNode<CHashWriterSHA256>>>(mmr).Add(newNode);
+                break;
+            }
+            case CVDXF::EHashTypes::HASH_SHA256D:
+            {
+                CMMRNode<CHashWriter> newNode(msgHash);
+                boost::get<CMerkleMountainRange<CMMRNode<CHashWriter>>>(mmr).Add(newNode);
+                break;
+            }
+            default:
+                throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid MMR hash specified ");
         }
     }
 
-    if (msgHash.IsNull())
+    UniValue ret(UniValue::VOBJ);
+
+    // if we're making a root signature, get the final signature msgHash
+    // and prepare all the return data objects
+    if (rootSignature)
     {
-        throw JSONRPCError(RPC_INVALID_PARAMS, "Cannot open file " + strFileName);
+        uint256 mmrRoot;
+        switch (mmrHashType)
+        {
+            case CVDXF::EHashTypes::HASH_BLAKE2BMMR:
+            {
+                CMerkleMountainView<CMMRNode<CBLAKE2bWriter>> mmv(boost::get<CMerkleMountainRange<CMMRNode<CBLAKE2bWriter>>>(mmr));
+                mmrRoot = mmv.GetRoot();
+                break;
+            }
+            case CVDXF::EHashTypes::HASH_KECCAK:
+            {
+                CMerkleMountainView<CMMRNode<CKeccack256Writer>> mmv(boost::get<CMerkleMountainRange<CMMRNode<CKeccack256Writer>>>(mmr));
+                mmrRoot = mmv.GetRoot();
+                break;
+            }
+            case CVDXF::EHashTypes::HASH_SHA256:
+            {
+                CMerkleMountainView<CMMRNode<CHashWriterSHA256>> mmv(boost::get<CMerkleMountainRange<CMMRNode<CHashWriterSHA256>>>(mmr));
+                mmrRoot = mmv.GetRoot();
+                break;
+            }
+            case CVDXF::EHashTypes::HASH_SHA256D:
+            {
+                CMerkleMountainView<CMMRNode<CHashWriter>> mmv(boost::get<CMerkleMountainRange<CMMRNode<CHashWriter>>>(mmr));
+                mmrRoot = mmv.GetRoot();
+                break;
+            }
+            default:
+                throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid MMR hash specified ");
+        }
+
+        msgHash = mmrRoot;
+        mmrDescriptor = CMMRDescriptor(hashType, mmrHashType, mmrRoot, CDataDescriptor(mmrHashes), mmrObjects);
+        libzcash::SaplingIncomingViewingKey incomingViewingKey;
+
+        if (encryptToAddress)
+        {
+            encryptedDescriptor = mmrDescriptor.Encrypt(boost::get<libzcash::SaplingPaymentAddress>(encryptToAddress));
+            if (!encryptedDescriptor.HasData())
+            {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Unable to encrypt MMR data to address specified");
+            }
+            ret.pushKV("mmrdescriptor_encrypted", encryptedDescriptor.ToUniValue());
+            LOCK(pwalletMain->cs_wallet);
+            CDataDescriptor decryptedData;
+            if (pwalletMain->DecryptWithSaplingViewingKey(encryptedDescriptor.mmrRoot, decryptedData, &incomingViewingKey))
+            {
+                CMMRDescriptor decryptedMMR;
+                decryptedMMR = encryptedDescriptor.Decrypt(incomingViewingKey);
+                ret.pushKV("mmrdescriptor_decrypted", decryptedMMR.ToUniValue());
+            }
+        }
+
+        ret.pushKV("mmrdescriptor", mmrDescriptor.ToUniValue());
     }
 
-    if (dest.which() == COptCCParams::ADDRTYPE_ID)
+    if (dest.empty() && rootSignature)
+    {
+        return ret;
+    }
+    else if (dest.which() == COptCCParams::ADDRTYPE_ID)
     {
         CIdentity identity;
 
         identity = CIdentity::LookupIdentity(GetDestinationID(dest));
         if (identity.IsValidUnrevoked())
         {
-            UniValue ret(UniValue::VOBJ);
             std::string sig;
+
+            // go through VDXF keys, VDXF key names, and bound hashes
+            std::vector<uint160> vdxfCodes;
+            std::vector<std::string> vdxfCodeNames;
+            std::vector<uint256> statements;
 
             // if we should create an advanced signature from an object specification do it, otherwise,
             // drop through
             if (objectSignature)
             {
-                CIdentitySignature identitySig = CIdentitySignature(nHeight, std::set<std::vector<unsigned char>>(), hashType, CIdentitySignature::VERSION_ETHBRIDGE);
+                CIdentitySignature identitySig = CIdentitySignature(nHeight, std::set<std::vector<unsigned char>>(), (CCurrencyDefinition::EHashTypes)hashType, CIdentitySignature::VERSION_ETHBRIDGE);
                 if (!strSignature.empty())
                 {
                     std::vector<unsigned char> sigVec;
@@ -1623,11 +1935,6 @@ UniValue signdata(const UniValue& params, bool fHelp)
                         throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid pre-existing signature");
                     }
                 }
-
-                // go through VDXF keys, VDXF key names, and bound hashes
-                std::vector<uint160> vdxfCodes;
-                std::vector<std::string> vdxfCodeNames;
-                std::vector<uint256> statements;
 
                 for (int i = 0; i < vdxfKeys.size(); i++)
                 {
@@ -1667,7 +1974,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
                     {
                         throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid bound hash");
                     }
-                    if (hashType == CCurrencyDefinition::EHashTypes::HASH_SHA256)
+                    if (hashType == CVDXF::EHashTypes::HASH_SHA256)
                     {
                         std::reverse(oneHash.begin(), oneHash.end());
                     }
@@ -1692,13 +1999,33 @@ UniValue signdata(const UniValue& params, bool fHelp)
             {
                 sig = SignMessageHash(identity, msgHash, strSignature, nHeight);
             }
-            if (hashType == CCurrencyDefinition::EHashTypes::HASH_SHA256)
+            CMMRSignatureData mmrSignatureData(ASSETCHAINS_CHAINID, identity.GetID(), rootSignature ? mmrHashType : hashType, std::vector<unsigned char>(msgHash.begin(), msgHash.end()), DecodeBase64(sig.c_str()), vdxfCodes, vdxfCodeNames, statements);
+
+            if (encryptToAddress && mmrSignatureData.signatureAsVch.size())
+            {
+                CDataDescriptor encryptedSignatureData(::AsVector(mmrSignatureData));
+                std::vector<unsigned char> sskOut;
+                encryptedSignatureData.WrapEncrypted(boost::get<libzcash::SaplingPaymentAddress>(encryptToAddress), &sskOut);
+                if (!encryptedSignatureData.linkData.size() || !encryptedSignatureData.HasEncryptedLink())
+                {
+                    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Unable to encrypt signature data to address specified");
+                }
+                ret.pushKV("signaturedata_encrypted", encryptedSignatureData.ToUniValue());
+                ret.pushKV("signaturedata_ssk", HexBytes(sskOut.data(), sskOut.size()));
+            }
+            ret.pushKV("signaturedata", mmrSignatureData.ToUniValue());
+
+            if ((!rootSignature && hashType == CVDXF::EHashTypes::HASH_SHA256) || (rootSignature && mmrHashType == CVDXF::EHashTypes::HASH_SHA256))
             {
                 std::reverse(msgHash.begin(), msgHash.end());   // return a reversed hash for compatibility with sha256sum
             }
             ret.push_back(Pair("system", ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID)));
             ret.push_back(Pair("systemid", EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID))));
             ret.push_back(Pair("hashtype", hashTypeStr));
+            if (rootSignature)
+            {
+                ret.push_back(Pair("mmrhashtype", mmrHashTypeStr));
+            }
             ret.push_back(Pair("hash", msgHash.GetHex()));
             std::string fullName = ConnectedChains.GetFriendlyIdentityName(identity);
             if (fullName.empty())
@@ -1756,7 +2083,6 @@ UniValue signdata(const UniValue& params, bool fHelp)
         if (!key.SignCompact(ss.GetHash(), vchSig))
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Sign failed");
 
-        UniValue ret(UniValue::VOBJ);
         ret.push_back(Pair("system", ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID)));
         ret.push_back(Pair("hashtype", hashTypeStr));
         ret.push_back(Pair("address", EncodeDestination(dest)));

@@ -71,6 +71,7 @@ arith_uint256 komodo_PoWtarget(int32_t *percPoSp,arith_uint256 target,int32_t he
 std::set<uint160> ClosedPBaaSChains({});
 
 UniValue getminingdistribution(const UniValue& params, bool fHelp);
+UniValue signdata(const UniValue& params, bool fHelp);
 
 // NOTE: Assumes a conclusive result; if result is inconclusive, it must be handled by caller
 static UniValue BIP22ValidationResult(const CValidationState& state)
@@ -1940,14 +1941,13 @@ uint160 ValidateCurrencyName(std::string currencyStr, bool ensureCurrencyValid, 
         if (ensureCurrencyValid)
         {
             CCurrencyDefinition currencyDef;
-            if (!GetCurrencyDefinition(currencyID, currencyDef) || !currencyDef.IsValid())
+            if (GetCurrencyDefinition(currencyID, currencyDef) || !currencyDef.IsValid())
             {
-                return retVal;
-            }
-            retVal = currencyDef.GetID();
-            if (pCurrencyDef)
-            {
-                *pCurrencyDef = currencyDef;
+                retVal = currencyDef.GetID();
+                if (pCurrencyDef)
+                {
+                    *pCurrencyDef = currencyDef;
+                }
             }
         }
         else
@@ -9358,6 +9358,48 @@ CAmount GetMinRelayFeeForBuilder(const TransactionBuilder &tb, CAmount identityF
                 minFee += DEFAULT_TRANSACTION_FEE + ((extraSize - extraOutputCostThreshold) > 0 ? DEFAULT_TRANSACTION_FEE : 0);
             }
         }
+
+        int64_t extraStorageSpace = 0;
+        bool isStorageTx = false;
+        bool isImport = false;
+        bool isNotarizationPriority = false;
+
+        for (int i = 0; i < tb.mtx.vout.size(); i++)
+        {
+            COptCCParams evP;
+
+            auto &oneOut = tb.mtx.vout[i];
+            int64_t extraSize = std::max((int64_t)oneOut.scriptPubKey.size() - extraOutputCostThreshold, (int64_t)0);
+            bool isSC = oneOut.scriptPubKey.IsPayToCryptoCondition(evP) && evP.IsValid();
+
+            isImport = isImport || (isSC && evP.evalCode == EVAL_CROSSCHAIN_IMPORT);
+            isNotarizationPriority = isNotarizationPriority || (isSC && (evP.evalCode == EVAL_ACCEPTEDNOTARIZATION || evP.evalCode == EVAL_EARNEDNOTARIZATION || evP.evalCode == EVAL_FINALIZE_NOTARIZATION));
+            isStorageTx = (isStorageTx || (isSC && evP.evalCode == EVAL_NOTARY_EVIDENCE)) && !isImport && !isNotarizationPriority;
+
+            if (isStorageTx)
+            {
+                extraStorageSpace += oneOut.scriptPubKey.size();
+            }
+            else if (extraSize)
+            {
+                minFee += DEFAULT_TRANSACTION_FEE + ((extraSize - extraOutputCostThreshold) > 0 ? DEFAULT_TRANSACTION_FEE : 0);
+            }
+        }
+        CScript opRetScript = tb.GetOpRet();
+        if (opRetScript.size())
+        {
+            int64_t extraSize = std::max((int64_t)opRetScript.size() - extraOutputCostThreshold, (int64_t)0);
+            COptCCParams evP;
+            if (isStorageTx)
+            {
+                extraStorageSpace += (int64_t)opRetScript.size();
+            }
+            else if (extraSize)
+            {
+                minFee += DEFAULT_TRANSACTION_FEE + ((extraSize - extraOutputCostThreshold) > 0 ? DEFAULT_TRANSACTION_FEE : 0);
+            }
+        }
+        minFee += (((int64_t)(extraStorageSpace)) * (CCurrencyDefinition::DEFAULT_STORAGE_OUTPUT_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
     }
     return minFee;
 }
@@ -9414,17 +9456,57 @@ CAmount GetMinRelayFeeForOutputs(const std::vector<SendManyRecipient> &tOutputs,
 
     if (!(identityFeeFactor && tOutputs.size() <= (1 + idExtraLimit)))
     {
+        bool isStorageTx = false;
+        bool isImport = false;
+        bool isNotarizationPriority = false;
+
         int64_t extraOutputCostThreshold = CScript::MAX_SCRIPT_ELEMENT_SIZE / 3;
-        for (auto &oneOut : tOutputs)
+        int64_t extraStorageSpace = 0;
+
+        for (int i = 0; i < tOutputs.size(); i++)
         {
+            auto &oneOut = tOutputs[i];
+
+            COptCCParams evP;
+            bool isSC = std::get<3>(oneOut).IsPayToCryptoCondition(evP) && evP.IsValid();
+
+            isImport = isImport || (isSC && evP.evalCode == EVAL_CROSSCHAIN_IMPORT);
+            isNotarizationPriority = isNotarizationPriority || (isSC && (evP.evalCode == EVAL_ACCEPTEDNOTARIZATION || evP.evalCode == EVAL_EARNEDNOTARIZATION || evP.evalCode == EVAL_FINALIZE_NOTARIZATION));
+            isStorageTx = (isStorageTx || (isSC && evP.evalCode == EVAL_NOTARY_EVIDENCE)) && !isImport && !isNotarizationPriority;
+
             int64_t extraSize = std::max((int64_t)std::get<3>(oneOut).size() - extraOutputCostThreshold, (int64_t)0);
-            if (extraSize)
+            bool isOpRet = (i == (tOutputs.size() - 1)) && std::get<3>(oneOut).IsOpReturn();
+            if (extraSize || isStorageTx)
             {
-                minFee += DEFAULT_TRANSACTION_FEE + ((extraSize - extraOutputCostThreshold) > 0 ? DEFAULT_TRANSACTION_FEE : 0);
+                if (isStorageTx &&
+                    ((extraSize && isOpRet) ||
+                     (isSC && evP.evalCode == EVAL_NOTARY_EVIDENCE)))
+                {
+                    extraStorageSpace += (int64_t)std::get<3>(oneOut).size();
+                }
+                else if (extraSize)
+                {
+                    minFee += DEFAULT_TRANSACTION_FEE + ((extraSize - extraOutputCostThreshold) > 0 ? DEFAULT_TRANSACTION_FEE : 0);
+                }
             }
         }
+        minFee += (((int64_t)(extraStorageSpace)) * (CCurrencyDefinition::DEFAULT_STORAGE_OUTPUT_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
     }
     return minFee;
+}
+
+int FileToVector(const std::string &filepath, std::vector<unsigned char> &dataVec, int maxBytes)
+{
+    ifstream ifs = ifstream(filepath, std::ios::binary | std::ios::in);
+    int readNum = 0;
+    if (ifs.is_open() && !ifs.eof())
+    {
+        dataVec.resize(maxBytes);
+        readNum = ifs.readsome((char *)(&dataVec[0]), maxBytes);
+        dataVec.resize(readNum);
+        ifs.close();
+    }
+    return readNum;
 }
 
 UniValue sendcurrency(const UniValue& params, bool fHelp)
@@ -9454,6 +9536,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
             "      \"address\":\"dest\"     (string, required) The address and optionally chain/system after the \"@\" as a system specific destination\n"
             "      \"refundto\":\"dest\"    (string, optional) For pre-conversions, this is where refunds will go, defaults to fromaddress\n"
             "      \"memo\":memo            (string, optional) If destination is a zaddr (not supported on testnet), a string message (not hexadecimal) to include.\n"
+            "      \"data\":\"dataobject\", (object, optional) (for data-only outputs with no other function) stores large, optionally signed data in one or more outputs.\n"
             "      \"preconvert\":\"false\", (bool,  optional) convert to currency at market price (default=false), only works if transaction is mined before start of currency\n"
             "      \"burn\":\"false\",      (bool,  optional) destroy the currency and subtract it from the supply. Currency must be a token.\n"
             "      \"mintnew\":\"false\",   (bool,  optional) if the transaction is sent from the currency ID of a centralized currency, this creates new currency to send\n"
@@ -9466,7 +9549,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
             "\n"
             "   If (returntxtemplate) is true"
             "   {\n"
-            "       \"outputtotals\" : {currencyvaluemap}   Total outputs in all currencies the need to be input to the transaction\n"
+            "       \"outputtotals\" : {currencyvaluemap}   Total outputs in all currencies that need to be input to the transaction\n"
             "       \"hextx\" : \"hexstring\"               The transaction with all specified outputs and no inputs\n"
             "   }\n"
 
@@ -9552,7 +9635,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
 
     bool hasOpRet = false;
 
-    static std::set<std::string> paramSet({"currency", "amount", "convertto", "exportto", "feecurrency", "via", "address", "exportid", "exportcurrency", "refundto", "memo", "preconvert",  "burn", "burnweight", "mintnew", "addconversionfees", "opret"});
+    static std::set<std::string> paramSet({"currency", "amount", "convertto", "exportto", "feecurrency", "via", "address", "exportid", "exportcurrency", "refundto", "memo", "preconvert",  "burn", "burnweight", "mintnew", "addconversionfees", "opret", "data"});
 
     //printf("%s: params[1]: %s\n", __func__, params[1].write(1,2).c_str());
 
@@ -9576,6 +9659,8 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
             auto exportCurrency = uni_get_bool(find_value(uniOutputs[i], "exportcurrency"));
             auto refundToStr = TrimSpaces(uni_get_str(find_value(uniOutputs[i], "refundto")));
             auto memoStr = uni_get_str(find_value(uniOutputs[i], "memo"));
+            UniValue dataUni;
+            //dataUni = find_value(uniOutputs[i], "data");
             bool preConvert = uni_get_bool(find_value(uniOutputs[i], "preconvert"));
             bool burnCurrency = uni_get_bool(find_value(uniOutputs[i], "burn")) || uni_get_bool(find_value(uniOutputs[i], "burnweight"));
             bool burnWeight = uni_get_bool(find_value(uniOutputs[i], "burnweight"));
@@ -10142,6 +10227,95 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
 
             if (hasZDest)
             {
+                // if this is a data output, make one or more auxilliary data outputs
+                if (dataUni.isObject())
+                {
+                    if (!memoStr.empty())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid combination of memo and data parameters for data output #" + std::to_string(i));
+                    }
+
+                    if (!find_value(dataUni, "encrypttoaddress").isNull())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "Data output may only be sent to a z-address, is always encrypted, and may not have an explicit ecrypttoaddress option");
+                    }
+
+                    dataUni.pushKV("encrypttoaddress", EncodePaymentAddress(zaddressDest));
+
+                    UniValue signResult = signdata(dataUni, false);
+
+                    // now, take the data we got back and either encode it as a data descriptor directly in the z-memo
+                    // or if too large, store link and add storage (NotaryEvidence) outputs
+
+                    CNotaryEvidence notaryEvidence;
+
+
+
+
+
+                    CCcontract_info CC;
+                    CCcontract_info *cp;
+
+                    // now add the notary evidence and finalization that uses it to assert validity
+                    // make the evidence notarization output
+                    cp = CCinit(&CC, EVAL_NOTARY_EVIDENCE);
+                    std::vector<CTxDestination> dests({CPubKey(ParseHex(CC.CChexstr))});
+
+
+
+
+
+
+
+                    std::vector<int32_t> evidenceOuts;
+
+                    COptCCParams chkP;
+                    if (!MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &notaryEvidence)).IsPayToCryptoCondition(chkP, false))
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence script in data output #" + std::to_string(i));
+                    }
+
+                    // the value should be considered for reduction
+                    if (chkP.AsVector().size() >= CScript::MAX_SCRIPT_ELEMENT_SIZE)
+                    {
+                        CNotaryEvidence emptyEvidence;
+                        int baseOverhead = MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &emptyEvidence)).size() + 128;
+                        auto evidenceVec = notaryEvidence.BreakApart(CScript::MAX_SCRIPT_ELEMENT_SIZE - baseOverhead);
+                        if (!evidenceVec.size())
+                        {
+                            throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence chunk in data output #" + std::to_string(i));
+                        }
+                        for (auto &oneProof : evidenceVec)
+                        {
+                            dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
+                            evidenceOuts.push_back(tb.mtx.vout.size());
+                            tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &oneProof)), 0);
+                        }
+                    }
+                    else
+                    {
+                        evidenceOuts.push_back(tb.mtx.vout.size());
+                        tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &notaryEvidence)), 0);
+                    }
+                }
+                else if (!dataUni.isNull())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "data parameter must be valid parameters for the signdata command");
+                }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
                 // if memo starts with "#", convert it from a string to a hex value
                 if (memoStr.size() > 1 && memoStr[0] == '#')
                 {
@@ -11660,11 +11834,7 @@ CCurrencyDefinition ValidateNewUnivalueCurrencyDefinition(const UniValue &uniObj
     UniValue expiryUni = find_value(uniObj, "expiryheight");
     UniValue startBlockUni = find_value(uniObj, "startblock");
     uint32_t expiryHeight = uni_get_int(expiryUni, chainActive.Height() + PBAAS_MINSTARTBLOCKDELTA);
-
-    if (expiryUni.isNull() || (startBlockUni.isNull() && newCurrency.startBlock < expiryHeight))
-    {
-        newCurrency.startBlock = std::max(expiryHeight, chainActive.Height() + DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA);  // give a little time to send the tx
-    }
+    newCurrency.startBlock = std::max(std::max(expiryHeight, chainActive.Height() + DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA), (uint32_t)uni_get_int64(startBlockUni));  // give a little time to send the tx
 
     if (newCurrency.endBlock && newCurrency.endBlock < (newCurrency.startBlock + CCurrencyDefinition::MIN_CURRENCY_LIFE))
     {
@@ -11918,7 +12088,6 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
             "         \"notaries\" : \"[identity,..]\", (list, optional) list of identities that are assigned as chain notaries\n"
             "         \"minnotariesconfirm\" : n,       (int, optional) unique notary signatures required to confirm an auto-notarization\n"
             "         \"notarizationreward\" : \"xx.xx\", (value,  required) default VRSC notarization reward total for first billing period\n"
-            "         \"billingperiod\" : n,            (int,    optional) number of blocks in each billing period\n"
             "         \"proofprotocol\" : n,            (int,    optional) if 2, currency can be minted by whoever controls the ID\n"
             "                                                           1 = PROOF_PBAASMMR - Verus MMR proof, no notaries required\n"
             "                                                           2 = PROOF_CHAINID - non-native only - currency has centralized control, and\n"
@@ -15286,10 +15455,10 @@ UniValue getidentityhistory(const UniValue& params, bool fHelp)
 
 UniValue getidentitycontent(const UniValue& params, bool fHelp)
 {
-    if (fHelp || params.size() < 1 || params.size() > 6)
+    if (fHelp || params.size() < 1 || params.size() > 7)
     {
         throw runtime_error(
-            "getidentitycontent \"name@ || iid\" (heightstart) (heightend) (txproofs) (txproofheight) (vdxfkey)\n"
+            "getidentitycontent \"name@ || iid\" (heightstart) (heightend) (txproofs) (txproofheight) (vdxfkey) (keepdeleted)\n"
             "\n\n"
 
             "\nArguments\n"
@@ -15300,6 +15469,7 @@ UniValue getidentitycontent(const UniValue& params, bool fHelp)
             "    \"txproofs\"                           (bool, optional) default=false, if true, returns proof of ID\n"
             "    \"txproofheight\"                      (number, optional) default=\"height\", height from which to generate a proof\n"
             "    \"vdxfkey\"                            (vdxf key, optional) default=null, more selective search for specific content in ID\n"
+            "    \"keepdeleted\"                        (bool, optional) default=false, if true, return deleted items as well\n"
 
             "\nResult:\n"
 
@@ -15353,6 +15523,7 @@ UniValue getidentitycontent(const UniValue& params, bool fHelp)
     }
 
     uint160 vdxfKey = params.size() > 5 ? GetDestinationID(DecodeDestination(uni_get_str(params[5]))) : uint160();
+    bool keepDeleted = params.size() > 6 ? uni_get_bool(params[6]) : false;
 
     CTxIn idTxIn;
 
@@ -15415,7 +15586,8 @@ UniValue getidentitycontent(const UniValue& params, bool fHelp)
                                                                    useMempool,
                                                                    txProof,
                                                                    txProofHeight,
-                                                                   vdxfKey);
+                                                                   vdxfKey,
+                                                                   keepDeleted);
 
         // put the aggregated content map in the ID before rendering
         identity.contentMultiMap.clear();
