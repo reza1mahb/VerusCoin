@@ -11332,10 +11332,7 @@ void CConnectedChains::SubmissionThread()
                             {
                                 CNativeHashWriter hw;
                                 hw << height;
-                                if (!isVerusMainnetActive || height >= 2930000)
-                                {
-                                    hw << exports[0].first.first.txIn.prevout;
-                                }
+                                hw << exports[0].first.first.txIn.prevout;
                                 uint256 prHash = hw.GetHash();
                                 std::vector<uint160> notaryVec = notaryCurrency.notaries;
                                 auto prandom = std::minstd_rand0(UintToArith256(prHash).GetLow64());
