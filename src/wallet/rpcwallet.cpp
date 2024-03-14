@@ -1429,8 +1429,9 @@ UniValue signdata(const UniValue& params, bool fHelp)
             "           \"vdxfkeys\":[\"vdxfkey i-address\", ...],\n"
             "           \"vdxfkeynames\":[\"vdxfkeyname, object for getvdxfid API, or friendly name ID -- no i-addresses\", ...],\n"
             "           \"boundhashes\":[\"hexhash\", ...],\n"
-            "           \"hashtype\": \"sha256\" | \"sha256D\" | \"blake2b\" | \"keccak256\"\n"
-            "           \"encrypttoaddress\": \"sapling address\"               granularly encrypt all data, either all decryptable with viewing key or parts using unique, SSKs\n"
+            "           \"hashtype\": \"sha256\" | \"sha256D\" | \"blake2b\" | \"keccak256\",\n"
+            "           \"encrypttoaddress\": \"sapling address\",              granularly encrypt all data, either all decryptable with viewing key or parts using unique, SSKs\n"
+            "           \"rootsignature\":\"bool\",                             if true, 1 or more objects will be put into a merkle mountain range and the root signed\n"
             "           \"signature\":\"currentsig\"}'\n\n"
 
             "\nGenerates a hash (SHA256 default if \"hashtype\" not specified) of the data, returns the hash, and signs it with parameters specified"
@@ -1700,6 +1701,14 @@ UniValue signdata(const UniValue& params, bool fHelp)
 
     CVDXF::EHashTypes mmrHashType = CVDXF::EHashTypes::HASH_BLAKE2BMMR;
 
+    // if we have one object, the MMR root actually ends up being the hash of the object, and as a result, the type is technically only
+    // the type used as the object hash
+    if (mmrDataUni.size() == 1)
+    {
+        mmrHashType = hashType;
+        mmrHashTypeStr = hashTypeStr;
+    }
+
     typedef boost::variant<CMerkleMountainRange<CMMRNode<CBLAKE2bWriter>>, CMerkleMountainRange<CMMRNode<CKeccack256Writer>>, CMerkleMountainRange<CMMRNode<CHashWriterSHA256>>, CMerkleMountainRange<CMMRNode<CHashWriter>>> SigningMMR;
 
     SigningMMR mmr;
@@ -1870,14 +1879,14 @@ UniValue signdata(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Unable to encrypt MMR data to address specified");
             }
             ret.pushKV("mmrdescriptor_encrypted", encryptedDescriptor.ToUniValue());
-            LOCK(pwalletMain->cs_wallet);
+            /* LOCK(pwalletMain->cs_wallet);
             CDataDescriptor decryptedData;
             if (pwalletMain->DecryptWithSaplingViewingKey(encryptedDescriptor.mmrRoot, decryptedData, &incomingViewingKey))
             {
                 CMMRDescriptor decryptedMMR;
                 decryptedMMR = encryptedDescriptor.Decrypt(incomingViewingKey);
                 ret.pushKV("mmrdescriptor_decrypted", decryptedMMR.ToUniValue());
-            }
+            } //*/
         }
 
         ret.pushKV("mmrdescriptor", mmrDescriptor.ToUniValue());
@@ -1999,7 +2008,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
             {
                 sig = SignMessageHash(identity, msgHash, strSignature, nHeight);
             }
-            CMMRSignatureData mmrSignatureData(ASSETCHAINS_CHAINID, identity.GetID(), rootSignature ? mmrHashType : hashType, std::vector<unsigned char>(msgHash.begin(), msgHash.end()), DecodeBase64(sig.c_str()), vdxfCodes, vdxfCodeNames, statements);
+            CMMRSignatureData mmrSignatureData(ASSETCHAINS_CHAINID, rootSignature ? mmrHashType : hashType, std::vector<unsigned char>(msgHash.begin(), msgHash.end()), identity.GetID(), CMMRSignatureData::TYPE_VERUSID_DEFAULT, DecodeBase64(sig.c_str()), vdxfCodes, vdxfCodeNames, statements);
 
             if (encryptToAddress && mmrSignatureData.signatureAsVch.size())
             {

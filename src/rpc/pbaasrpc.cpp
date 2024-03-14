@@ -10242,16 +10242,38 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
 
                     dataUni.pushKV("encrypttoaddress", EncodePaymentAddress(zaddressDest));
 
-                    UniValue signResult = signdata(dataUni, false);
+                    auto rootSigUni = find_value(dataUni, "rootsignature");
+                    if (rootSigUni.isNull())
+                    {
+                        rootSigUni = true;
+                        dataUni.pushKV("rootsignature", rootSigUni);
+                    }
+                    if (!uni_get_bool(rootSigUni))
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "If root signature is specified for data storage, it must be true");
+                    }
 
-                    // now, take the data we got back and either encode it as a data descriptor directly in the z-memo
-                    // or if too large, store link and add storage (NotaryEvidence) outputs
+                    UniValue signResult = signdata(dataUni, false);
 
                     CNotaryEvidence notaryEvidence;
 
+                    // now, we have both a CMMRDescriptor as well as a CMMRSignatureData if we signed, all encrypted to the specified Z-address
+                    CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdecsriptor_encrypted"));
+                    CMMRSignatureData SignatureData = CMMRSignatureData(find_value(signResult, "signaturedata_encrypted"));
 
+                    // if the MMR data isn't valid, we have nothing to store
+                    if (!MMRDesc.IsValid())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "No valid data for data output #" + std::to_string(i));
+                    }
 
-
+                    // now, we will store the encrypted signature, if present, and MMRDesc in transparent outputs and put the link inside the z-memo
+                    CNotaryEvidence evidenceData(CNotaryEvidence::TYPE_IMPORT_PROOF);
+                    if (SignatureData.IsValid())
+                    {
+                        evidenceData.evidence << CEvidenceData(::AsVector(SignatureData));
+                    }
+                    evidenceData.evidence << CEvidenceData(::AsVector(MMRDesc));
 
                     CCcontract_info CC;
                     CCcontract_info *cp;
@@ -10261,12 +10283,6 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                     cp = CCinit(&CC, EVAL_NOTARY_EVIDENCE);
                     std::vector<CTxDestination> dests({CPubKey(ParseHex(CC.CChexstr))});
 
-
-
-
-
-
-
                     std::vector<int32_t> evidenceOuts;
 
                     COptCCParams chkP;
@@ -10274,6 +10290,10 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                     {
                         throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence script in data output #" + std::to_string(i));
                     }
+
+                    CCrossChainDataRef memoLink(uint256(), tOutputs.size(), 0);
+                    std::vector<unsigned char> memoData = ::AsVector(memoLink);
+                    memoStr = HexBytes(memoData.data(), memoData.size());
 
                     // the value should be considered for reduction
                     if (chkP.AsVector().size() >= CScript::MAX_SCRIPT_ELEMENT_SIZE)
@@ -10289,32 +10309,19 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                         {
                             dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
                             evidenceOuts.push_back(tb.mtx.vout.size());
-                            tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &oneProof)), 0);
+                            tOutputs.push_back(SendManyRecipient(EncodeDestination(CKeyID(GetDestinationID(dests[0]))), 0, "", MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &oneProof))));
                         }
                     }
                     else
                     {
-                        evidenceOuts.push_back(tb.mtx.vout.size());
-                        tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &notaryEvidence)), 0);
+                        tOutputs.push_back(SendManyRecipient(EncodeDestination(CKeyID(GetDestinationID(dests[0]))), 0, "", MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &notaryEvidence))));
                     }
+
                 }
                 else if (!dataUni.isNull())
                 {
                     throw JSONRPCError(RPC_INVALID_PARAMETER, "data parameter must be valid parameters for the signdata command");
                 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
                 // if memo starts with "#", convert it from a string to a hex value
                 if (memoStr.size() > 1 && memoStr[0] == '#')
@@ -13168,7 +13175,7 @@ UniValue registernamecommitment(const UniValue& params, bool fHelp)
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Referral identity for commitment must be a currently valid, unrevoked friendly name or i-address");
         }
-        if (referrerIdentity.parent != parentID)
+        if (referrerIdentity.parent != parentID && referrer != parentID)
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Referrals must be from an identity of the same parent");
         }

@@ -1030,7 +1030,71 @@ public:
     UniValue ToUniValue() const;
 };
 
-class CMMRSignatureData : public CVDXF_Data
+class CMMRSignatureData
+{
+public:
+    enum {
+        VERSION_INVALID = 0,
+        FIRST_VERSION = 1,
+        LAST_VERSION = 1,
+        DEFAULT_VERSION = 1,
+
+        TYPE_VERUSID_DEFAULT = 1
+    };
+
+    uint32_t version;
+    uint160 systemID;
+    CVDXF::EHashTypes hashType;
+    std::vector<unsigned char> signatureHash; // MMR root or signature hash as a vector to enable more bits in the future
+    uint32_t sigType;
+    uint160 identityID;
+    std::vector<uint160> vdxfKeys;
+    std::vector<std::string> vdxfKeyNames;
+    std::vector<uint256> boundHashes;
+    std::vector<unsigned char> signatureAsVch; // binary encoded signature
+
+    CMMRSignatureData(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version) {}
+
+    CMMRSignatureData(const UniValue &uni);
+
+    CMMRSignatureData(const uint160 &SystemID,
+                      CVDXF::EHashTypes HashType,
+                      const std::vector<unsigned char> &SignatureHash,
+                      const uint160 &IdentityID,
+                      uint8_t SigType=TYPE_VERUSID_DEFAULT,
+                      const std::vector<unsigned char> &SignatureAsVch=std::vector<unsigned char>(),
+                      const std::vector<uint160> &VdxfKeys=std::vector<uint160>(),
+                      const std::vector<std::string> &VdxfKeyNames=std::vector<std::string>(),
+                      const std::vector<uint256> &BoundHashes=std::vector<uint256>(),
+                      uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+        version(Version), sigType(SigType), systemID(SystemID), identityID(IdentityID), hashType(HashType), vdxfKeys(VdxfKeys), vdxfKeyNames(VdxfKeyNames), boundHashes(BoundHashes), signatureHash(SignatureHash), signatureAsVch(SignatureAsVch)
+    {}
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(VARINT(version));
+        READWRITE(systemID);
+        READWRITE(VARINT((int32_t)hashType));
+        READWRITE(signatureHash);
+        READWRITE(identityID);
+        READWRITE(VARINT(sigType));
+        READWRITE(vdxfKeys);
+        READWRITE(vdxfKeyNames);
+        READWRITE(boundHashes);
+        READWRITE(signatureAsVch);
+    }
+
+    UniValue ToUniValue() const;
+
+    bool IsValid() const
+    {
+        return version >= FIRST_VERSION && version <= LAST_VERSION && !systemID.IsNull();
+    }
+};
+
+class CVDXFMMRSignature : public CVDXF_Data
 {
 public:
     enum {
@@ -1040,42 +1104,32 @@ public:
         DEFAULT_VERSION = 1,
     };
 
-    uint160 systemID;
-    uint160 identityID;
-    CVDXF::EHashTypes hashType;
-    std::vector<uint160> vdxfKeys;
-    std::vector<std::string> vdxfKeyNames;
-    std::vector<uint256> boundHashes;
-    std::vector<unsigned char> signatureHash; // MMR root or signature hash as a vector to enable more bits in the future
-    std::vector<unsigned char> signatureAsVch; // binary encoded signature
+    CMMRSignatureData signature;
 
-    CMMRSignatureData(uint32_t Version=DEFAULT_VERSION) : CVDXF_Data(CVDXF_Data::MMRSignatureDataKey(), std::vector<unsigned char>(), Version) {}
+    CVDXFMMRSignature(uint32_t Version=DEFAULT_VERSION) : signature(Version), CVDXF_Data(CVDXF_Data::MMRSignatureDataKey(), std::vector<unsigned char>(), Version) {}
 
-    CMMRSignatureData(const CVDXF_Data &vdxfData)
+    CVDXFMMRSignature(const UniValue &uni) : CVDXF_Data(uni), signature(find_value(uni, "signature")) {}
+
+    CVDXFMMRSignature(const CVDXF_Data &vdxfData)
     {
         version = vdxfData.version;
         key = vdxfData.key;
         CDataStream readData(vdxfData.data, SER_DISK, PROTOCOL_VERSION);
 
-        readData >> systemID;
-        readData >> VARINT((int32_t)hashType);
-        readData >> vdxfKeys;
-        readData >> vdxfKeyNames;
-        readData >> boundHashes;
-        readData >> signatureHash;
-        readData >> signatureAsVch;
+        readData >> signature;
     }
 
-    CMMRSignatureData(const uint160 &SystemID,
-                      const uint160 &IdentityID,
+    CVDXFMMRSignature(const uint160 &SystemID,
                       CVDXF::EHashTypes HashType,
-                      const std::vector<unsigned char> &SignatureHash=std::vector<unsigned char>(),
+                      const std::vector<unsigned char> &SignatureHash,
+                      const uint160 &IdentityID,
+                      uint8_t SigType=CMMRSignatureData::TYPE_VERUSID_DEFAULT,
                       const std::vector<unsigned char> &SignatureAsVch=std::vector<unsigned char>(),
                       const std::vector<uint160> &VdxfKeys=std::vector<uint160>(),
                       const std::vector<std::string> &VdxfKeyNames=std::vector<std::string>(),
                       const std::vector<uint256> &BoundHashes=std::vector<uint256>(),
                       uint32_t Version=DEFAULT_VERSION) :
-        systemID(SystemID), identityID(IdentityID), hashType(HashType), vdxfKeys(VdxfKeys), vdxfKeyNames(VdxfKeyNames), boundHashes(BoundHashes), signatureHash(SignatureHash), signatureAsVch(SignatureAsVch), CVDXF_Data(CVDXF_Data::MMRSignatureDataKey(), std::vector<unsigned char>(), Version)
+        signature(SystemID, HashType, SignatureHash, IdentityID, SigType, SignatureAsVch, VdxfKeys, VdxfKeyNames, BoundHashes, Version), CVDXF_Data(CVDXF_Data::MMRSignatureDataKey(), std::vector<unsigned char>(), Version)
     {}
 
     ADD_SERIALIZE_METHODS;
@@ -1091,14 +1145,7 @@ public:
                 READWRITE(data);
                 CDataStream readData(data, SER_DISK, PROTOCOL_VERSION);
                 data.clear();
-                readData >> systemID;
-                readData >> identityID;
-                readData >> VARINT((int32_t)hashType);
-                readData >> vdxfKeys;
-                readData >> vdxfKeyNames;
-                readData >> boundHashes;
-                readData >> signatureHash;
-                readData >> signatureAsVch;
+                readData >> signature;
             }
         }
         else
@@ -1106,14 +1153,7 @@ public:
             if (IsValid())
             {
                 CDataStream writeData(SER_DISK, PROTOCOL_VERSION);
-                writeData << systemID;
-                writeData << identityID;
-                writeData << VARINT((int32_t)hashType);
-                writeData << vdxfKeys;
-                writeData << vdxfKeyNames;
-                writeData << boundHashes;
-                writeData << signatureHash;
-                writeData << signatureAsVch;
+                writeData << signature;
                 std::vector<unsigned char> vch(writeData.begin(), writeData.end());
                 READWRITE(vch);
             }
@@ -1123,7 +1163,7 @@ public:
     UniValue ToUniValue() const;
 };
 
-class CMMRDescriptor : public CVDXF_Data
+class CMMRDescriptor
 {
 public:
     enum {
@@ -1133,26 +1173,14 @@ public:
         DEFAULT_VERSION = 1,
     };
 
+    uint32_t version;
     CVDXF::EHashTypes objectHashType;
     CVDXF::EHashTypes mmrHashType;
     CDataDescriptor mmrRoot;
     CDataDescriptor mmrHashes;
     std::vector<CDataDescriptor> dataDescriptors;
 
-    CMMRDescriptor(uint32_t Version=DEFAULT_VERSION) : objectHashType(HASH_SHA256), mmrHashType(HASH_BLAKE2BMMR), CVDXF_Data(CVDXF_Data::MMRDescriptorKey(), std::vector<unsigned char>(), Version) {}
-
-    CMMRDescriptor(const CVDXF_Data &vdxfData)
-    {
-        version = vdxfData.version;
-        key = vdxfData.key;
-        CDataStream readData(vdxfData.data, SER_DISK, PROTOCOL_VERSION);
-
-        readData >> VARINT((int32_t)objectHashType);
-        readData >> VARINT((int32_t)mmrHashType);
-        readData >> mmrRoot;
-        readData >> mmrHashes;
-        readData >> dataDescriptors;
-    }
+    CMMRDescriptor(uint32_t Version=DEFAULT_VERSION) : version(Version), objectHashType(CVDXF_Data::HASH_SHA256), mmrHashType(CVDXF_Data::HASH_BLAKE2BMMR) {}
 
     CMMRDescriptor(const UniValue &uni);
 
@@ -1162,7 +1190,7 @@ public:
                    const std::vector<uint256> &MmrHashes,
                    const std::vector<CDataDescriptor> &DataDescriptors,
                    uint32_t Version=DEFAULT_VERSION) :
-        CVDXF_Data(CVDXF_Data::MMRDescriptorKey(), std::vector<unsigned char>(), Version),
+        version(Version),
         objectHashType(ObjectHash),
         mmrHashType(MmrHash),
         mmrRoot(CDataDescriptor(std::vector<unsigned char>(MmrRoot.begin(), MmrRoot.end()))),
@@ -1176,7 +1204,7 @@ public:
                    const CDataDescriptor &MmrHashes,
                    const std::vector<CDataDescriptor> &DataDescriptors,
                    uint32_t Version=DEFAULT_VERSION) :
-        CVDXF_Data(CVDXF_Data::MMRDescriptorKey(), std::vector<unsigned char>(), Version),
+        version(Version),
         objectHashType(ObjectHash),
         mmrHashType(MmrHash),
         mmrRoot(CDataDescriptor(std::vector<unsigned char>(MmrRoot.begin(), MmrRoot.end()))),
@@ -1190,7 +1218,7 @@ public:
                    const CDataDescriptor &MmrHashes,
                    const std::vector<CDataDescriptor> &DataDescriptors,
                    uint32_t Version=DEFAULT_VERSION) :
-        CVDXF_Data(CVDXF_Data::MMRDescriptorKey(), std::vector<unsigned char>(), Version),
+        version(Version),
         objectHashType(ObjectHash),
         mmrHashType(MmrHash),
         mmrRoot(MmrRoot),
@@ -1202,36 +1230,12 @@ public:
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(*(CVDXF *)this);
-
-        if (ser_action.ForRead())
-        {
-            if (IsValid())
-            {
-                READWRITE(data);
-                CDataStream readData(data, SER_DISK, PROTOCOL_VERSION);
-                data.clear();
-                readData >> VARINT((int32_t)objectHashType);
-                readData >> VARINT((int32_t)mmrHashType);
-                readData >> mmrRoot;
-                readData >> mmrHashes;
-                readData >> dataDescriptors;
-            }
-        }
-        else
-        {
-            if (IsValid())
-            {
-                CDataStream writeData(SER_DISK, PROTOCOL_VERSION);
-                writeData << VARINT((int32_t)objectHashType);
-                writeData << VARINT((int32_t)mmrHashType);
-                writeData << mmrRoot;
-                writeData << mmrHashes;
-                writeData << dataDescriptors;
-                std::vector<unsigned char> vch(writeData.begin(), writeData.end());
-                READWRITE(vch);
-            }
-        }
+        READWRITE(VARINT(version));
+        READWRITE(VARINT((int32_t)objectHashType));
+        READWRITE(VARINT((int32_t)mmrHashType));
+        READWRITE(mmrRoot);
+        READWRITE(mmrHashes);
+        READWRITE(dataDescriptors);
     }
 
     CMMRDescriptor Encrypt(const libzcash::SaplingPaymentAddress &saplingAddress, bool includeSSKs=false) const;
@@ -1257,6 +1261,70 @@ public:
     bool HasData() const
     {
         return mmrHashes.linkData.size() && dataDescriptors.size();
+    }
+
+    bool IsValid() const
+    {
+        return version >= FIRST_VERSION && version <= LAST_VERSION;
+    }
+
+    UniValue ToUniValue() const;
+};
+
+class CVDXFMMRDescriptor : public CVDXF_Data
+{
+public:
+    CMMRDescriptor mmrDescriptor;
+
+    CVDXFMMRDescriptor(uint32_t Version=DEFAULT_VERSION) : CVDXF_Data(Version), mmrDescriptor(Version) {}
+
+    CVDXFMMRDescriptor(const UniValue &uni) : CVDXF_Data(uni), mmrDescriptor(find_value(uni, "mmr")) {}
+
+    CVDXFMMRDescriptor(const CVDXF_Data &vdxfData)
+    {
+        version = vdxfData.version;
+        key = vdxfData.key;
+        CDataStream readData(vdxfData.data, SER_DISK, PROTOCOL_VERSION);
+
+        readData >> mmrDescriptor;
+    }
+
+    CVDXFMMRDescriptor(CVDXF::EHashTypes ObjectHash,
+                   CVDXF::EHashTypes MmrHash,
+                   const uint256 &MmrRoot,
+                   const std::vector<uint256> &MmrHashes,
+                   const std::vector<CDataDescriptor> &DataDescriptors,
+                   uint32_t Version=DEFAULT_VERSION) :
+        CVDXF_Data(CVDXF_Data::MMRDescriptorKey(), std::vector<unsigned char>(), Version),
+        mmrDescriptor(ObjectHash, MmrHash, MmrRoot, MmrHashes, DataDescriptors, Version)
+    {}
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(*(CVDXF *)this);
+
+        if (ser_action.ForRead())
+        {
+            if (IsValid())
+            {
+                READWRITE(data);
+                CDataStream readData(data, SER_DISK, PROTOCOL_VERSION);
+                data.clear();
+                readData >> mmrDescriptor;
+            }
+        }
+        else
+        {
+            if (IsValid())
+            {
+                CDataStream writeData(SER_DISK, PROTOCOL_VERSION);
+                writeData << mmrDescriptor;
+                std::vector<unsigned char> vch(writeData.begin(), writeData.end());
+                READWRITE(vch);
+            }
+        }
     }
 
     UniValue ToUniValue() const;

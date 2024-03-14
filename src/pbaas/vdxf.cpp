@@ -985,14 +985,75 @@ UniValue CVDXFDataDescriptor::ToUniValue() const
     return ret;
 }
 
+CMMRSignatureData::CMMRSignatureData(const UniValue &uni) :
+    version(uni_get_int64(find_value(uni, "version"))),
+    systemID(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "systemid"))))),
+    hashType((CVDXF::EHashTypes)uni_get_int(find_value(uni, "hashtype"))),
+    identityID(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "identityid"))))),
+    sigType(uni_get_int(find_value(uni, "signaturetype"), TYPE_VERUSID_DEFAULT))
+{
+    uint256 dataHash;
+    if (hashType == CVDXF::EHashTypes::HASH_SHA256)
+    {
+        dataHash = uint256(ParseHex(uni_get_str(find_value(uni, "signaturehash"))));
+    }
+    else
+    {
+        dataHash.SetHex(uni_get_str(find_value(uni, "signaturehash")));
+    }
+    signatureHash = std::vector<unsigned char>(dataHash.begin(), dataHash.end());
+
+    std::string sigString = DecodeBase64(uni_get_str(find_value(uni, "identityid")));
+    signatureAsVch = std::vector<unsigned char>(sigString.begin(), sigString.end());
+
+    auto vdxfKeysUni = find_value(uni, "vdxfkeys");
+    if (vdxfKeysUni.isArray())
+    {
+        for (int i = 0; i < vdxfKeysUni.size(); i++)
+        {
+            vdxfKeys.push_back(ParseVDXFKey(uni_get_str(vdxfKeysUni[i])));
+        }
+    }
+
+    auto vdxfKeyNamesUni = find_value(uni, "vdxfkeynames");
+    if (vdxfKeyNamesUni.isArray())
+    {
+        for (int i = 0; i < vdxfKeyNamesUni.size(); i++)
+        {
+            vdxfKeyNames.push_back(uni_get_str(vdxfKeysUni[i]));
+        }
+    }
+
+    auto boundHashesUni = find_value(uni, "boundhashes");
+    if (boundHashesUni.isArray())
+    {
+        for (int i = 0; i < boundHashesUni.size(); i++)
+        {
+            boundHashes.push_back(uint256S(uni_get_str(boundHashesUni[i])));
+        }
+    }
+}
+
 UniValue CMMRSignatureData::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
 
-    ret = ((CVDXF *)this)->ToUniValue();
+    ret.pushKV("version", (int64_t)version);
     ret.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
-    ret.pushKV("identityid", EncodeDestination(CIdentityID(identityID)));
     ret.pushKV("hashtype", hashType);
+    if (hashType == CVDXF::EHashTypes::HASH_SHA256)
+    {
+        ret.pushKV("signaturehash", HexBytes(signatureHash.data(), signatureHash.size()));
+    }
+    else
+    {
+        uint256 hashVal(signatureHash);
+        ret.pushKV("signaturehash", hashVal.GetHex());
+    }
+
+    ret.pushKV("identityid", EncodeDestination(CIdentityID(identityID)));
+    ret.pushKV("signaturetype", (int64_t)sigType);
+    ret.pushKV("signature", EncodeBase64(signatureAsVch.data(), signatureAsVch.size()));
 
     if (vdxfKeys.size())
     {
@@ -1023,22 +1084,18 @@ UniValue CMMRSignatureData::ToUniValue() const
         }
         ret.pushKV("boundhashes", boundHashesUni);
     }
-
-    if (hashType == CVDXF::EHashTypes::HASH_SHA256)
-    {
-        ret.pushKV("signaturehash", HexBytes(signatureHash.data(), signatureHash.size()));
-    }
-    else
-    {
-        uint256 hashVal(signatureHash);
-        ret.pushKV("signaturehash", hashVal.GetHex());
-    }
-    ret.pushKV("signature", EncodeBase64(signatureAsVch.data(), signatureAsVch.size()));
     return ret;
 }
 
+UniValue CVDXFMMRSignature::ToUniValue() const
+{
+    UniValue obj = ((CVDXF_Data *)this)->ToUniValue();
+    obj.pushKV("signature", signature.ToUniValue());
+    return obj;
+}
+
 CMMRDescriptor::CMMRDescriptor(const UniValue &uni) :
-    CVDXF_Data(uni),
+    version(uni_get_int64(find_value(uni, "version"), DEFAULT_VERSION)),
     objectHashType((CVDXF::EHashTypes)uni_get_int(find_value(uni, "objecthashtype"))),
     mmrHashType((CVDXF::EHashTypes)uni_get_int(find_value(uni, "mmrhashtype"))),
     mmrRoot(find_value(uni, "mmrroot")),
@@ -1177,7 +1234,7 @@ std::vector<uint256> CMMRDescriptor::DecryptMMRHashes(const libzcash::SaplingInc
     {
         CVDXF_Data linkObject;
         ::FromVector(descrCopy.linkData, linkObject);
-        if (linkObject.key == VectorUint256Key())
+        if (linkObject.key == CVDXF_Data::VectorUint256Key())
         {
             ::FromVector(linkObject.data, retVal);
         }
@@ -1195,7 +1252,7 @@ std::vector<uint256> CMMRDescriptor::DecryptMMRHashes(const std::vector<unsigned
     {
         CVDXF_Data linkObject;
         ::FromVector(descrCopy.linkData, linkObject);
-        if (linkObject.key == VectorUint256Key())
+        if (linkObject.key == CVDXF_Data::VectorUint256Key())
         {
             ::FromVector(linkObject.data, retVal);
         }
@@ -1213,7 +1270,7 @@ std::vector<uint256> CMMRDescriptor::GetMMRHashes() const
     {
         CVDXF_Data linkObject;
         ::FromVector(descrCopy.linkData, linkObject);
-        if (linkObject.key == VectorUint256Key())
+        if (linkObject.key == CVDXF_Data::VectorUint256Key())
         {
             ::FromVector(linkObject.data, retVal);
         }
@@ -1448,8 +1505,7 @@ UniValue CMMRDescriptor::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
 
-    ret = ((CVDXF *)this)->ToUniValue();
-
+    ret.pushKV("version", (int64_t)version);
     ret.pushKV("objecthashtype", (int32_t)objectHashType);
     ret.pushKV("mmrhashtype", (int32_t)mmrHashType);
     ret.pushKV("mmrroot", mmrRoot.ToUniValue());
@@ -1462,4 +1518,11 @@ UniValue CMMRDescriptor::ToUniValue() const
     }
     ret.pushKV("datadescriptors", dataDescriptorsUni);
     return ret;
+}
+
+UniValue CVDXFMMRDescriptor::ToUniValue() const
+{
+    UniValue obj = ((CVDXF_Data *)this)->ToUniValue();
+    obj.pushKV("mmr", mmrDescriptor.ToUniValue());
+    return obj;
 }

@@ -597,6 +597,9 @@ public:
 
     UniValue ToUniValue() const;
 
+    template <typename Stream>
+    static UniValue VDXFDataToUniValue(Stream &ss, bool *pSuccess=nullptr);
+
     void UpgradeVersion(uint32_t height)
     {
         // to make the code simpler, these are just done in order, and more than one may be done if an ID

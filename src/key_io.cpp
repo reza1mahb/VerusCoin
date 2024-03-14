@@ -1118,6 +1118,14 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &_obj)
             ss << VARINT(GetSerializeSize(ss, contentRemove));
             ss << contentRemove;
         }
+        else if (objTypeKey == CVDXF_Data::CrossChainDataRefKey())
+        {
+            CVDXFDataRef dataRef(oneValValues[k]);
+            ss << objTypeKey;
+            ss << VARINT(dataRef.version);
+            ss << VARINT(GetSerializeSize(ss, dataRef.ref));
+            ss << dataRef.ref;
+        }
         else
         {
             LogPrint("contentmap", "%s: invalid or unrecognized vdxfkey for object type: %s\n", __func__, EncodeDestination(CIdentityID(objTypeKey)).c_str());
