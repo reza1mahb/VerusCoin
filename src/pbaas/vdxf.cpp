@@ -16,6 +16,7 @@
 #include "zcash/NoteEncryption.hpp"
 #include "librustzcash.h"
 #include "key_io.h"
+#include "pbaas/identity.h"
 
 std::string CVDXF::DATA_KEY_SEPARATOR = "::";
 

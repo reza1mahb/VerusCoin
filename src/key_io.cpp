@@ -1120,11 +1120,35 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &_obj)
         }
         else if (objTypeKey == CVDXF_Data::CrossChainDataRefKey())
         {
-            CVDXFDataRef dataRef(oneValValues[k]);
+            CCrossChainDataRef dataRef(oneValValues[k]);
             ss << objTypeKey;
-            ss << VARINT(dataRef.version);
-            ss << VARINT(GetSerializeSize(ss, dataRef.ref));
-            ss << dataRef.ref;
+            ss << VARINT((int32_t)CVDXF_Data::DEFAULT_VERSION);
+            ss << VARINT(GetSerializeSize(ss, dataRef));
+            ss << dataRef;
+        }
+        else if (objTypeKey == CVDXF_Data::DataDescriptorKey())
+        {
+            CDataDescriptor descr(oneValValues[k]);
+            ss << objTypeKey;
+            ss << VARINT(descr.version);
+            ss << VARINT(GetSerializeSize(ss, descr));
+            ss << descr;
+        }
+        else if (objTypeKey == CVDXF_Data::MMRDescriptorKey())
+        {
+            CMMRDescriptor descr(oneValValues[k]);
+            ss << objTypeKey;
+            ss << VARINT(descr.version);
+            ss << VARINT(GetSerializeSize(ss, descr));
+            ss << descr;
+        }
+        else if (objTypeKey == CVDXF_Data::MMRSignatureDataKey())
+        {
+            CMMRSignatureData sigData(oneValValues[k]);
+            ss << objTypeKey;
+            ss << VARINT(sigData.version);
+            ss << VARINT(GetSerializeSize(ss, sigData));
+            ss << sigData;
         }
         else
         {

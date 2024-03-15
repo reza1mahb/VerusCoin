@@ -1007,23 +1007,14 @@ bool CPBaaSEvidenceRef::GetOutputData(std::vector<unsigned char> &data, bool che
         {
             if (evidenceData.evidence.chainObjects[objectNum]->objectType == CHAINOBJ_EVIDENCEDATA)
             {
-                if (startOffset > 0 || endOffset > 0)
+                try
                 {
                     data = ((CChainObject<CEvidenceData> *)evidenceData.evidence.chainObjects[objectNum])->object.dataVec;
                     return true;
                 }
-                else
+                catch(...)
                 {
-                    try
-                    {
-                        data = std::vector<unsigned char>(((CChainObject<CEvidenceData> *)evidenceData.evidence.chainObjects[objectNum])->object.dataVec.data(),
-                                                        ((CChainObject<CEvidenceData> *)evidenceData.evidence.chainObjects[objectNum])->object.dataVec.data() + ((endOffset == 0) ? ((CChainObject<CEvidenceData> *)evidenceData.evidence.chainObjects[objectNum])->object.dataVec.size() : endOffset));
-                        return true;
-                    }
-                    catch(...)
-                    {
-                        return false;
-                    }
+                    return false;
                 }
             }
         }

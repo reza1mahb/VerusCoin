@@ -464,7 +464,7 @@ public:
     }
     static std::string CrossChainDataRefKeyName()
     {
-        return "vrsc::data.type.object.crosschainutxoref";
+        return "vrsc::data.type.object.crosschaindataref";
     }
     static uint160 CrossChainDataRefKey()
     {
@@ -494,7 +494,7 @@ public:
     }
     static std::string DataDescriptorKeyName()
     {
-        return "vrsc::data.type.object.crosschaindataref";
+        return "vrsc::data.type.object.datadescriptor";
     }
     static uint160 DataDescriptorKey()
     {

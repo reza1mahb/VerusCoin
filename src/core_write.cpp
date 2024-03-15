@@ -1153,8 +1153,7 @@ CPBaaSEvidenceRef::CPBaaSEvidenceRef(const UniValue &uni) :
     output(CUTXORef(find_value(uni, "output"))),
     systemID(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "systemid"))))),
     objectNum(uni_get_int(find_value(uni, "objectnum"), 0)),
-    startOffset(uni_get_int64(find_value(uni, "startoffset"), 0)),
-    endOffset(uni_get_int64(find_value(uni, "endoffset"), 0))
+    subObject(uni_get_int64(find_value(uni, "subobject"), 0))
 {
     SetFlags();
 }
@@ -1171,8 +1170,7 @@ UniValue CPBaaSEvidenceRef::ToUniValue() const
         obj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
     }
     obj.pushKV("objectnum", objectNum);
-    obj.pushKV("startoffset", startOffset);
-    obj.pushKV("endoffset", endOffset);
+    obj.pushKV("subobject", subObject);
     return obj;
 }
 
@@ -1338,183 +1336,6 @@ UniValue CPrincipal::ToUniValue() const
     }
     obj.push_back(Pair("primaryaddresses", primaryAddressesUni));
     obj.push_back(Pair("minimumsignatures", minSigs));
-    return obj;
-}
-
-template <typename Stream>
-UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bool *pSuccess)
-{
-    UniValue objectUni(UniValue::VNULL);
-    try
-    {
-        uint160 checkVal;
-        uint32_t version;
-        int64_t objSize;
-        ss >> checkVal;
-
-        if (checkVal == CVDXF_Data::DataCurrencyMapKey())
-        {
-            CCurrencyValueMap oneCurrencyMap;
-            ss >> VARINT(version);
-            ss >> VARINT(objSize);
-            ss >> oneCurrencyMap;
-            if (oneCurrencyMap.IsValid())
-            {
-                objectUni = oneCurrencyMap.ToUniValue();
-            }
-        }
-        else if (checkVal == CVDXF_Data::DataRatingsKey())
-        {
-            CRating oneRatingObj;
-            ss >> VARINT(version);
-            ss >> VARINT(objSize);
-            ss >> oneRatingObj;
-            if (oneRatingObj.IsValid())
-            {
-                objectUni = oneRatingObj.ToUniValue();
-            }
-        }
-        else if (checkVal == CVDXF_Data::DataTransferDestinationKey())
-        {
-            CTransferDestination oneTransferDest;
-            ss >> VARINT(version);
-            ss >> VARINT(objSize);
-            ss >> oneTransferDest;
-            if (oneTransferDest.IsValid())
-            {
-                objectUni = oneTransferDest.ToUniValue();
-            }
-        }
-        else if (checkVal == CVDXF_Data::ContentMultiMapRemoveKey())
-        {
-            CContentMultiMapRemove oneContentRemove;
-            ss >> VARINT(version);
-            ss >> VARINT(objSize);
-            ss >> oneContentRemove;
-            if (oneContentRemove.IsValid())
-            {
-                objectUni = oneContentRemove.ToUniValue();
-            }
-        }
-        else if (checkVal == CVDXF_Data::DataStringKey())
-        {
-            std::string stringVal;
-            ss >> VARINT(version);
-            ss >> VARINT(objSize);
-            ss >> stringVal;
-            objectUni = stringVal;
-        }
-        else if (checkVal == CVDXF_Data::DataByteVectorKey())
-        {
-            std::vector<unsigned char> vecVal;
-            ss >> VARINT(version);
-            ss >> VARINT(objSize);
-            ss >> vecVal;
-            objectUni = HexBytes(&(vecVal[0]), vecVal.size());
-        }
-        else if (checkVal == CVDXF_Data::CrossChainDataRefKey())
-        {
-            CCrossChainDataRef dataRef;
-            ss >> VARINT(version);
-            ss >> VARINT(objSize);
-            ss >> dataRef;
-            objectUni = dataRef.ToUniValue();
-        }
-
-        // if we have an object that we recognized, encode it
-        if (!objectUni.isNull())
-        {
-            if (pSuccess)
-            {
-                *pSuccess = true;
-            }
-        }
-        else
-        {
-            if (pSuccess)
-            {
-                *pSuccess = false;
-            }
-        }
-    }
-    catch (...)
-    {
-        if (pSuccess)
-        {
-            *pSuccess = false;
-        }
-    }
-    return objectUni;
-}
-
-UniValue CIdentity::ToUniValue() const
-{
-    UniValue obj = ((CPrincipal *)this)->ToUniValue();
-    obj.push_back(Pair("name", name));
-
-    obj.push_back(Pair("identityaddress", EncodeDestination(CIdentityID(GetID()))));
-    obj.push_back(Pair("parent", EncodeDestination(CIdentityID(parent))));
-    obj.push_back(Pair("systemid", EncodeDestination(CIdentityID(systemID))));
-
-    UniValue hashes(UniValue::VOBJ);
-    for (auto &entry : contentMap)
-    {
-        hashes.push_back(Pair(entry.first.GetHex(), entry.second.GetHex()));
-    }
-    obj.push_back(Pair("contentmap", hashes));
-
-    if (nVersion >= VERSION_PBAAS)
-    {
-        hashes = UniValue(UniValue::VOBJ);
-        UniValue entryArr(UniValue::VARR);
-        uint160 lastHash;
-        for (auto &entry : contentMultiMap)
-        {
-            if (entry.first.IsNull())
-            {
-                continue;
-            }
-            else if (entry.first != lastHash && !lastHash.IsNull())
-            {
-                hashes.push_back(Pair(EncodeDestination(CIdentityID(lastHash)), entryArr));
-                entryArr = UniValue(UniValue::VARR);
-            }
-            lastHash = entry.first;
-
-            // if we have room for a known 20 byte value, check to see if it is one
-            CDataStream ss(entry.second, PROTOCOL_VERSION, SER_DISK);
-            bool objOut = false;
-            UniValue entryUni(UniValue::VOBJ);
-
-            while (ss.size() > sizeof(uint160))
-            {
-                UniValue objectUni = VDXFDataToUniValue(ss, &objOut);
-                if (objOut)
-                {
-                    entryArr.push_back(entryUni);
-                }
-                else
-                {
-                    entryArr.push_back(HexBytes(&(entry.second[0]), entry.second.size()));
-                }
-            }
-        }
-        if (!lastHash.IsNull())
-        {
-            hashes.push_back(Pair(EncodeDestination(CIdentityID(lastHash)), entryArr));
-        }
-        obj.push_back(Pair("contentmultimap", hashes));
-    }
-
-    obj.push_back(Pair("revocationauthority", EncodeDestination(CTxDestination(CIdentityID(revocationAuthority)))));
-    obj.push_back(Pair("recoveryauthority", EncodeDestination(CTxDestination(CIdentityID(recoveryAuthority)))));
-    if (privateAddresses.size())
-    {
-        obj.push_back(Pair("privateaddress", EncodePaymentAddress(privateAddresses[0])));
-    }
-
-    obj.push_back(Pair("timelock", (int32_t)unlockAfter));
-
     return obj;
 }
 
@@ -1712,6 +1533,226 @@ UniValue CAdvancedNameReservation::ToUniValue() const
     uint160 ParentID = parent;
     ret.push_back(Pair("nameid", EncodeDestination(CIdentity::GetID(name, ParentID))));
     return ret;
+}
+
+// returns 1 object or none if no valid, recognize object at front of stream
+template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bool *pSuccess)
+{
+    UniValue objectUni(UniValue::VNULL);
+    try
+    {
+        uint160 checkVal;
+        uint32_t version;
+        int64_t objSize;
+        ss >> checkVal;
+
+        if (checkVal == CVDXF_Data::DataCurrencyMapKey())
+        {
+            CCurrencyValueMap oneCurrencyMap;
+            ss >> VARINT(version);
+            ss >> VARINT(objSize);
+            ss >> oneCurrencyMap;
+            if (oneCurrencyMap.IsValid())
+            {
+                objectUni = oneCurrencyMap.ToUniValue();
+            }
+        }
+        else if (checkVal == CVDXF_Data::DataRatingsKey())
+        {
+            CRating oneRatingObj;
+            ss >> VARINT(version);
+            ss >> VARINT(objSize);
+            ss >> oneRatingObj;
+            if (oneRatingObj.IsValid())
+            {
+                objectUni = oneRatingObj.ToUniValue();
+            }
+        }
+        else if (checkVal == CVDXF_Data::DataTransferDestinationKey())
+        {
+            CTransferDestination oneTransferDest;
+            ss >> VARINT(version);
+            ss >> VARINT(objSize);
+            ss >> oneTransferDest;
+            if (oneTransferDest.IsValid())
+            {
+                objectUni = oneTransferDest.ToUniValue();
+            }
+        }
+        else if (checkVal == CVDXF_Data::ContentMultiMapRemoveKey())
+        {
+            CContentMultiMapRemove oneContentRemove;
+            ss >> VARINT(version);
+            ss >> VARINT(objSize);
+            ss >> oneContentRemove;
+            if (oneContentRemove.IsValid())
+            {
+                objectUni = oneContentRemove.ToUniValue();
+            }
+        }
+        else if (checkVal == CVDXF_Data::DataStringKey())
+        {
+            std::string stringVal;
+            ss >> VARINT(version);
+            ss >> VARINT(objSize);
+            ss >> stringVal;
+            objectUni = stringVal;
+        }
+        else if (checkVal == CVDXF_Data::DataByteVectorKey())
+        {
+            std::vector<unsigned char> vecVal;
+            ss >> VARINT(version);
+            ss >> VARINT(objSize);
+            ss >> vecVal;
+            objectUni = HexBytes(&(vecVal[0]), vecVal.size());
+        }
+        else if (checkVal == CVDXF_Data::CrossChainDataRefKey())
+        {
+            CCrossChainDataRef dataRef;
+            ss >> VARINT(version);
+            ss >> VARINT(objSize);
+            ss >> dataRef;
+            objectUni = dataRef.ToUniValue();
+        }
+        else if (checkVal == CVDXF_Data::DataDescriptorKey())
+        {
+            CDataDescriptor dataDescriptor;
+            ss >> VARINT(version);
+            ss >> VARINT(objSize);
+            ss >> dataDescriptor;
+            objectUni = dataDescriptor.ToUniValue();
+        }
+        else if (checkVal == CVDXF_Data::MMRDescriptorKey())
+        {
+            CMMRDescriptor mmrDescriptor;
+            ss >> VARINT(version);
+            ss >> VARINT(objSize);
+            ss >> mmrDescriptor;
+            objectUni = mmrDescriptor.ToUniValue();
+        }
+        else if (checkVal == CVDXF_Data::MMRSignatureDataKey())
+        {
+            CMMRSignatureData sigData;
+            ss >> VARINT(version);
+            ss >> VARINT(objSize);
+            ss >> sigData;
+            objectUni = sigData.ToUniValue();
+        }
+
+        // if we have an object that we recognized, encode it
+        if (!objectUni.isNull())
+        {
+            if (pSuccess)
+            {
+                *pSuccess = true;
+            }
+        }
+        else
+        {
+            if (pSuccess)
+            {
+                *pSuccess = false;
+            }
+        }
+    }
+    catch (...)
+    {
+        if (pSuccess)
+        {
+            *pSuccess = false;
+        }
+    }
+    return objectUni;
+}
+
+UniValue CIdentity::VDXFDataToUniValue(const std::vector<unsigned char> &dataVch)
+{
+    UniValue entryArr(UniValue::VARR);
+
+    size_t bytesLeft = dataVch.size();
+    CDataStream ss(dataVch, SER_NETWORK, PROTOCOL_VERSION);
+    while (bytesLeft > sizeof(uint160))
+    {
+        bool objOut = false;
+        UniValue objectUni = VDXFDataToUniValue(ss, &objOut);
+        bytesLeft = ss.size();
+        if (objOut)
+        {
+            entryArr.push_back(objectUni);
+        }
+        else
+        {
+            // add the remaining data as a hex string
+            entryArr.push_back(HexBytes(dataVch.data() + (dataVch.size() - (bytesLeft + sizeof(uint160))), bytesLeft + sizeof(uint160)));
+            bytesLeft = 0;
+            break;
+        }
+    }
+    if (bytesLeft <= sizeof(uint160))
+    {
+        entryArr.push_back(HexBytes(dataVch.data() + (dataVch.size() - bytesLeft), bytesLeft));
+    }
+    return entryArr.size() == 0 ? UniValue(UniValue::VNULL) : (entryArr.size() == 1 ? entryArr[0] : entryArr);
+}
+
+UniValue CIdentity::ToUniValue() const
+{
+    UniValue obj = ((CPrincipal *)this)->ToUniValue();
+    obj.push_back(Pair("name", name));
+
+    obj.push_back(Pair("identityaddress", EncodeDestination(CIdentityID(GetID()))));
+    obj.push_back(Pair("parent", EncodeDestination(CIdentityID(parent))));
+    obj.push_back(Pair("systemid", EncodeDestination(CIdentityID(systemID))));
+
+    UniValue hashes(UniValue::VOBJ);
+    for (auto &entry : contentMap)
+    {
+        hashes.push_back(Pair(entry.first.GetHex(), entry.second.GetHex()));
+    }
+    obj.push_back(Pair("contentmap", hashes));
+
+    if (nVersion >= VERSION_PBAAS)
+    {
+        hashes = UniValue(UniValue::VOBJ);
+        UniValue entryArr(UniValue::VARR);
+        uint160 lastHash;
+        for (auto &entry : contentMultiMap)
+        {
+            if (entry.first.IsNull())
+            {
+                continue;
+            }
+            else if (entry.first != lastHash && !lastHash.IsNull())
+            {
+                hashes.push_back(Pair(EncodeDestination(CIdentityID(lastHash)), entryArr));
+                entryArr = UniValue(UniValue::VARR);
+            }
+            lastHash = entry.first;
+
+            UniValue entryUni(UniValue::VOBJ);
+            entryUni = VDXFDataToUniValue(entry.second);
+            if (!entryUni.isNull())
+            {
+                entryArr.push_back(entryUni);
+            }
+        }
+        if (!lastHash.IsNull())
+        {
+            hashes.push_back(Pair(EncodeDestination(CIdentityID(lastHash)), entryArr));
+        }
+        obj.push_back(Pair("contentmultimap", hashes));
+    }
+
+    obj.push_back(Pair("revocationauthority", EncodeDestination(CTxDestination(CIdentityID(revocationAuthority)))));
+    obj.push_back(Pair("recoveryauthority", EncodeDestination(CTxDestination(CIdentityID(recoveryAuthority)))));
+    if (privateAddresses.size())
+    {
+        obj.push_back(Pair("privateaddress", EncodePaymentAddress(privateAddresses[0])));
+    }
+
+    obj.push_back(Pair("timelock", (int32_t)unlockAfter));
+
+    return obj;
 }
 
 bool IsData(opcodetype opcode)

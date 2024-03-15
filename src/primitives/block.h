@@ -2421,19 +2421,18 @@ public:
     uint32_t version;
     uint32_t flags;
     CUTXORef output;
-    int32_t objectNum;
-    int64_t startOffset;
-    int64_t endOffset;
+    int32_t objectNum;              // object number in the notary evidence output
+    int32_t subObject;
     uint160 systemID;
 
-    CPBaaSEvidenceRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), flags(FLAG_ISEVIDENCE), startOffset(0), endOffset(0) {}
-    CPBaaSEvidenceRef(const COutPoint &op, int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, const uint160 &SystemID=uint160(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
-        version(Version), flags(Flags), output(op), systemID(SystemID), objectNum(ObjectNum), startOffset(StartOffset), endOffset(EndOffset)
+    CPBaaSEvidenceRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), flags(FLAG_ISEVIDENCE), subObject(0) {}
+    CPBaaSEvidenceRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+        version(Version), flags(Flags), output(op), systemID(SystemID), objectNum(ObjectNum), subObject(SubObject)
     {
         SetFlags();
     }
-    CPBaaSEvidenceRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, const uint160 &SystemID=uint160(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
-        version(Version), flags(Flags), output(HashIn, nIn), systemID(SystemID), objectNum(ObjectNum), startOffset(StartOffset), endOffset(EndOffset)
+    CPBaaSEvidenceRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+        version(Version), flags(Flags), output(HashIn, nIn), systemID(SystemID), objectNum(ObjectNum), subObject(SubObject)
     {
         SetFlags();
     }
@@ -2466,8 +2465,7 @@ public:
         READWRITE(VARINT(flags));
         READWRITE(output);
         READWRITE(VARINT(objectNum));
-        READWRITE(VARINT(startOffset));
-        READWRITE(VARINT(endOffset));
+        READWRITE(VARINT(subObject));
         if (flags & FLAG_HAS_SYSTEM)
         {
             READWRITE(systemID);
@@ -2642,11 +2640,11 @@ public:
     boost::variant<CPBaaSEvidenceRef, CIdentityMultimapRef, CURLRef> ref;
 
     CCrossChainDataRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : ref(CPBaaSEvidenceRef(Version)) {}
-    CCrossChainDataRef(const COutPoint &op, int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
-        ref(CPBaaSEvidenceRef(op, ObjectNum, StartOffset, EndOffset, SystemID, Flags, Version)) {}
+    CCrossChainDataRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+        ref(CPBaaSEvidenceRef(op, ObjectNum, SubObject, SystemID, Flags, Version)) {}
 
-    CCrossChainDataRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
-        ref(CPBaaSEvidenceRef(HashIn, nIn, ObjectNum, StartOffset, EndOffset, SystemID, Flags, Version)) {}
+    CCrossChainDataRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+        ref(CPBaaSEvidenceRef(HashIn, nIn, ObjectNum, SubObject, SystemID, Flags, Version)) {}
 
     CCrossChainDataRef(const CIdentityID &ID, const uint160 &Key, uint32_t HeightStart=0, uint32_t HeightEnd=0, const uint256 &DataHash=uint256(), const uint160 &SystemID=uint160(), bool keepDeleted=false, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
         ref(CIdentityMultimapRef(ID, Key, HeightStart, HeightEnd, DataHash, SystemID, keepDeleted, Version)) {}
@@ -2761,11 +2759,11 @@ public:
     CCrossChainDataRef ref;
 
     CVDXFDataRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : ref(Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
-    CVDXFDataRef(const COutPoint &op, int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
-        ref(op, ObjectNum, StartOffset, EndOffset, SystemID, Flags, Version) {}
+    CVDXFDataRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+        ref(op, ObjectNum, SubObject, SystemID, Flags, Version) {}
 
-    CVDXFDataRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int64_t StartOffset=0, int64_t EndOffset=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
-        ref(HashIn, nIn, ObjectNum, StartOffset, EndOffset, SystemID, Flags, Version) {}
+    CVDXFDataRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+        ref(HashIn, nIn, ObjectNum, SubObject, SystemID, Flags, Version) {}
 
     CVDXFDataRef(const CIdentityID &ID, const uint160 &Key, uint32_t HeightStart=0, uint32_t HeightEnd=0, const uint256 &DataHash=uint256(), const uint160 &SystemID=uint160(), bool keepDeleted=false, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
         ref(ID, Key, HeightStart, HeightEnd, DataHash, SystemID, keepDeleted, Version) {}

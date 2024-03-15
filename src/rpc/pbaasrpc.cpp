@@ -6614,12 +6614,16 @@ std::vector<SaplingNoteEntry> find_unspent_notes(const libzcash::PaymentAddress 
 
     for (auto entry : saplingEntries) {
         retVal.push_back(entry);
-        std::string data(entry.memo.begin(), entry.memo.end());
-        LogPrint("zrpcunsafe", "found unspent Sapling note (txid=%s, vShieldedSpend=%d, amount=%s, memo=%s)\n",
-            entry.op.hash.ToString().substr(0, 10),
-            entry.op.n,
-            ValueFromAmount(entry.note.value()).write(),
-            HexStr(data).substr(0, 10));
+        if (LogAcceptCategory("zrpcunsafe"))
+        {
+            std::vector<unsigned char> rawData(entry.memo.begin(), entry.memo.end());
+            UniValue memoUni = CIdentity::VDXFDataToUniValue(rawData);
+            LogPrint("zrpcunsafe", "found unspent Sapling note (txid=%s, vShieldedSpend=%d, amount=%s, memo=%s)\n",
+                     entry.op.hash.ToString().substr(0, 10).c_str(),
+                     entry.op.n,
+                     ValueFromAmount(entry.note.value()).write().c_str(),
+                     memoUni.write(1,2).c_str());
+        }
     }
 
     if (retVal.empty()) {
@@ -7304,7 +7308,8 @@ UniValue makeoffer(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Currency name must be valid with no leading or trailing spaces");
             }
             CAmount destinationAmount = AmountFromValue(find_value(forValue, "amount"));
-            auto memoStr = TrimSpaces(uni_get_str(find_value(forValue, "memo")));
+            auto memoUni = find_value(forValue, "memo");
+            auto memoStr = TrimSpaces(uni_get_str(memoUni));
 
             if (hasZDest && newCurrencyID != ASSETCHAINS_CHAINID)
             {
@@ -7325,13 +7330,31 @@ UniValue makeoffer(const UniValue& params, bool fHelp)
                     // make a hex string out of the chars without the "#"
                     memoStr = HexBytes((const unsigned char *)&(memoStr[1]), memoStr.size());
                 }
-
-                if (memoStr.size() && !IsHex(memoStr))
+                if (!memoStr.empty())
                 {
-                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Expected memo data in hexadecimal format or as a non-zero length text string, starting with \"#\".");
+                    memoUni = memoStr;
+                }
+
+                auto memoVec = VectorEncodeVDXFUni(memoUni);
+
+                if (memoVec.size() > ZC_MEMO_SIZE)
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Memo data is too large, consider creating a data transaction first and referencing it");
                 }
 
                 std::array<unsigned char, ZC_MEMO_SIZE> hexMemo;
+
+                for (int i = 0; i < ZC_MEMO_SIZE; i++)
+                {
+                    if (i < memoVec.size())
+                    {
+                        hexMemo[i] = memoVec[i];
+                    }
+                    else
+                    {
+                        hexMemo[i] = 0;
+                    }
+                }
 
                 if (memoStr.length() > ZC_MEMO_SIZE*2) {
                     throw JSONRPCError(RPC_INVALID_PARAMETER,  strprintf("Size of memo is larger than maximum allowed %d", ZC_MEMO_SIZE));
@@ -9658,7 +9681,8 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
             auto exportId = uni_get_bool(find_value(uniOutputs[i], "exportid"));
             auto exportCurrency = uni_get_bool(find_value(uniOutputs[i], "exportcurrency"));
             auto refundToStr = TrimSpaces(uni_get_str(find_value(uniOutputs[i], "refundto")));
-            auto memoStr = uni_get_str(find_value(uniOutputs[i], "memo"));
+            auto memoUni = find_value(uniOutputs[i], "memo");
+            auto memoStr = uni_get_str(memoUni);
             UniValue dataUni;
             //dataUni = find_value(uniOutputs[i], "data");
             bool preConvert = uni_get_bool(find_value(uniOutputs[i], "preconvert"));
@@ -10230,7 +10254,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                 // if this is a data output, make one or more auxilliary data outputs
                 if (dataUni.isObject())
                 {
-                    if (!memoStr.empty())
+                    if (!memoUni.isNull())
                     {
                         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid combination of memo and data parameters for data output #" + std::to_string(i));
                     }
@@ -10269,11 +10293,11 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
 
                     // now, we will store the encrypted signature, if present, and MMRDesc in transparent outputs and put the link inside the z-memo
                     CNotaryEvidence evidenceData(CNotaryEvidence::TYPE_IMPORT_PROOF);
+                    evidenceData.evidence << CEvidenceData(::AsVector(MMRDesc));
                     if (SignatureData.IsValid())
                     {
                         evidenceData.evidence << CEvidenceData(::AsVector(SignatureData));
                     }
-                    evidenceData.evidence << CEvidenceData(::AsVector(MMRDesc));
 
                     CCcontract_info CC;
                     CCcontract_info *cp;
@@ -10291,8 +10315,14 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                         throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence script in data output #" + std::to_string(i));
                     }
 
-                    CCrossChainDataRef memoLink(uint256(), tOutputs.size(), 0);
+                    CVDXFDataRef memoLink(uint256(), tOutputs.size(), 0);
                     std::vector<unsigned char> memoData = ::AsVector(memoLink);
+                    if (SignatureData.IsValid())
+                    {
+                        memoLink = CVDXFDataRef(uint256(), tOutputs.size(), 0, 1);
+                        std::vector<unsigned char> memoSig = ::AsVector(memoLink);
+                        memoData.insert(memoData.begin(), memoSig.begin(), memoSig.end());
+                    }
                     memoStr = HexBytes(memoData.data(), memoData.size());
 
                     // the value should be considered for reduction
@@ -10328,6 +10358,17 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                 {
                     // make a hex string out of the chars without the "#"
                     memoStr = HexBytes((const unsigned char *)&(memoStr[1]), memoStr.size());
+                }
+
+                if (!memoStr.empty())
+                {
+                    memoUni = memoStr;
+                }
+
+                if (!memoUni.isNull())
+                {
+                    auto memoVec = VectorEncodeVDXFUni(memoUni);
+                    memoStr = HexBytes((const unsigned char *)&(memoVec[1]), memoVec.size());
                 }
 
                 if (memoStr.size() && !IsHex(memoStr))

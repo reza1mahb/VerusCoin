@@ -4546,7 +4546,10 @@ UniValue z_listunspent(const UniValue& params, bool fHelp)
             obj.push_back(Pair("spendable", hasSaplingSpendingKey));
             obj.push_back(Pair("address", EncodePaymentAddress(entry.address)));
             obj.push_back(Pair("amount", ValueFromAmount(CAmount(entry.note.value())))); // note.value() is equivalent to plaintext.value()
-            obj.push_back(Pair("memo", HexStr(entry.memo)));
+            std::vector<unsigned char> rawData(entry.memo.begin(), entry.memo.end());
+            UniValue memoUni = CIdentity::VDXFDataToUniValue(rawData);
+
+            obj.push_back(Pair("memo", memoUni.write(1,2)));
             if (hasSaplingSpendingKey) {
                 obj.push_back(Pair("change", pwalletMain->IsNoteSaplingChange(nullifierSet, entry.address, entry.op)));
             }
@@ -5659,7 +5662,10 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
             {
                 obj.push_back(Pair("memostr", memoMessage));
             }
-            obj.push_back(Pair("memo", HexStr(entry.memo)));
+            std::vector<unsigned char> rawData(entry.memo.begin(), entry.memo.end());
+            UniValue memoUni = CIdentity::VDXFDataToUniValue(rawData);
+            obj.push_back(Pair("memo", memoUni.write(1,2)));
+
             obj.push_back(Pair("outindex", (int)entry.op.n));
             obj.push_back(Pair("confirmations", entry.confirmations));
             if (hasSpendingKey) {
@@ -6107,7 +6113,7 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
         entry.push_back(Pair("address", EncodePaymentAddress(pa)));
         entry.push_back(Pair("value", ValueFromAmount(notePt.value())));
         entry.push_back(Pair("valueZat", notePt.value()));
-        entry.push_back(Pair("memo", HexStr(memo)));
+
         if (memo[0] <= 0xf4) {
             auto end = std::find_if(memo.rbegin(), memo.rend(), [](unsigned char v) { return v != 0; });
             std::string memoStr(memo.begin(), end.base());
@@ -6116,6 +6122,11 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
                 entry.push_back(Pair("memoStr", memoStr));
             }
         }
+
+        std::vector<unsigned char> rawData(memo.begin(), memo.end());
+        UniValue memoUni = CIdentity::VDXFDataToUniValue(rawData);
+        entry.push_back(Pair("memo", memoUni.write(1,2)));
+
         outputs.push_back(entry);
     }
 
