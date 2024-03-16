@@ -697,6 +697,7 @@ UniValue CSaltedData::ToUniValue() const
 CDataDescriptor::CDataDescriptor(const UniValue &uni) :
     version(uni_get_int64(find_value(uni, "version"))),
     flags(uni_get_int64(find_value(uni, "flags"))),
+    label(TrimSpaces(uni_get_str(find_value(uni, "label")), true, "")),
     linkData(ParseHex(uni_get_str(find_value(uni, "linkdata")))),
     salt(ParseHex(uni_get_str(find_value(uni, "salt")))),
     epk(ParseHex(uni_get_str(find_value(uni, "epk")))),
@@ -952,19 +953,23 @@ UniValue CDataDescriptor::ToUniValue() const
     ret.pushKV("flags", Flags);
     ret.pushKV("linkdata", HexBytes(linkData.data(), linkData.size()));
 
-    if (Flags & FLAG_SALT_PRESENT)
+    if (HasLabel())
+    {
+        ret.pushKV("label", TrimSpaces(label, true, ""));
+    }
+    if (HasSalt())
     {
         ret.pushKV("salt", HexBytes(salt.data(), salt.size()));
     }
-    if (Flags & FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT)
+    if (HasEPK())
     {
         ret.pushKV("epk", HexBytes(epk.data(), epk.size()));
     }
-    if (Flags & FLAG_INCOMING_VIEWING_KEY_PRESENT)
+    if (HasIVK())
     {
         ret.pushKV("ivk", HexBytes(ivk.data(), ivk.size()));
     }
-    if (Flags & FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT)
+    if (HasSSK())
     {
         ret.pushKV("ssk", HexBytes(ssk.data(), ssk.size()));
     }
@@ -1096,7 +1101,7 @@ UniValue CVDXFMMRSignature::ToUniValue() const
 }
 
 CMMRDescriptor::CMMRDescriptor(const UniValue &uni) :
-    version(uni_get_int64(find_value(uni, "version"), DEFAULT_VERSION)),
+    version(uni_get_int64(find_value(uni, "version"))),
     objectHashType((CVDXF::EHashTypes)uni_get_int(find_value(uni, "objecthashtype"))),
     mmrHashType((CVDXF::EHashTypes)uni_get_int(find_value(uni, "mmrhashtype"))),
     mmrRoot(find_value(uni, "mmrroot")),

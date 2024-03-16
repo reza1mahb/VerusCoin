@@ -1004,7 +1004,7 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &_obj)
         auto retVec = DecodeBase64(serializedBase64.c_str(), &isValid);
         return isValid ? retVec : std::vector<unsigned char>();
     }
-    std::string serializedMessage = uni_get_str(find_value(obj, "serializedmessage"));
+    std::string serializedMessage = uni_get_str(find_value(obj, "message"));
     if (!serializedMessage.empty())
     {
         ss << uni_get_str(serializedMessage);

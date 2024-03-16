@@ -1372,6 +1372,7 @@ size_t GetDataMessage(const UniValue &uni, CVDXF::EHashTypes hashType, std::vect
 {
     auto strFileName = uni_get_str(find_value(uni, "filename"));
     auto messageUni = find_value(uni, "message");
+    auto vdxfUni = find_value(uni, "vdxfdata");
     auto strDataHash = uni_get_str(find_value(uni, "datahash"));
 
     if (!strDataHash.empty())
@@ -1388,9 +1389,20 @@ size_t GetDataMessage(const UniValue &uni, CVDXF::EHashTypes hashType, std::vect
         dataVec.insert(dataVec.end(), dataHash.begin(), dataHash.end());
         isHash = true;
     }
+    else if (!vdxfUni.isNull())
+    {
+        dataVec = VectorEncodeVDXFUni(vdxfUni);
+    }
     else if (!messageUni.isNull())
     {
-        dataVec = VectorEncodeVDXFUni(messageUni);
+        if (messageUni.isStr())
+        {
+            dataVec = VectorEncodeVDXFUni(uni);
+        }
+        else
+        {
+            dataVec = VectorEncodeVDXFUni(messageUni);
+        }
     }
     else if (!strFileName.empty())
     {
@@ -1419,10 +1431,11 @@ UniValue signdata(const UniValue& params, bool fHelp)
             "           \"prefixstring\":\"extra string that is hashed during signature and must be supplied for verification\",\n"
             "             \"filename\":\"filepath/filename\" |\n"
             "             \"message\":\"any message\" |\n"
+            "             \"vdxfdata\":\"vdxf encoded data\" |\n"
             "             \"messagehex\":\"hexdata\" |\n"
             "             \"messagebase64\":\"base64data\" |\n"
             "             \"datahash\":\"256bithex\" |\n"
-            "             \"mmrdata\":[{\"filename | serializedhex | serializedbase64 | datahash\":\"str\"} | \"strdata\"],\n"
+            "             \"mmrdata\":[{\"filename | serializedhex | serializedbase64 | vdxfdata | message | datahash\":\"str\"} | \"strdata\"],\n"
             "             \"mmrsalt\":[array of \"salt\" to match the mmrdata],\n"
             "             \"mmrhash\":\"sha256\" | \"sha256D\" | \"blake2b\" | \"keccak256\",\n"
             "             \"priormmr\":\"[array of mmr hashes prior to this data and optional prior tx reference for rev-linked MMR data]\","
@@ -1440,7 +1453,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
             "{\n"
             "  \"address\":\"t-addr or identity\"                               (string, required) The transparent address or identity to use for signing.\n"
             "  \"filename\" | \"message\" | \"messagehex\" | \"messagebase64\" | \"datahash\" (string, optional) Data to sign\n"
-            "  \"mmrdata\":[{\"filename | serializedhex | serializedbase64 | datahash\":\"str\"}], (array, optional) Alternate to single data parameters, this enables an MMR signing\n"
+            "  \"mmrdata\":[{\"filename | data | message | serializedhex | serializedbase64 | datahash\":\"str\"}], (array, optional) Alternate to single data parameters, this enables an MMR signing\n"
             "             \"mmrsalt\":[\"salt\":\"str\"],                       (string, optional) Protects privacy of leaf nodes of the MMR\n"
             "             \"mmrhashtype\":\"sha256\" | \"sha256D\" | \"blake2b\" | \"keccak256\", (string, optional) Default is blake2b\n"
             "             \"priormmr\":\"[{\"idxhash\":"",\"utxoref\":{}}]\",   (array, optional)  When growing an MMR, the prior hashes can be used to construct the MMR and root w/o data\n"
@@ -1486,6 +1499,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
     string strPrefix;
     string strFileName;
     string strMessage;
+    UniValue vdxfData;
     string strHex;
     string strBase64;
     string strDataHash;
@@ -1577,6 +1591,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
         {
             strFileName = uni_get_str(find_value(params[0], "filename"));
             strMessage = uni_get_str(find_value(params[0], "message"));
+            vdxfData = find_value(params[0], "vdxfdata");
             strHex = uni_get_str(find_value(params[0], "messagehex"));
             strBase64 = uni_get_str(find_value(params[0], "messagebase64"));
             strDataHash = uni_get_str(find_value(params[0], "datahash"));
@@ -1598,6 +1613,10 @@ UniValue signdata(const UniValue& params, bool fHelp)
             else if (!strBase64.empty())
             {
                 mmrDataUniObj.pushKV("serializedbase64", strBase64);
+            }
+            else if (!vdxfData.isNull())
+            {
+                mmrDataUniObj.pushKV("vdxfdata", vdxfData);
             }
             else if (!strHex.empty())
             {
@@ -1791,7 +1810,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
                     hw.write((const char *)dataVec.data(), dataVec.size());
                     msgHash = hw.GetHash();
                 }
-                mmrObjects.push_back(CDataDescriptor(dataVec, false, mmrSalt.size() > i ? std::vector<unsigned char>(mmrSalt[i].begin(), mmrSalt[i].end()) : std::vector<unsigned char>()));
+                mmrObjects.push_back(CDataDescriptor(dataVec, false, uni_get_str(find_value(oneItem, "label")), mmrSalt.size() > i ? std::vector<unsigned char>(mmrSalt[i].begin(), mmrSalt[i].end()) : std::vector<unsigned char>()));
             }
         }
         mmrHashes.push_back(msgHash);
