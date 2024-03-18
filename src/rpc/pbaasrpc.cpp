@@ -10326,11 +10326,11 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                     }
 
                     CVDXFDataRef memoLink(uint256(), tOutputs.size(), 0);
-                    std::vector<unsigned char> memoData = ::AsVector(memoLink);
+                    std::vector<unsigned char> memoData = ::AsVector(CVDXFDataDescriptor(::AsVector(memoLink), false, uni_get_str(find_value(dataUni, "label")), uni_get_str(find_value(dataUni, "mimetype"))));
                     if (SignatureData.IsValid())
                     {
                         memoLink = CVDXFDataRef(uint256(), tOutputs.size(), 0, 1);
-                        std::vector<unsigned char> memoSig = ::AsVector(memoLink);
+                        std::vector<unsigned char> memoSig = ::AsVector(CVDXFDataDescriptor(::AsVector(memoLink), false, "signature", "application/json"));
                         memoData.insert(memoData.begin(), memoSig.begin(), memoSig.end());
                     }
 
@@ -14418,7 +14418,8 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
     }
 
     // each one of these is entered into the ID as one idexed link to the data output on chain
-    std::multimap<uint160, std::pair<std::string, CNotaryEvidence>> extraData;
+    // data has key, label, mimetype, actual data, encrypttoaddress
+    std::multimap<uint160, std::tuple<std::string, std::string, CNotaryEvidence, libzcash::SaplingPaymentAddress>> extraData;
 
     // pull out data to be stored outside the ID definition to extraData
     if (uniOldID.count("contentmultimap"))
@@ -14451,6 +14452,10 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                     {
                         auto rootSigUni = find_value(chainData, "rootsignature");
                         auto dataLabel = uni_get_str(find_value(chainData, "label"));
+                        auto mimeType = uni_get_str(find_value(chainData, "mimetype"));
+                        libzcash::PaymentAddress encryptToAddress;
+
+                        bool encryptData = pwalletMain->GetAndValidateSaplingZAddress(uni_get_str(find_value(chainData, "encrypttoaddress")), encryptToAddress);
                         if (rootSigUni.isNull())
                         {
                             rootSigUni = true;
@@ -14495,7 +14500,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                         {
                             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid vdxfkey value: " + keys[i]);
                         }
-                        extraData.insert(std::make_pair(key, std::make_pair(dataLabel, evidenceData)));
+                        extraData.insert(std::make_pair(key, std::make_tuple(dataLabel, mimeType, evidenceData, *boost::get<libzcash::SaplingPaymentAddress>(&encryptToAddress))));
                         toRemoveValues.push_back(j);
                         continue;
                     }
@@ -14669,25 +14674,30 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         std::vector<CTxDestination> dests({CPubKey(ParseHex(CC.CChexstr))});
 
         COptCCParams chkP;
-        if (!MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &oneExtraData.second.second)).IsPayToCryptoCondition(chkP, false))
+        if (!MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &std::get<2>(oneExtraData.second))).IsPayToCryptoCondition(chkP, false))
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence script in ID data output #" + std::to_string(tb.mtx.vout.size()));
         }
 
         CVDXFDataRef idLink(uint256(), tb.mtx.vout.size(), 0);
-        std::vector<unsigned char> memoData = ::AsVector(idLink);
-        if (oneExtraData.second.second.evidence.chainObjects.size() > 1)
+        CVDXFDataDescriptor dd(::AsVector(idLink), false, std::get<0>(oneExtraData.second), std::get<1>(oneExtraData.second));
+        if (IsValidPaymentAddress(std::get<3>(oneExtraData.second)))
+        {
+            dd.WrapEncrypted(std::get<3>(oneExtraData.second));
+        }
+        std::vector<unsigned char> memoData = ::AsVector(dd);
+        if (std::get<2>(oneExtraData.second).evidence.chainObjects.size() > 1)
         {
             idLink = CVDXFDataRef(uint256(), tb.mtx.vout.size(), 0, 1);
-            std::vector<unsigned char> memoSig = ::AsVector(idLink);
+            dd = CVDXFDataDescriptor(::AsVector(idLink), false, "signature", "application/json");
+            if (IsValidPaymentAddress(std::get<3>(oneExtraData.second)))
+            {
+                dd.WrapEncrypted(std::get<3>(oneExtraData.second));
+            }
+            std::vector<unsigned char> memoSig = ::AsVector(dd);
             memoData.insert(memoData.begin(), memoSig.begin(), memoSig.end());
         }
 
-        if (!oneExtraData.second.first.empty())
-        {
-            std::vector<unsigned char> memoLabel = ::AsVector(CVDXF_Data(CVDXF_Data::DataStringKey(), ::AsVector(oneExtraData.second.first)));
-            memoData.insert(memoData.begin(), memoLabel.begin(), memoLabel.end());
-        }
         newID.contentMultiMap.insert(std::make_pair(oneExtraData.first, memoData));
 
         // the value should be considered for reduction
@@ -14695,7 +14705,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         {
             CNotaryEvidence emptyEvidence;
             int baseOverhead = MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &emptyEvidence)).size() + 128;
-            auto evidenceVec = oneExtraData.second.second.BreakApart(CScript::MAX_SCRIPT_ELEMENT_SIZE - baseOverhead);
+            auto evidenceVec = std::get<2>(oneExtraData.second).BreakApart(CScript::MAX_SCRIPT_ELEMENT_SIZE - baseOverhead);
             if (!evidenceVec.size())
             {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence chunk in ID data output #" + std::to_string(tb.mtx.vout.size()));
@@ -14708,7 +14718,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         }
         else
         {
-            tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &oneExtraData.second.second)), 0);
+            tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &std::get<2>(oneExtraData.second))), 0);
         }
     }
 

@@ -698,12 +698,21 @@ CDataDescriptor::CDataDescriptor(const UniValue &uni) :
     version(uni_get_int64(find_value(uni, "version"))),
     flags(uni_get_int64(find_value(uni, "flags"))),
     label(TrimSpaces(uni_get_str(find_value(uni, "label")), true, "")),
+    mimeType(TrimSpaces(uni_get_str(find_value(uni, "mimetype")), true, "")),
     linkData(ParseHex(uni_get_str(find_value(uni, "linkdata")))),
     salt(ParseHex(uni_get_str(find_value(uni, "salt")))),
     epk(ParseHex(uni_get_str(find_value(uni, "epk")))),
     ivk(ParseHex(uni_get_str(find_value(uni, "ivk")))),
     ssk(ParseHex(uni_get_str(find_value(uni, "ssk"))))
 {
+    if (label.size() > 64)
+    {
+        label.resize(64);
+    }
+    if (mimeType.size() > 64)
+    {
+        mimeType.resize(64);
+    }
     SetFlags();
 }
 
@@ -956,6 +965,10 @@ UniValue CDataDescriptor::ToUniValue() const
     if (HasLabel())
     {
         ret.pushKV("label", TrimSpaces(label, true, ""));
+    }
+    if (HasMIME())
+    {
+        ret.pushKV("mimetype", TrimSpaces(label, true, ""));
     }
     if (HasSalt())
     {

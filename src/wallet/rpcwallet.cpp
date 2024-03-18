@@ -1810,7 +1810,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
                     hw.write((const char *)dataVec.data(), dataVec.size());
                     msgHash = hw.GetHash();
                 }
-                mmrObjects.push_back(CDataDescriptor(dataVec, false, uni_get_str(find_value(oneItem, "label")), mmrSalt.size() > i ? std::vector<unsigned char>(mmrSalt[i].begin(), mmrSalt[i].end()) : std::vector<unsigned char>()));
+                mmrObjects.push_back(CDataDescriptor(dataVec, false, uni_get_str(find_value(oneItem, "label")), uni_get_str(find_value(oneItem, "mimetype")), mmrSalt.size() > i ? std::vector<unsigned char>(mmrSalt[i].begin(), mmrSalt[i].end()) : std::vector<unsigned char>()));
             }
         }
         mmrHashes.push_back(msgHash);

@@ -777,6 +777,7 @@ public:
         FLAG_INCOMING_VIEWING_KEY_PRESENT = 8,
         FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT = 0x10,
         FLAG_LABEL_PRESENT = 0x20,
+        FLAG_MIME_TYPE_PRESENT = 0x40,
 
         LINK_INVALID = 0,
         LINK_UTXOREF = 1,
@@ -789,6 +790,7 @@ public:
     uint32_t flags;
     std::vector<unsigned char> linkData; // link type, then direct data or serialized UTXORef +offset, length, and/or other type of info for different links
     std::string label;                  // label associated with this data
+    std::string mimeType;               // optional mime type
     std::vector<unsigned char> salt;    // encryption public key, data only present if encrypted
     std::vector<unsigned char> epk;     // encryption public key, data only present if encrypted
     std::vector<unsigned char> ivk;     // incoming viewing key, optional and contains data only if full viewing key is published at this encryption level
@@ -809,12 +811,13 @@ public:
     CDataDescriptor(const std::vector<unsigned char> &LinkData,
                     bool encryptedLinkData=false,
                     const std::string &Label=std::string(),
+                    const std::string &MimeType=std::string(),
                     const std::vector<unsigned char> &Salt=std::vector<unsigned char>(),
                     const std::vector<unsigned char> &EPK=std::vector<unsigned char>(),
                     const std::vector<unsigned char> &IVK=std::vector<unsigned char>(),
                     const std::vector<unsigned char> &SSK=std::vector<unsigned char>(),
                     uint32_t Version=DEFAULT_VERSION) :
-        version(Version), linkData(LinkData), label(Label), salt(Salt), epk(EPK), ivk(IVK), ssk(SSK)
+        version(Version), linkData(LinkData), label(Label), mimeType(MimeType), salt(Salt), epk(EPK), ivk(IVK), ssk(SSK)
     {
         SetFlags();
     }
@@ -832,7 +835,11 @@ public:
         READWRITE(linkData);
         if (HasLabel())
         {
-            READWRITE(label);
+            READWRITE(LIMITED_STRING(label, 64));
+        }
+        if (HasMIME())
+        {
+            READWRITE(LIMITED_STRING(mimeType, 64));
         }
         if (HasSalt())
         {
@@ -883,6 +890,11 @@ public:
         return flags & FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT;
     }
 
+    bool HasMIME() const
+    {
+        return flags & FLAG_MIME_TYPE_PRESENT;
+    }
+
     bool HasIVK() const
     {
         return flags & FLAG_INCOMING_VIEWING_KEY_PRESENT;
@@ -902,6 +914,7 @@ public:
     {
         return (flags & FLAG_ENCRYPTED_LINK) +
                (label.size() ? FLAG_LABEL_PRESENT : 0) +
+               (mimeType.size() ? FLAG_MIME_TYPE_PRESENT : 0) +
                (salt.size() ? FLAG_SALT_PRESENT : 0) +
                (epk.size() ? FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT : 0) +
                (ivk.size() ? FLAG_INCOMING_VIEWING_KEY_PRESENT : 0) +
@@ -1009,12 +1022,13 @@ public:
     CVDXFDataDescriptor(const std::vector<unsigned char> &LinkData,
                         bool encryptedLinkData=false,
                         const std::string &Label=std::string(),
+                        const std::string &MimeType=std::string(),
                         const std::vector<unsigned char> &Salt=std::vector<unsigned char>(),
                         const std::vector<unsigned char> &EPK=std::vector<unsigned char>(),
                         const std::vector<unsigned char> &IVK=std::vector<unsigned char>(),
                         const std::vector<unsigned char> &SSK=std::vector<unsigned char>(),
                         uint32_t Version=DEFAULT_VERSION) :
-        dataDescriptor(LinkData, encryptedLinkData, Label, Salt, EPK, IVK, SSK, Version), CVDXF_Data(CVDXF_Data::DataDescriptorKey(), std::vector<unsigned char>(), Version)
+        dataDescriptor(LinkData, encryptedLinkData, Label, MimeType, Salt, EPK, IVK, SSK, Version), CVDXF_Data(CVDXF_Data::DataDescriptorKey(), std::vector<unsigned char>(), Version)
     {
     }
 
