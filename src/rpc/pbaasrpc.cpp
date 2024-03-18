@@ -14492,7 +14492,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                         {
                             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid vdxfkey value: " + keys[i]);
                         }
-                        extraData.insert(std::make_pair(key, std::make_tuple(dataLabel, mimeType, evidenceData, *boost::get<libzcash::SaplingPaymentAddress>(&encryptToAddress))));
+                        extraData.insert(std::make_pair(key, std::make_tuple(dataLabel, MMRDesc.dataDescriptors.size() > 1 ? "application/json" : mimeType, evidenceData, *boost::get<libzcash::SaplingPaymentAddress>(&encryptToAddress))));
                         toRemoveValues.push_back(j);
                         continue;
                     }
