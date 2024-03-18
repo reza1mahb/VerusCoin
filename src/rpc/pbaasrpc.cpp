@@ -10292,7 +10292,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                     CNotaryEvidence notaryEvidence;
 
                     // now, we have both a CMMRDescriptor as well as a CMMRSignatureData if we signed, all encrypted to the specified Z-address
-                    CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdecsriptor_encrypted"));
+                    CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdescriptor_encrypted"));
                     CMMRSignatureData SignatureData = CMMRSignatureData(find_value(signResult, "signaturedata_encrypted"));
 
                     // if the MMR data isn't valid, we have nothing to store
@@ -14471,16 +14471,8 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                         CNotaryEvidence notaryEvidence;
 
                         // now, we have both a CMMRDescriptor as well as a CMMRSignatureData if we signed, all encrypted to the specified Z-address
-                        CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdecsriptor_encrypted"));
-                        if (!MMRDesc.IsValid())
-                        {
-                            MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdecsriptor"));
-                        }
-                        CMMRSignatureData SignatureData = CMMRSignatureData(find_value(signResult, "signaturedata_encrypted"));
-                        if (!SignatureData.IsValid())
-                        {
-                            SignatureData = CMMRSignatureData(find_value(signResult, "signaturedata"));
-                        }
+                        CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, encryptData ? "mmrdescriptor_encrypted" : "mmrdescriptor"));
+                        CMMRSignatureData SignatureData = CMMRSignatureData(find_value(signResult, encryptData ? "signaturedata_encrypted" : "signaturedata"));
 
                         // if the MMR data isn't valid, we have nothing to store
                         if (!MMRDesc.IsValid())
