@@ -778,6 +778,7 @@ public:
         FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT = 0x10,
         FLAG_LABEL_PRESENT = 0x20,
         FLAG_MIME_TYPE_PRESENT = 0x40,
+        FLAG_MASK = (FLAG_ENCRYPTED_LINK + FLAG_SALT_PRESENT + FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT + FLAG_INCOMING_VIEWING_KEY_PRESENT + FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT + FLAG_LABEL_PRESENT + FLAG_MIME_TYPE_PRESENT),
 
         LINK_INVALID = 0,
         LINK_UTXOREF = 1,
@@ -859,7 +860,7 @@ public:
         }
     }
 
-    bool HasEncryptedLink() const
+    bool HasEncryptedData() const
     {
         return flags & FLAG_ENCRYPTED_LINK;
     }
@@ -952,6 +953,11 @@ public:
 
     bool UnwrapEncryption(const std::vector<unsigned char> &decryptionKey, bool sskOnly=false);
 
+    bool IsValid() const
+    {
+        return version >= FIRST_VERSION && version <= LAST_VERSION && (flags & ~FLAG_MASK) == 0;
+    }
+
     UniValue ToUniValue() const;
 };
 
@@ -974,9 +980,9 @@ public:
         readData >> dataDescriptor;
     }
 
-    bool HasEncryptedLink() const
+    bool HasEncryptedData() const
     {
-        return dataDescriptor.HasEncryptedLink();
+        return dataDescriptor.HasEncryptedData();
     }
 
     bool WrapEncrypted(const libzcash::SaplingPaymentAddress &saplingAddress)

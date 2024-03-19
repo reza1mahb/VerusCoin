@@ -2034,7 +2034,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
                 CDataDescriptor encryptedSignatureData(::AsVector(mmrSignatureData));
                 std::vector<unsigned char> sskOut;
                 encryptedSignatureData.WrapEncrypted(boost::get<libzcash::SaplingPaymentAddress>(encryptToAddress), &sskOut);
-                if (!encryptedSignatureData.linkData.size() || !encryptedSignatureData.HasEncryptedLink())
+                if (!encryptedSignatureData.linkData.size() || !encryptedSignatureData.HasEncryptedData())
                 {
                     throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Unable to encrypt signature data to address specified");
                 }
@@ -2119,6 +2119,124 @@ UniValue signdata(const UniValue& params, bool fHelp)
         ret.push_back(Pair("signature", EncodeBase64(&vchSig[0], vchSig.size())));
         return ret;
     }
+}
+
+UniValue decryptdata(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "decryptdata '{\n"
+            "                  \"datadescriptor\": {},\n"
+            "                  \"retrieve\": bool\n"
+            "              }\n\n"
+
+            "\nDecrypts a vdxf data descriptor, which is typically encrypted to a z-address. If the viewing key is present, it is decrypted, and any nested encryptions are attempted as well.\n"
+            "If either the viewing key or the ssk are correct, the object will be returned with as much decryption as possible completed.\n"
+            "If no decryption is possible, this function returns an error.\n"
+            "\n"
+            "\nArguments:\n"
+            "{\n"
+            "    \"datadescriptor\": {}                                            (object, required) Encrypted data descriptor to decrypt, uses wallet keys included in descriptor\n"
+            "    \"evk\":\"Sapling extended full viewing key\"                     (evk, optional) if known, an extended viewing key to use for decoding that is not in the descriptor\n"
+            "    \"retrievereference\": bool                                       (bool, optional) Defaults to false. If true, attempts to retrieve the data from its reference and decrypt\n"
+            "}\n\n"
+
+            "\nResult:\n"
+            "\nExamples:\n"
+            "\nEncrypt data\n"
+            + HelpExampleCli("signdata", "'{\"address\":\"Verus Coin Foundation.vrsc@\", \"rootsignature\":true, \"data\":[{\"message\":\"hello world\", \"encrypttoaddress\":\"Sapling address\"}]}'") +
+            "\nDecrypt data\n"
+            + HelpExampleCli("decryptdata", "'{encrypteddatadescriptor}'") +
+            "\nAs json rpc\n"
+            + HelpExampleRpc("signdata", "'{\"address\":\"Verus Coin Foundation.vrsc@\", \"rootsignature\":true, \"data\":[{\"message\":\"hello world\", \"encrypttoaddress\":\"Sapling address\"}]}'")
+        );
+    
+    CDataDescriptor encryptedDescriptor(find_value(params[0], "datadescriptor"));
+
+    if (!encryptedDescriptor.IsValid())
+    {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid data descriptor or cannot decrypt");
+    }
+
+    bool retrieve = uni_get_bool(find_value(params[0], "retrieve"));
+
+    libzcash::ViewingKey vk = DecodeViewingKey(uni_get_str(find_value(params[0], "evk")));
+    libzcash::SaplingExtendedFullViewingKey *pViewingKey = boost::get<libzcash::SaplingExtendedFullViewingKey>(&vk);
+
+    libzcash::SaplingIncomingViewingKey wIvk;
+
+    if (pViewingKey)
+    {
+        wIvk = pViewingKey->fvk.in_viewing_key();
+    }
+
+    // if there's an encrypted link, decrypt it
+    if (encryptedDescriptor.HasEncryptedData() && (wIvk.IsNull() ? !encryptedDescriptor.UnwrapEncryption() : !encryptedDescriptor.UnwrapEncryption(wIvk)))
+    {
+        EnsureWalletIsAvailable(false);
+        EnsureWalletIsUnlocked();
+        LOCK(pwalletMain->cs_wallet);
+
+        if (!pwalletMain->DecryptWithSaplingViewingKey(encryptedDescriptor, encryptedDescriptor, &wIvk))
+        {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid data descriptor or cannot decrypt");
+        }
+    }
+
+    CDataDescriptor referencedData;
+
+    // here, we should have a first stage decrypted data descriptor and possibly an ivk to use, if there is further encryption
+    // if this link is further encrypted, consider the work complete and return
+    if (encryptedDescriptor.HasEncryptedData())
+    {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Unsupported encryption nesting");
+    }
+
+    UniValue vdxfData = CIdentity::VDXFDataToUniValue(encryptedDescriptor.linkData);
+
+    UniValue ret(UniValue::VOBJ);
+
+    ret.pushKV("decrypteddata", encryptedDescriptor.ToUniValue());
+
+    // we only decrypt single object data of a few different kinds
+    if (vdxfData.isArray() && vdxfData.size() == 1)
+    {
+        UniValue vdxfData = vdxfData[0];
+        if (vdxfData.isObject())
+        {
+            UniValue foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey())));
+            if (foundObj.isObject())
+            {
+                ret.pushKV("crosschaindataref", foundObj);
+            }
+            else
+            {
+                foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::DataDescriptorKey())));
+                if (foundObj.isObject())
+                {
+                    ret.pushKV("datadescriptor", foundObj);
+                }
+                else
+                {
+                    foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::MMRDescriptorKey())));
+                    if (foundObj.isObject())
+                    {
+                        ret.pushKV("mmrdescriptor", foundObj);
+                    }
+                    else
+                    {
+                        foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::MMRSignatureDataKey())));
+                        if (foundObj.isObject())
+                        {
+                            ret.pushKV("mmrsignature", foundObj);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return ret;
 }
 
 UniValue getreceivedbyaddress(const UniValue& params, bool fHelp)
@@ -9209,6 +9327,7 @@ static const CRPCCommand commands[] =
     { "identity",           "signmessage",              &signmessage,              true  },
     { "identity",           "signfile",                 &signfile,                 true  },
     { "identity",           "signdata",                 &signdata,                 true  },
+    { "wallet",             "decryptdata",              &decryptdata,              true  },
     // { "hidden",             "signhash",                 &signhash,                 true  }, // disable due to risk of signing something that doesn't contain the content
     { "wallet",             "openwallet",               &openwallet,               true  },
     { "wallet",             "walletlock",               &walletlock,               true  },

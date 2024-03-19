@@ -847,7 +847,7 @@ bool CDataDescriptor::GetSSK(const libzcash::SaplingIncomingViewingKey &Ivk, std
 
 bool CDataDescriptor::UnwrapEncryption()
 {
-    if (!HasEncryptedLink())
+    if (!HasEncryptedData())
     {
         return false;
     }
@@ -883,7 +883,7 @@ bool CDataDescriptor::UnwrapEncryption()
 
 bool CDataDescriptor::UnwrapEncryption(const libzcash::SaplingIncomingViewingKey &Ivk, bool ivkOnly)
 {
-    if (!HasEncryptedLink())
+    if (!HasEncryptedData())
     {
         return false;
     }
@@ -919,7 +919,7 @@ bool CDataDescriptor::UnwrapEncryption(const libzcash::SaplingIncomingViewingKey
 
 bool CDataDescriptor::UnwrapEncryption(const std::vector<unsigned char> &decryptionKey, bool sskOnly)
 {
-    if (!HasEncryptedLink())
+    if (!HasEncryptedData())
     {
         return false;
     }
@@ -1248,8 +1248,8 @@ std::vector<uint256> CMMRDescriptor::DecryptMMRHashes(const libzcash::SaplingInc
     CDataDescriptor descrCopy = mmrHashes;
 
     // deserialize unencrypted MMR hashes, encrypted with key present or return nothing
-    if (!descrCopy.HasEncryptedLink() ||
-        (descrCopy.UnwrapEncryption(Ivk) && !descrCopy.HasEncryptedLink()))
+    if (!descrCopy.HasEncryptedData() ||
+        (descrCopy.UnwrapEncryption(Ivk) && !descrCopy.HasEncryptedData()))
     {
         CVDXF_Data linkObject;
         ::FromVector(descrCopy.linkData, linkObject);
@@ -1266,8 +1266,8 @@ std::vector<uint256> CMMRDescriptor::DecryptMMRHashes(const std::vector<unsigned
     std::vector<uint256> retVal;
     CDataDescriptor descrCopy = mmrHashes;
 
-    if (!descrCopy.HasEncryptedLink() ||
-        (descrCopy.UnwrapEncryption(Ssk) && !descrCopy.HasEncryptedLink()))
+    if (!descrCopy.HasEncryptedData() ||
+        (descrCopy.UnwrapEncryption(Ssk) && !descrCopy.HasEncryptedData()))
     {
         CVDXF_Data linkObject;
         ::FromVector(descrCopy.linkData, linkObject);
@@ -1284,8 +1284,8 @@ std::vector<uint256> CMMRDescriptor::GetMMRHashes() const
     std::vector<uint256> retVal;
     CDataDescriptor descrCopy = mmrHashes;
 
-    if (!descrCopy.HasEncryptedLink() ||
-        (descrCopy.UnwrapEncryption() && !descrCopy.HasEncryptedLink()))
+    if (!descrCopy.HasEncryptedData() ||
+        (descrCopy.UnwrapEncryption() && !descrCopy.HasEncryptedData()))
     {
         CVDXF_Data linkObject;
         ::FromVector(descrCopy.linkData, linkObject);
@@ -1304,8 +1304,8 @@ uint256 CMMRDescriptor::DecryptMMRRoot(const libzcash::SaplingIncomingViewingKey
     CDataDescriptor descrCopy = mmrRoot;
 
     // deserialize unencrypted MMR hashes, encrypted with key present or return nothing
-    if (!descrCopy.HasEncryptedLink() ||
-        (descrCopy.UnwrapEncryption(Ivk) && !descrCopy.HasEncryptedLink()))
+    if (!descrCopy.HasEncryptedData() ||
+        (descrCopy.UnwrapEncryption(Ivk) && !descrCopy.HasEncryptedData()))
     {
         CVDXF_Data linkObject;
         ::FromVector(descrCopy.linkData, linkObject);
@@ -1324,8 +1324,8 @@ uint256 CMMRDescriptor::DecryptMMRRoot(const std::vector<unsigned char> &Ssk) co
     CDataDescriptor descrCopy = mmrRoot;
 
     // deserialize unencrypted MMR hashes, encrypted with key present or return nothing
-    if (!descrCopy.HasEncryptedLink() ||
-        (descrCopy.UnwrapEncryption(Ssk) && !descrCopy.HasEncryptedLink()))
+    if (!descrCopy.HasEncryptedData() ||
+        (descrCopy.UnwrapEncryption(Ssk) && !descrCopy.HasEncryptedData()))
     {
         CVDXF_Data linkObject;
         ::FromVector(descrCopy.linkData, linkObject);
@@ -1344,8 +1344,8 @@ uint256 CMMRDescriptor::GetMMRRoot() const
     CDataDescriptor descrCopy = mmrRoot;
 
     // deserialize unencrypted MMR hashes, encrypted with key present or return nothing
-    if (!descrCopy.HasEncryptedLink() ||
-        (descrCopy.UnwrapEncryption() && !descrCopy.HasEncryptedLink()))
+    if (!descrCopy.HasEncryptedData() ||
+        (descrCopy.UnwrapEncryption() && !descrCopy.HasEncryptedData()))
     {
         CVDXF_Data linkObject;
         ::FromVector(descrCopy.linkData, linkObject);

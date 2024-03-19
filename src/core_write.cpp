@@ -1554,7 +1554,8 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
             ss >> oneCurrencyMap;
             if (oneCurrencyMap.IsValid())
             {
-                objectUni = oneCurrencyMap.ToUniValue();
+                objectUni = UniValue(UniValue::VOBJ);
+                objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), oneCurrencyMap.ToUniValue());
             }
         }
         else if (checkVal == CVDXF_Data::DataRatingsKey())
@@ -1565,7 +1566,8 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
             ss >> oneRatingObj;
             if (oneRatingObj.IsValid())
             {
-                objectUni = oneRatingObj.ToUniValue();
+                objectUni = UniValue(UniValue::VOBJ);
+                objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), oneRatingObj.ToUniValue());
             }
         }
         else if (checkVal == CVDXF_Data::DataTransferDestinationKey())
@@ -1576,7 +1578,8 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
             ss >> oneTransferDest;
             if (oneTransferDest.IsValid())
             {
-                objectUni = oneTransferDest.ToUniValue();
+                objectUni = UniValue(UniValue::VOBJ);
+                objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), oneTransferDest.ToUniValue());
             }
         }
         else if (checkVal == CVDXF_Data::ContentMultiMapRemoveKey())
@@ -1587,7 +1590,8 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
             ss >> oneContentRemove;
             if (oneContentRemove.IsValid())
             {
-                objectUni = oneContentRemove.ToUniValue();
+                objectUni = UniValue(UniValue::VOBJ);
+                objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), oneContentRemove.ToUniValue());
             }
         }
         else if (checkVal == CVDXF_Data::DataStringKey())
@@ -1596,7 +1600,8 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
             ss >> VARINT(version);
             ss >> VARINT(objSize);
             ss >> stringVal;
-            objectUni = stringVal;
+            objectUni = UniValue(UniValue::VOBJ);
+            objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), stringVal);
         }
         else if (checkVal == CVDXF_Data::DataByteVectorKey())
         {
@@ -1612,7 +1617,11 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
             ss >> VARINT(version);
             ss >> VARINT(objSize);
             ss >> dataRef;
-            objectUni = dataRef.ToUniValue();
+            if (dataRef.IsValid())
+            {
+                objectUni = UniValue(UniValue::VOBJ);
+                objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), dataRef.ToUniValue());
+            }
         }
         else if (checkVal == CVDXF_Data::DataDescriptorKey())
         {
@@ -1620,7 +1629,11 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
             ss >> VARINT(version);
             ss >> VARINT(objSize);
             ss >> dataDescriptor;
-            objectUni = dataDescriptor.ToUniValue();
+            if (dataDescriptor.IsValid())
+            {
+                objectUni = UniValue(UniValue::VOBJ);
+                objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), dataDescriptor.ToUniValue());
+            }
         }
         else if (checkVal == CVDXF_Data::MMRDescriptorKey())
         {
@@ -1628,7 +1641,11 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
             ss >> VARINT(version);
             ss >> VARINT(objSize);
             ss >> mmrDescriptor;
-            objectUni = mmrDescriptor.ToUniValue();
+            if (mmrDescriptor.IsValid())
+            {
+                objectUni = UniValue(UniValue::VOBJ);
+                objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), mmrDescriptor.ToUniValue());
+            }
         }
         else if (checkVal == CVDXF_Data::MMRSignatureDataKey())
         {
@@ -1636,7 +1653,11 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
             ss >> VARINT(version);
             ss >> VARINT(objSize);
             ss >> sigData;
-            objectUni = sigData.ToUniValue();
+            if (sigData.IsValid())
+            {
+                objectUni = UniValue(UniValue::VOBJ);
+                objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), sigData.ToUniValue());
+            }
         }
 
         // if we have an object that we recognized, encode it
@@ -1733,6 +1754,10 @@ UniValue CIdentity::ToUniValue() const
             entryUni = VDXFDataToUniValue(entry.second);
             if (!entryUni.isNull())
             {
+                if (entryUni.isArray() && entryUni.size() == 1)
+                {
+                    entryUni = entryUni[0];
+                }
                 entryArr.push_back(entryUni);
             }
         }
