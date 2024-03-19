@@ -1635,12 +1635,12 @@ UniValue signdata(const UniValue& params, bool fHelp)
             mmrDataUni.push_back(mmrDataUniObj);
         }
 
-        if (strAddress.empty() || hashTypeStr.empty())
+        if (hashTypeStr.empty())
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include a valid \"address\" and either no explicit \"hashtype\" or one that is valid");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include either no explicit \"hashtype\" or one that is valid");
         }
         dest = DecodeDestination(strAddress);
-        if (!IsValidDestination(dest)) {
+        if (IsValidDestination(dest) && !(dest.which() == COptCCParams::ADDRTYPE_ID || dest.which() == COptCCParams::ADDRTYPE_PKH)) {
             throw JSONRPCError(RPC_TYPE_ERROR, "\"identity\" specified in object must be valid VerusID or address");
         }
 
@@ -1911,7 +1911,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
         ret.pushKV("mmrdescriptor", mmrDescriptor.ToUniValue());
     }
 
-    if (dest.empty() && rootSignature)
+    if (dest.which() == COptCCParams::ADDRTYPE_INVALID && rootSignature)
     {
         return ret;
     }
