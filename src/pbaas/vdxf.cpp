@@ -699,7 +699,7 @@ CDataDescriptor::CDataDescriptor(const UniValue &uni) :
     flags(uni_get_int64(find_value(uni, "flags"))),
     label(TrimSpaces(uni_get_str(find_value(uni, "label")), true, "")),
     mimeType(TrimSpaces(uni_get_str(find_value(uni, "mimetype")), true, "")),
-    linkData(ParseHex(uni_get_str(find_value(uni, "linkdata")))),
+    objectData(ParseHex(uni_get_str(find_value(uni, "objectdata")))),
     salt(ParseHex(uni_get_str(find_value(uni, "salt")))),
     epk(ParseHex(uni_get_str(find_value(uni, "epk")))),
     ivk(ParseHex(uni_get_str(find_value(uni, "ivk")))),
@@ -721,7 +721,7 @@ std::vector<uint256> CDataDescriptor::DecodeHashVector() const
     std::vector<uint256> retVal;
 
     CVDXF_Data linkObject;
-    ::FromVector(linkData, linkObject);
+    ::FromVector(objectData, linkObject);
     if (linkObject.key == CVDXF_Data::VectorUint256Key())
     {
         ::FromVector(linkObject.data, retVal);
@@ -737,8 +737,8 @@ bool CDataDescriptor::EncryptData(const libzcash::SaplingPaymentAddress &sapling
     {
         return false;
     }
-    flags |= FLAG_ENCRYPTED_LINK;
-    linkData = encryptor.cipherData;
+    flags |= FLAG_ENCRYPTED_DATA;
+    objectData = encryptor.cipherData;
     uint256 uintEpk = encryptor.GetEPK();
     salt = std::vector<unsigned char>();
     epk = std::vector<unsigned char>(uintEpk.begin(), uintEpk.end());
@@ -747,11 +747,11 @@ bool CDataDescriptor::EncryptData(const libzcash::SaplingPaymentAddress &sapling
     return true;
 }
 
-// decrypts linkData only if there is a valid key available to decrypt with already present in this object
+// decrypts objectData only if there is a valid key available to decrypt with already present in this object
 bool CDataDescriptor::DecryptData(std::vector<unsigned char> &plainText, std::vector<unsigned char> *pSsk) const
 {
     CVDXFEncryptor decryptor;
-    decryptor.cipherData = linkData;
+    decryptor.cipherData = objectData;
     // to succeed, we must need to have either an epk and an ivk or just an ssk present
     if (ssk.size())
     {
@@ -773,11 +773,11 @@ bool CDataDescriptor::DecryptData(std::vector<unsigned char> &plainText, std::ve
     return decryptor.Decrypt(libzcash::SaplingIncomingViewingKey(uint256(ivk)), plainText, pSsk);
 }
 
-// decrypts linkData either with the provided viewing key, or if a key is available
+// decrypts objectData either with the provided viewing key, or if a key is available
 bool CDataDescriptor::DecryptData(const libzcash::SaplingIncomingViewingKey &Ivk, std::vector<unsigned char> &plainText, bool ivkOnly, std::vector<unsigned char> *pSsk) const
 {
     CVDXFEncryptor decryptor;
-    decryptor.cipherData = linkData;
+    decryptor.cipherData = objectData;
 
     bool decrypted = false;
     if (epk.size())
@@ -793,11 +793,11 @@ bool CDataDescriptor::DecryptData(const libzcash::SaplingIncomingViewingKey &Ivk
     return DecryptData(plainText, pSsk);
 }
 
-// decrypts linkData either with the provided specific symmetric encryption key, or if a key is available on the link
+// decrypts objectData either with the provided specific symmetric encryption key, or if a key is available on the link
 bool CDataDescriptor::DecryptData(const std::vector<unsigned char> &decryptionKey, std::vector<unsigned char> &plainText, bool sskOnly) const
 {
     CVDXFEncryptor decryptor;
-    decryptor.cipherData = linkData;
+    decryptor.cipherData = objectData;
 
     bool decrypted = decryptor.Decrypt(decryptionKey, plainText);
 
@@ -830,7 +830,7 @@ bool CDataDescriptor::GetSSK(std::vector<unsigned char> &Ssk) const
 bool CDataDescriptor::GetSSK(const libzcash::SaplingIncomingViewingKey &Ivk, std::vector<unsigned char> &Ssk, bool ivkOnly) const
 {
     CVDXFEncryptor decryptor;
-    decryptor.cipherData = linkData;
+    decryptor.cipherData = objectData;
 
     bool haveKey = false;
     if (epk.size())
@@ -961,7 +961,7 @@ UniValue CDataDescriptor::ToUniValue() const
 
     ret.pushKV("version", (int64_t)version);
     ret.pushKV("flags", Flags);
-    ret.pushKV("linkdata", HexBytes(linkData.data(), linkData.size()));
+    ret.pushKV("objectdata", HexBytes(objectData.data(), objectData.size()));
 
     if (HasLabel())
     {
@@ -1253,7 +1253,7 @@ std::vector<uint256> CMMRDescriptor::DecryptMMRHashes(const libzcash::SaplingInc
         (descrCopy.UnwrapEncryption(Ivk) && !descrCopy.HasEncryptedData()))
     {
         CVDXF_Data linkObject;
-        ::FromVector(descrCopy.linkData, linkObject);
+        ::FromVector(descrCopy.objectData, linkObject);
         if (linkObject.key == CVDXF_Data::VectorUint256Key())
         {
             ::FromVector(linkObject.data, retVal);
@@ -1271,7 +1271,7 @@ std::vector<uint256> CMMRDescriptor::DecryptMMRHashes(const std::vector<unsigned
         (descrCopy.UnwrapEncryption(Ssk) && !descrCopy.HasEncryptedData()))
     {
         CVDXF_Data linkObject;
-        ::FromVector(descrCopy.linkData, linkObject);
+        ::FromVector(descrCopy.objectData, linkObject);
         if (linkObject.key == CVDXF_Data::VectorUint256Key())
         {
             ::FromVector(linkObject.data, retVal);
@@ -1289,7 +1289,7 @@ std::vector<uint256> CMMRDescriptor::GetMMRHashes() const
         (descrCopy.UnwrapEncryption() && !descrCopy.HasEncryptedData()))
     {
         CVDXF_Data linkObject;
-        ::FromVector(descrCopy.linkData, linkObject);
+        ::FromVector(descrCopy.objectData, linkObject);
         if (linkObject.key == CVDXF_Data::VectorUint256Key())
         {
             ::FromVector(linkObject.data, retVal);
@@ -1309,7 +1309,7 @@ uint256 CMMRDescriptor::DecryptMMRRoot(const libzcash::SaplingIncomingViewingKey
         (descrCopy.UnwrapEncryption(Ivk) && !descrCopy.HasEncryptedData()))
     {
         CVDXF_Data linkObject;
-        ::FromVector(descrCopy.linkData, linkObject);
+        ::FromVector(descrCopy.objectData, linkObject);
         if (linkObject.data.size() >= 32)
         {
             retVal = uint256(std::vector<unsigned char>(linkObject.data.data(), linkObject.data.data() + 32));
@@ -1329,7 +1329,7 @@ uint256 CMMRDescriptor::DecryptMMRRoot(const std::vector<unsigned char> &Ssk) co
         (descrCopy.UnwrapEncryption(Ssk) && !descrCopy.HasEncryptedData()))
     {
         CVDXF_Data linkObject;
-        ::FromVector(descrCopy.linkData, linkObject);
+        ::FromVector(descrCopy.objectData, linkObject);
         if (linkObject.data.size() >= 32)
         {
             retVal = uint256(std::vector<unsigned char>(linkObject.data.data(), linkObject.data.data() + 32));
@@ -1349,7 +1349,7 @@ uint256 CMMRDescriptor::GetMMRRoot() const
         (descrCopy.UnwrapEncryption() && !descrCopy.HasEncryptedData()))
     {
         CVDXF_Data linkObject;
-        ::FromVector(descrCopy.linkData, linkObject);
+        ::FromVector(descrCopy.objectData, linkObject);
         if (linkObject.data.size() >= 32)
         {
             retVal = uint256(std::vector<unsigned char>(linkObject.data.data(), linkObject.data.data() + 32));

@@ -771,14 +771,14 @@ public:
         LAST_VERSION = 1,
         DEFAULT_VERSION = 1,
 
-        FLAG_ENCRYPTED_LINK = 1,
+        FLAG_ENCRYPTED_DATA = 1,
         FLAG_SALT_PRESENT = 2,
         FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT = 4,
         FLAG_INCOMING_VIEWING_KEY_PRESENT = 8,
         FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT = 0x10,
         FLAG_LABEL_PRESENT = 0x20,
         FLAG_MIME_TYPE_PRESENT = 0x40,
-        FLAG_MASK = (FLAG_ENCRYPTED_LINK + FLAG_SALT_PRESENT + FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT + FLAG_INCOMING_VIEWING_KEY_PRESENT + FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT + FLAG_LABEL_PRESENT + FLAG_MIME_TYPE_PRESENT),
+        FLAG_MASK = (FLAG_ENCRYPTED_DATA + FLAG_SALT_PRESENT + FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT + FLAG_INCOMING_VIEWING_KEY_PRESENT + FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT + FLAG_LABEL_PRESENT + FLAG_MIME_TYPE_PRESENT),
 
         LINK_INVALID = 0,
         LINK_UTXOREF = 1,
@@ -789,11 +789,11 @@ public:
 
     uint32_t version;
     uint32_t flags;
-    std::vector<unsigned char> linkData; // link type, then direct data or serialized UTXORef +offset, length, and/or other type of info for different links
+    std::vector<unsigned char> objectData; // either direct data or serialized UTXORef +offset, length, and/or other type of info for different links
     std::string label;                  // label associated with this data
     std::string mimeType;               // optional mime type
-    std::vector<unsigned char> salt;    // encryption public key, data only present if encrypted
-    std::vector<unsigned char> epk;     // encryption public key, data only present if encrypted
+    std::vector<unsigned char> salt;    // encryption public key, data only present if encrypted or data referenced by unencrypted link is encrypted
+    std::vector<unsigned char> epk;     // encryption public key, data only present if encrypted or data referenced by unencrypted link is encrypted
     std::vector<unsigned char> ivk;     // incoming viewing key, optional and contains data only if full viewing key is published at this encryption level
     std::vector<unsigned char> ssk;     // specific symmetric key, optional and only to decrypt this linked sub-object
 
@@ -806,11 +806,11 @@ public:
     CDataDescriptor(const std::vector<uint256> &hashVector, uint32_t Version=DEFAULT_VERSION) : version(Version), flags(0)
     {
         CVDXF_Data linkObject(CVDXF_Data::VectorUint256Key(), ::AsVector(hashVector));
-        linkData = ::AsVector(linkObject);
+        objectData = ::AsVector(linkObject);
     }
 
-    CDataDescriptor(const std::vector<unsigned char> &LinkData,
-                    bool encryptedLinkData=false,
+    CDataDescriptor(const std::vector<unsigned char> &ObjectData,
+                    bool encryptedObject=false,
                     const std::string &Label=std::string(),
                     const std::string &MimeType=std::string(),
                     const std::vector<unsigned char> &Salt=std::vector<unsigned char>(),
@@ -818,7 +818,7 @@ public:
                     const std::vector<unsigned char> &IVK=std::vector<unsigned char>(),
                     const std::vector<unsigned char> &SSK=std::vector<unsigned char>(),
                     uint32_t Version=DEFAULT_VERSION) :
-        version(Version), linkData(LinkData), label(Label), mimeType(MimeType), salt(Salt), epk(EPK), ivk(IVK), ssk(SSK)
+        version(Version), objectData(ObjectData), label(Label), mimeType(MimeType), salt(Salt), epk(EPK), ivk(IVK), ssk(SSK)
     {
         SetFlags();
     }
@@ -833,7 +833,7 @@ public:
         }
         READWRITE(VARINT(version));
         READWRITE(VARINT(flags));
-        READWRITE(linkData);
+        READWRITE(objectData);
         if (HasLabel())
         {
             READWRITE(LIMITED_STRING(label, 64));
@@ -862,7 +862,7 @@ public:
 
     bool HasEncryptedData() const
     {
-        return flags & FLAG_ENCRYPTED_LINK;
+        return flags & FLAG_ENCRYPTED_DATA;
     }
 
     // this will take our existing instance, encode it as a VDXF tagged data structure, and embed it as a new, tagged, encrypted CDataDescriptor
@@ -914,7 +914,7 @@ public:
 
     uint32_t CalcFlags() const
     {
-        return (flags & FLAG_ENCRYPTED_LINK) +
+        return (flags & FLAG_ENCRYPTED_DATA) +
                (label.size() ? FLAG_LABEL_PRESENT : 0) +
                (mimeType.size() ? FLAG_MIME_TYPE_PRESENT : 0) +
                (salt.size() ? FLAG_SALT_PRESENT : 0) +
@@ -935,13 +935,13 @@ public:
     // encrypts to a specific z-address incoming viewing key
     bool EncryptData(const libzcash::SaplingPaymentAddress &saplingAddress, const std::vector<unsigned char> &plainText, std::vector<unsigned char> *pSsk=nullptr);
 
-    // decrypts linkData only if there is a valid key available to decrypt with already present in this object
+    // decrypts objectData only if there is a valid key available to decrypt with already present in this object
     bool DecryptData(std::vector<unsigned char> &plainText, std::vector<unsigned char> *pSsk=nullptr) const;
 
-    // decrypts linkData either with the provided viewing key, or if a key is available
+    // decrypts objectData either with the provided viewing key, or if a key is available
     bool DecryptData(const libzcash::SaplingIncomingViewingKey &Ivk, std::vector<unsigned char> &plainText, bool ivkOnly=false, std::vector<unsigned char> *pSsk=nullptr) const;
 
-    // decrypts linkData either with the provided specific symmetric encryption key, or if a key is available on the link
+    // decrypts objectData either with the provided specific symmetric encryption key, or if a key is available on the link
     bool DecryptData(const std::vector<unsigned char> &decryptionKey, std::vector<unsigned char> &plainText, bool sskOnly=false) const;
 
     bool GetSSK(std::vector<unsigned char> &Ssk) const;
@@ -1026,8 +1026,8 @@ public:
         return dataDescriptor.SetFlags();
     }
 
-    CVDXFDataDescriptor(const std::vector<unsigned char> &LinkData,
-                        bool encryptedLinkData=false,
+    CVDXFDataDescriptor(const std::vector<unsigned char> &ObjectData,
+                        bool encryptedObject=false,
                         const std::string &Label=std::string(),
                         const std::string &MimeType=std::string(),
                         const std::vector<unsigned char> &Salt=std::vector<unsigned char>(),
@@ -1035,7 +1035,7 @@ public:
                         const std::vector<unsigned char> &IVK=std::vector<unsigned char>(),
                         const std::vector<unsigned char> &SSK=std::vector<unsigned char>(),
                         uint32_t Version=DEFAULT_VERSION) :
-        dataDescriptor(LinkData, encryptedLinkData, Label, MimeType, Salt, EPK, IVK, SSK, Version), CVDXF_Data(CVDXF_Data::DataDescriptorKey(), std::vector<unsigned char>(), Version)
+        dataDescriptor(ObjectData, encryptedObject, Label, MimeType, Salt, EPK, IVK, SSK, Version), CVDXF_Data(CVDXF_Data::DataDescriptorKey(), std::vector<unsigned char>(), Version)
     {
     }
 
@@ -1300,7 +1300,7 @@ public:
 
     bool HasData() const
     {
-        return mmrHashes.linkData.size() && dataDescriptors.size();
+        return mmrHashes.objectData.size() && dataDescriptors.size();
     }
 
     bool IsValid() const

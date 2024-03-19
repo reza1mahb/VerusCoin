@@ -10276,11 +10276,11 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
 
                     dataUni.pushKV("encrypttoaddress", EncodePaymentAddress(zaddressDest));
 
-                    auto rootSigUni = find_value(dataUni, "rootsignature");
+                    auto rootSigUni = find_value(dataUni, "createmmr");
                     if (rootSigUni.isNull())
                     {
                         rootSigUni = true;
-                        dataUni.pushKV("rootsignature", rootSigUni);
+                        dataUni.pushKV("createmmr", rootSigUni);
                     }
                     if (!uni_get_bool(rootSigUni))
                     {
@@ -14450,7 +14450,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                     // if we have a data element, the data will be stored on the transaction and referenced in the ID
                     if (!chainData.isNull())
                     {
-                        auto rootSigUni = find_value(chainData, "rootsignature");
+                        auto rootSigUni = find_value(chainData, "createmmr");
                         auto dataLabel = uni_get_str(find_value(chainData, "label"));
                         auto mimeType = uni_get_str(find_value(chainData, "mimetype"));
                         libzcash::PaymentAddress encryptToAddress;
@@ -14459,7 +14459,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                         if (rootSigUni.isNull())
                         {
                             rootSigUni = true;
-                            chainData.pushKV("rootsignature", rootSigUni);
+                            chainData.pushKV("createmmr", rootSigUni);
                         }
                         if (!uni_get_bool(rootSigUni))
                         {
