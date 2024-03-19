@@ -737,6 +737,7 @@ bool CDataDescriptor::EncryptData(const libzcash::SaplingPaymentAddress &sapling
     {
         return false;
     }
+    flags |= FLAG_ENCRYPTED_LINK;
     linkData = encryptor.cipherData;
     uint256 uintEpk = encryptor.GetEPK();
     salt = std::vector<unsigned char>();
@@ -968,7 +969,7 @@ UniValue CDataDescriptor::ToUniValue() const
     }
     if (HasMIME())
     {
-        ret.pushKV("mimetype", TrimSpaces(label, true, ""));
+        ret.pushKV("mimetype", TrimSpaces(mimeType, true, ""));
     }
     if (HasSalt())
     {

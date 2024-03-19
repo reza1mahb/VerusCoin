@@ -874,7 +874,8 @@ public:
         // encrypt the entire tagged object
         if (EncryptData(saplingAddress, ::AsVector(nestedObject), pSsk))
         {
-            flags |= FLAG_ENCRYPTED_LINK;
+            label = "";
+            mimeType = "";
             SetFlags();
             return true;
         }
