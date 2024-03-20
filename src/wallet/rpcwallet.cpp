@@ -1537,7 +1537,6 @@ UniValue signdata(const UniValue& params, bool fHelp)
         vdxfKeyNames = find_value(params[0], "vdxfkeynames");
         boundHashes = find_value(params[0], "boundhashes");
         strSignature = uni_get_str(find_value(params[0], "signature"));
-        createMMR = uni_get_bool(find_value(params[0], "createmmr"));
 
         std::string encryptZAddress = uni_get_str(find_value(params[0], "encrypttoaddress"));;
         libzcash::PaymentAddress addr;
@@ -1556,6 +1555,8 @@ UniValue signdata(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "\"encrypttoaddress\" parameter must be a valid Sapling z-address");
             }
         }
+
+        createMMR = uni_get_bool(find_value(params[0], "createmmr"), encryptToAddress ? true : false);
 
         returnData = uni_get_bool(find_value(params[0], "returndata"));
 
@@ -2138,7 +2139,8 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
             "{\n"
             "    \"datadescriptor\": {}                                           (object, required) Encrypted data descriptor to decrypt, uses wallet keys included in descriptor\n"
             "    \"evk\":\"Sapling extended full viewing key\"                      (evk, optional) if known, an extended viewing key to use for decoding that is not in the descriptor\n"
-            "    \"retrieve\": bool                                               (bool, optional) Defaults to false. If true, attempts to retrieve the data from its reference and decrypt\n"
+            "    \"retrieve\": bool                                               (bool, optional) Defaults to false. If true and the data passed is an encrypted or unencrypted reference\n"
+            "                                                                                      on this chain, it retrieves the data from its reference and decrypts if it can\n"
             "}\n\n"
 
             "\nResult:\n"
@@ -2196,39 +2198,70 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
 
     UniValue ret(UniValue::VOBJ);
 
-    ret.pushKV("decrypteddata", encryptedDescriptor.ToUniValue());
-
-    // we only decrypt single object data of a few different kinds
-    if (vdxfData.isArray() && vdxfData.size() == 1)
+    if (vdxfData.isArray() &&
+        retrieve &&
+        vdxfData.size() == 1 &&
+        vdxfData[0].isObject())
     {
-        UniValue vdxfData = vdxfData[0];
-        if (vdxfData.isObject())
+        UniValue foundObj = find_value(vdxfData[0], EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey())));
+        if (foundObj.isObject())
         {
-            UniValue foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey())));
-            if (foundObj.isObject())
+            // retrieve the object, and, if successful, fill in the link data, then attempt to decrypt
+            CCrossChainDataRef dataRef(foundObj);
+            if (dataRef.GetOutputData(encryptedDescriptor.objectData, true) &&
+                (encryptedDescriptor.epk.size() || encryptedDescriptor.ssk.size()))
             {
-                ret.pushKV("crosschaindataref", foundObj);
-            }
-            else
-            {
-                foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::DataDescriptorKey())));
-                if (foundObj.isObject())
+                encryptedDescriptor.flags |= encryptedDescriptor.FLAG_ENCRYPTED_DATA;
+                if (wIvk.IsNull())
                 {
-                    ret.pushKV("datadescriptor", foundObj);
+                    encryptedDescriptor.UnwrapEncryption();
                 }
                 else
                 {
-                    foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::MMRDescriptorKey())));
+                    encryptedDescriptor.UnwrapEncryption(wIvk);
+                }
+            }
+            if (!encryptedDescriptor.HasEncryptedData())
+            {
+                vdxfData = CIdentity::VDXFDataToUniValue(encryptedDescriptor.objectData);
+            }
+        }
+    }
+
+    UniValue objectOut = encryptedDescriptor.ToUniValue();
+    if (vdxfData.isArray())
+    {
+        for (int i = 0; i < vdxfData.size(); i++)
+        {
+            // first stage, retrieve and decrypt any data from a first level link
+            if (vdxfData[i].isObject())
+            {
+                UniValue foundObj = find_value(vdxfData[i], EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey())));
+                if (foundObj.isObject())
+                {
+                    objectOut.pushKV("crosschaindataref", foundObj);
+                }
+                else
+                {
+                    foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::DataDescriptorKey())));
                     if (foundObj.isObject())
                     {
-                        ret.pushKV("mmrdescriptor", foundObj);
+                        objectOut.pushKV("datadescriptor", foundObj);
                     }
                     else
                     {
-                        foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::MMRSignatureDataKey())));
+                        foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::MMRDescriptorKey())));
                         if (foundObj.isObject())
                         {
-                            ret.pushKV("mmrsignature", foundObj);
+                            objectOut.pushKV("mmrdescriptor", foundObj);
+                        }
+                        else
+                        {
+                            foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::MMRSignatureDataKey())));
+                            if (foundObj.isObject())
+                            {
+                                objectOut.pushKV("mmrsignature", foundObj);
+                            }
                         }
                     }
                 }
@@ -2236,6 +2269,7 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
         }
     }
 
+    ret.pushKV("datadescriptor", objectOut);
     return ret;
 }
 
