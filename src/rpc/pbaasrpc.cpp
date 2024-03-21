@@ -14506,16 +14506,15 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                         CDataDescriptor SignatureData = CDataDescriptor(find_value(signResult, "signaturedata_encrypted"));
                         if (haveIvk && MMRDesc.IsValid())
                         {
-                            std::vector<unsigned char> ivkVec(std::vector<unsigned char>(ivk.begin(), ivk.end()));
-                            MMRDesc.mmrRoot.GetSSK(ivkVec, MMRDesc.mmrRoot.ssk, true);
-                            MMRDesc.mmrHashes.GetSSK(ivkVec, MMRDesc.mmrHashes.ssk, true);
+                            MMRDesc.mmrRoot.GetSSK(ivk, MMRDesc.mmrRoot.ssk, true);
+                            MMRDesc.mmrHashes.GetSSK(ivk, MMRDesc.mmrHashes.ssk, true);
                             for (auto &oneDescr : MMRDesc.dataDescriptors)
                             {
-                                oneDescr.GetSSK(ivkVec, oneDescr.ssk, true);
+                                oneDescr.GetSSK(ivk, oneDescr.ssk, true);
                             }
                             if (SignatureData.IsValid())
                             {
-                                SignatureData.GetSSK(ivkVec, SignatureData.ssk, true);
+                                SignatureData.GetSSK(ivk, SignatureData.ssk, true);
                             }
                         }
 

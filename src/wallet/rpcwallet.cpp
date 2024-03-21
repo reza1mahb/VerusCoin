@@ -1544,8 +1544,6 @@ UniValue signdata(const UniValue& params, bool fHelp)
         {
             if (!IsValidPaymentAddress(addr))
             {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "\"encrypttoaddress\" par, std::string mimeTypeStr
-            {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "\"encrypttoaddress\" parameter must be a valid Sapling z-address");
             }
         }
