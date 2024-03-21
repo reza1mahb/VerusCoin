@@ -699,7 +699,6 @@ CDataDescriptor::CDataDescriptor(const UniValue &uni) :
     flags(uni_get_int64(find_value(uni, "flags"))),
     label(TrimSpaces(uni_get_str(find_value(uni, "label")), true, "")),
     mimeType(TrimSpaces(uni_get_str(find_value(uni, "mimetype")), true, "")),
-    objectData(ParseHex(uni_get_str(find_value(uni, "objectdata")))),
     salt(ParseHex(uni_get_str(find_value(uni, "salt")))),
     epk(ParseHex(uni_get_str(find_value(uni, "epk")))),
     ivk(ParseHex(uni_get_str(find_value(uni, "ivk")))),
@@ -714,6 +713,15 @@ CDataDescriptor::CDataDescriptor(const UniValue &uni) :
         mimeType.resize(64);
     }
     SetFlags();
+
+    UniValue objUni = find_value(uni, "objectdata");
+    if (HasMIME() &&
+        std::string(mimeType.begin(), mimeType.begin() + 5) == std::string("text/") &&
+        objUni.isStr())
+    {
+        objUni.pushKV("message", objUni);
+    }
+    objectData = VectorEncodeVDXFUni(find_value(uni, "objectdata"));
 }
 
 std::vector<uint256> CDataDescriptor::DecodeHashVector() const
@@ -958,18 +966,34 @@ UniValue CDataDescriptor::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
     int64_t Flags = CalcFlags();
+    bool isText = false;
 
     ret.pushKV("version", (int64_t)version);
     ret.pushKV("flags", Flags);
-    ret.pushKV("objectdata", HexBytes(objectData.data(), objectData.size()));
+
+    if (HasMIME())
+    {
+        ret.pushKV("mimetype", TrimSpaces(mimeType, true, ""));
+        if (std::string(mimeType.begin(), mimeType.begin() + 5) == std::string("text/"))
+        {
+            isText = true;
+        }
+    }
+
+    if (isText)
+    {
+        UniValue objectDataUni(UniValue::VOBJ);
+        objectDataUni.pushKV("message", std::string(objectData.begin(), objectData.end()));
+        ret.pushKV("objectdata", objectDataUni);
+    }
+    else
+    {
+        ret.pushKV("objectdata", CIdentity::VDXFDataToUniValue(objectData));
+    }
 
     if (HasLabel())
     {
         ret.pushKV("label", TrimSpaces(label, true, ""));
-    }
-    if (HasMIME())
-    {
-        ret.pushKV("mimetype", TrimSpaces(mimeType, true, ""));
     }
     if (HasSalt())
     {

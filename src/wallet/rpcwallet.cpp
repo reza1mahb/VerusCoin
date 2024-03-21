@@ -1544,13 +1544,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
         {
             if (!IsValidPaymentAddress(addr))
             {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "\"encrypttoaddress\" parameter must be a valid Sapling z-address");
-            }
-            try
-            {
-                encryptToAddress = boost::get<libzcash::SaplingPaymentAddress>(addr);
-            }
-            catch (...)
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "\"encrypttoaddress\" par, std::string mimeTypeStr
             {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "\"encrypttoaddress\" parameter must be a valid Sapling z-address");
             }
@@ -1779,7 +1773,9 @@ UniValue signdata(const UniValue& params, bool fHelp)
         {
             std::vector<unsigned char> dataVec;
             bool isHash = false;
+
             size_t messageSize = GetDataMessage(oneItem, hashType, dataVec, isHash);
+
             if (!messageSize || messageSize != dataVec.size())
             {
                 throw JSONRPCError(RPC_INVALID_PARAMS, "Cannot read message" + oneItem.write());
@@ -2128,6 +2124,7 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
         throw runtime_error(
             "decryptdata '{\n"
             "                  \"datadescriptor\": {},\n"
+            "                  \"evk\":\"Sapling extended full viewing key\",\n"
             "                  \"retrieve\": bool\n"
             "              }\n\n"
 
@@ -2152,7 +2149,7 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
             "\nAs json rpc\n"
             + HelpExampleRpc("signdata", "'{\"address\":\"Verus Coin Foundation.vrsc@\", \"createmmr\":true, \"data\":[{\"message\":\"hello world\", \"encrypttoaddress\":\"Sapling address\"}]}'")
         );
-    
+
     CDataDescriptor encryptedDescriptor(find_value(params[0], "datadescriptor"));
 
     if (!encryptedDescriptor.IsValid())
