@@ -840,7 +840,7 @@ public:
         }
         if (HasMIME())
         {
-            READWRITE(LIMITED_STRING(mimeType, 64));
+            READWRITE(LIMITED_STRING(mimeType, 128));
         }
         if (HasSalt())
         {

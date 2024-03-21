@@ -708,9 +708,9 @@ CDataDescriptor::CDataDescriptor(const UniValue &uni) :
     {
         label.resize(64);
     }
-    if (mimeType.size() > 64)
+    if (mimeType.size() > 128)
     {
-        mimeType.resize(64);
+        mimeType.resize(128);
     }
     SetFlags();
 
