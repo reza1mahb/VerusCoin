@@ -10276,13 +10276,13 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
 
                     dataUni.pushKV("encrypttoaddress", EncodePaymentAddress(zaddressDest));
 
-                    auto rootSigUni = find_value(dataUni, "createmmr");
-                    if (rootSigUni.isNull())
+                    auto createMMR = find_value(dataUni, "createmmr");
+                    if (createMMR.isNull())
                     {
-                        rootSigUni = true;
-                        dataUni.pushKV("createmmr", rootSigUni);
+                        createMMR = true;
+                        dataUni.pushKV("createmmr", createMMR);
                     }
-                    if (!uni_get_bool(rootSigUni))
+                    if (!uni_get_bool(createMMR))
                     {
                         throw JSONRPCError(RPC_INVALID_PARAMETER, "If root signature is specified for data storage, it must be true");
                     }
@@ -14452,7 +14452,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                     // if we have a data element, the data will be stored on the transaction and referenced in the ID
                     if (!chainData.isNull())
                     {
-                        auto rootSigUni = find_value(chainData, "createmmr");
+                        auto createMMR = find_value(chainData, "createmmr");
                         auto dataLabel = uni_get_str(find_value(chainData, "label"));
                         auto mimeType = uni_get_str(find_value(chainData, "mimetype"));
                         libzcash::PaymentAddress encryptToAddress;
@@ -14485,12 +14485,12 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                             ivk = xsk.expsk.full_viewing_key().in_viewing_key();
                             haveIvk = true;
                         }
-                        if (rootSigUni.isNull())
+                        if (createMMR.isNull())
                         {
-                            rootSigUni = true;
-                            chainData.pushKV("createmmr", rootSigUni);
+                            createMMR = true;
+                            chainData.pushKV("createmmr", createMMR);
                         }
-                        if (!uni_get_bool(rootSigUni))
+                        if (!uni_get_bool(createMMR))
                         {
                             throw JSONRPCError(RPC_INVALID_PARAMETER, "If root signature is specified for data storage, it must be true");
                         }
