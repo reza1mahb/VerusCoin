@@ -10287,7 +10287,9 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                         throw JSONRPCError(RPC_INVALID_PARAMETER, "If root signature is specified for data storage, it must be true");
                     }
 
-                    UniValue signResult = signdata(dataUni, false);
+                    UniValue signParams(UniValue::VARR);
+                    signParams.push_back(dataUni);
+                    UniValue signResult = signdata(signParams, false);
 
                     CNotaryEvidence notaryEvidence;
 
@@ -14454,8 +14456,35 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                         auto dataLabel = uni_get_str(find_value(chainData, "label"));
                         auto mimeType = uni_get_str(find_value(chainData, "mimetype"));
                         libzcash::PaymentAddress encryptToAddress;
+                        libzcash::SaplingIncomingViewingKey ivk;
+                        bool haveIvk = false;
 
                         bool encryptData = pwalletMain->GetAndValidateSaplingZAddress(uni_get_str(find_value(chainData, "encrypttoaddress")), encryptToAddress);
+                        if (!encryptData)
+                        {
+                            if (!find_value(chainData, "encrypttoaddress").isNull())
+                            {
+                                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid encryption address in object #" + std::to_string(i));
+                            }
+
+                            // if we have no encryption key, we still need a random z-address for encryption
+                            HDSeed seed(HDSeed::Random());
+                            auto m = libzcash::SaplingExtendedSpendingKey::Master(seed);
+                            uint32_t bip44CoinType = Params().BIP44CoinType();
+
+                            // We use a fixed keypath scheme of m/32'/coin_type'/account'
+                            // Derive m/32'
+                            auto m_32h = m.Derive(32 | ZIP32_HARDENED_KEY_LIMIT);
+                            // Derive m/32'/coin_type'
+                            auto m_32h_cth = m_32h.Derive(bip44CoinType | ZIP32_HARDENED_KEY_LIMIT);
+
+                            // Derive account key at next index, skip keys already known to the wallet
+                            libzcash::SaplingExtendedSpendingKey xsk = m_32h_cth.Derive(0 | ZIP32_HARDENED_KEY_LIMIT);
+                            chainData.pushKV("encrypttoaddress", EncodePaymentAddress(xsk.DefaultAddress()));
+                            encryptToAddress = xsk.DefaultAddress();
+                            ivk = xsk.expsk.full_viewing_key().in_viewing_key();
+                            haveIvk = true;
+                        }
                         if (rootSigUni.isNull())
                         {
                             rootSigUni = true;
@@ -14466,13 +14495,29 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                             throw JSONRPCError(RPC_INVALID_PARAMETER, "If root signature is specified for data storage, it must be true");
                         }
 
+                        UniValue signParams(UniValue::VARR);
+                        signParams.push_back(chainData);
                         UniValue signResult = signdata(chainData, false);
 
                         CNotaryEvidence notaryEvidence;
 
                         // now, we have both a CMMRDescriptor as well as a CMMRSignatureData if we signed, all encrypted to the specified Z-address
-                        CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, encryptData ? "mmrdescriptor_encrypted" : "mmrdescriptor"));
-                        CMMRSignatureData SignatureData = CMMRSignatureData(find_value(signResult, encryptData ? "signaturedata_encrypted" : "signaturedata"));
+                        CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdescriptor_encrypted"));
+                        CDataDescriptor SignatureData = CDataDescriptor(find_value(signResult, "signaturedata_encrypted"));
+                        if (haveIvk && MMRDesc.IsValid())
+                        {
+                            std::vector<unsigned char> ivkVec(std::vector<unsigned char>(ivk.begin(), ivk.end()));
+                            MMRDesc.mmrRoot.GetSSK(ivkVec, MMRDesc.mmrRoot.ssk, true);
+                            MMRDesc.mmrHashes.GetSSK(ivkVec, MMRDesc.mmrHashes.ssk, true);
+                            for (auto &oneDescr : MMRDesc.dataDescriptors)
+                            {
+                                oneDescr.GetSSK(ivkVec, oneDescr.ssk, true);
+                            }
+                            if (SignatureData.IsValid())
+                            {
+                                SignatureData.GetSSK(ivkVec, SignatureData.ssk, true);
+                            }
+                        }
 
                         // if the MMR data isn't valid, we have nothing to store
                         if (!MMRDesc.IsValid())
@@ -14530,6 +14575,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
             {
                 multiMapUni.pushKV(keys[i], values[i]);
             }
+            uniOldID["contentmultimap"] = multiMapUni;
         }
     }
 
