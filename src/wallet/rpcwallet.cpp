@@ -2135,7 +2135,7 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
             "    \"datadescriptor\": {}                                           (object, required) Encrypted data descriptor to decrypt, uses wallet keys included in descriptor\n"
             "    \"evk\":\"Sapling extended full viewing key\"                      (evk, optional) if known, an extended viewing key to use for decoding that is not in the descriptor\n"
             "    \"retrieve\": bool                                               (bool, optional) Defaults to false. If true and the data passed is an encrypted or unencrypted reference\n"
-            "                                                                                      on this chain, it retrieves the data from its reference and decrypts if it can\n"
+            "                                                                                          on this chain, it retrieves the data from its reference and decrypts if it can\n"
             "}\n\n"
 
             "\nResult:\n"

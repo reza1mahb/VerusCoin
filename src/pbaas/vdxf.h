@@ -573,6 +573,19 @@ public:
         return key;
     }
 
+    // for any ID, this key indexes content that applies to representing the profile of
+    // that ID. there may be many mime-type instances of a particular piece of profile media
+    static std::string ProfileMediaKeyName()
+    {
+        return "vrsc::identity.profile.media";
+    }
+    static uint160 ProfileMediaKey()
+    {
+        static uint160 nameSpace;
+        static uint160 profileMediaKey = GetDataKey(ProfileMediaKeyName(), nameSpace);
+        return profileMediaKey;
+    }
+
     static std::string ZMemoMessageKeyName()
     {
         return "vrsc::system.zmemo.message";
@@ -778,13 +791,7 @@ public:
         FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT = 0x10,
         FLAG_LABEL_PRESENT = 0x20,
         FLAG_MIME_TYPE_PRESENT = 0x40,
-        FLAG_MASK = (FLAG_ENCRYPTED_DATA + FLAG_SALT_PRESENT + FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT + FLAG_INCOMING_VIEWING_KEY_PRESENT + FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT + FLAG_LABEL_PRESENT + FLAG_MIME_TYPE_PRESENT),
-
-        LINK_INVALID = 0,
-        LINK_UTXOREF = 1,
-        LINK_CROSSCHAIN_UTXOREF = 2,
-        LINK_ARWEAVE = 3,
-        LINK_URL = 4
+        FLAG_MASK = (FLAG_ENCRYPTED_DATA + FLAG_SALT_PRESENT + FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT + FLAG_INCOMING_VIEWING_KEY_PRESENT + FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT + FLAG_LABEL_PRESENT + FLAG_MIME_TYPE_PRESENT)
     };
 
     uint32_t version;
