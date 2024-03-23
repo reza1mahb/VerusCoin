@@ -14421,7 +14421,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
 
     // each one of these is entered into the ID as one idexed link to the data output on chain
     // data has key, label, mimetype, actual data, encrypttoaddress
-    std::multimap<uint160, std::tuple<std::string, std::string, CNotaryEvidence, libzcash::SaplingPaymentAddress>> extraData;
+    std::multimap<uint160, std::tuple<std::string, std::string, CNotaryEvidence, libzcash::SaplingPaymentAddress, libzcash::SaplingIncomingViewingKey>> extraData;
 
     // pull out data to be stored outside the ID definition to extraData
     if (uniOldID.count("contentmultimap"))
@@ -14457,7 +14457,6 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                         auto mimeType = uni_get_str(find_value(chainData, "mimetype"));
                         libzcash::PaymentAddress encryptToAddress;
                         libzcash::SaplingIncomingViewingKey ivk;
-                        bool haveIvk = false;
 
                         bool encryptData = pwalletMain->GetAndValidateSaplingZAddress(uni_get_str(find_value(chainData, "encrypttoaddress")), encryptToAddress);
                         if (!encryptData)
@@ -14482,8 +14481,9 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                             libzcash::SaplingExtendedSpendingKey xsk = m_32h_cth.Derive(0 | ZIP32_HARDENED_KEY_LIMIT);
                             chainData.pushKV("encrypttoaddress", EncodePaymentAddress(xsk.DefaultAddress()));
                             encryptToAddress = xsk.DefaultAddress();
+
+                            // if this is encrypted to a random key, publish the viewing key in the link
                             ivk = xsk.expsk.full_viewing_key().in_viewing_key();
-                            haveIvk = true;
                         }
                         if (createMMR.isNull())
                         {
@@ -14504,19 +14504,6 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                         // now, we have both a CMMRDescriptor as well as a CMMRSignatureData if we signed, all encrypted to the specified Z-address
                         CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdescriptor_encrypted"));
                         CDataDescriptor SignatureData = CDataDescriptor(find_value(signResult, "signaturedata_encrypted"));
-                        if (haveIvk && MMRDesc.IsValid())
-                        {
-                            MMRDesc.mmrRoot.GetSSK(ivk, MMRDesc.mmrRoot.ssk, true);
-                            MMRDesc.mmrHashes.GetSSK(ivk, MMRDesc.mmrHashes.ssk, true);
-                            for (auto &oneDescr : MMRDesc.dataDescriptors)
-                            {
-                                oneDescr.GetSSK(ivk, oneDescr.ssk, true);
-                            }
-                            if (SignatureData.IsValid())
-                            {
-                                SignatureData.GetSSK(ivk, SignatureData.ssk, true);
-                            }
-                        }
 
                         // if the MMR data isn't valid, we have nothing to store
                         if (!MMRDesc.IsValid())
@@ -14539,7 +14526,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
 
                         libzcash::SaplingPaymentAddress *pEncryptTo = boost::get<libzcash::SaplingPaymentAddress>(&encryptToAddress);
                         libzcash::SaplingPaymentAddress encryptTo = pEncryptTo ? *pEncryptTo : libzcash::SaplingPaymentAddress();
-                        extraData.insert(std::make_pair(key, std::make_tuple(dataLabel, MMRDesc.dataDescriptors.size() > 1 ? "application/json" : mimeType, evidenceData, encryptTo)));
+                        extraData.insert(std::make_pair(key, std::make_tuple(dataLabel, MMRDesc.dataDescriptors.size() > 1 ? "application/json" : mimeType, evidenceData, encryptTo, ivk)));
                         toRemoveValues.push_back(j);
                         continue;
                     }
@@ -14724,6 +14711,10 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         if (IsValidPaymentAddress(std::get<3>(oneExtraData.second)))
         {
             dd.WrapEncrypted(std::get<3>(oneExtraData.second));
+            if (!std::get<4>(oneExtraData.second).IsNull())
+            {
+                dd.dataDescriptor.ivk = std::vector<unsigned char>(std::get<4>(oneExtraData.second).begin(), std::get<4>(oneExtraData.second).end());
+            }
         }
         std::vector<unsigned char> memoData = ::AsVector(dd);
         if (std::get<2>(oneExtraData.second).evidence.chainObjects.size() > 1)
@@ -14733,6 +14724,10 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
             if (IsValidPaymentAddress(std::get<3>(oneExtraData.second)))
             {
                 dd.WrapEncrypted(std::get<3>(oneExtraData.second));
+                if (!std::get<4>(oneExtraData.second).IsNull())
+                {
+                    dd.dataDescriptor.ivk = std::vector<unsigned char>(std::get<4>(oneExtraData.second).begin(), std::get<4>(oneExtraData.second).end());
+                }
             }
             std::vector<unsigned char> memoSig = ::AsVector(dd);
             memoData.insert(memoData.begin(), memoSig.begin(), memoSig.end());

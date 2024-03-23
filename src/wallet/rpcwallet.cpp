@@ -2122,7 +2122,8 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
         throw runtime_error(
             "decryptdata '{\n"
             "                  \"datadescriptor\": {},\n"
-            "                  \"evk\":\"Sapling extended full viewing key\",\n"
+            "                  \"evk\":\"Optional Sapling extended full viewing key\",\n"
+            "                  \"ivk\":\"Optional hex incoming viewing key\",\n"
             "                  \"retrieve\": bool\n"
             "              }\n\n"
 
@@ -2165,6 +2166,11 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
     if (pViewingKey)
     {
         wIvk = pViewingKey->fvk.in_viewing_key();
+    }
+    else
+    {
+        std::vector<unsigned char> ivkVec(ParseHex(uni_get_str(find_value(params[0], "ivk"))));
+        wIvk = uint256(ivkVec);
     }
 
     // if there's an encrypted link, decrypt it
