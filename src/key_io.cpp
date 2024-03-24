@@ -1007,8 +1007,7 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &_obj)
     std::string serializedMessage = uni_get_str(find_value(obj, "message"));
     if (!serializedMessage.empty())
     {
-        ss << uni_get_str(serializedMessage);
-        return std::vector<unsigned char>(ss.begin(), ss.end());
+        return std::vector<unsigned char>(serializedMessage.begin(), serializedMessage.end());
     }
 
     if (obj.isStr())
@@ -1142,9 +1141,9 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &_obj)
             ss << VARINT(GetSerializeSize(ss, descr));
             ss << descr;
         }
-        else if (objTypeKey == CVDXF_Data::SignatureDataKey())
+        else if (objTypeKey == CVDXF_Data::MMRSignatureDataKey())
         {
-            CSignatureData sigData(oneValValues[k]);
+            CMMRSignatureData sigData(oneValValues[k]);
             ss << objTypeKey;
             ss << VARINT(sigData.version);
             ss << VARINT(GetSerializeSize(ss, sigData));
