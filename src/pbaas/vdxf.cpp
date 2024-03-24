@@ -704,6 +704,11 @@ CDataDescriptor::CDataDescriptor(const UniValue &uni) :
     ivk(ParseHex(uni_get_str(find_value(uni, "ivk")))),
     ssk(ParseHex(uni_get_str(find_value(uni, "ssk"))))
 {
+    if (uni.isNull())
+    {
+        version = VERSION_INVALID;
+        return;
+    }
     if (label.size() > 64)
     {
         label.resize(64);
@@ -1029,7 +1034,7 @@ UniValue CVDXFDataDescriptor::ToUniValue() const
     return ret;
 }
 
-CMMRSignatureData::CMMRSignatureData(const UniValue &uni) :
+CSignatureData::CSignatureData(const UniValue &uni) :
     version(uni_get_int64(find_value(uni, "version"))),
     systemID(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "systemid"))))),
     hashType((CVDXF::EHashTypes)uni_get_int(find_value(uni, "hashtype"))),
@@ -1078,7 +1083,7 @@ CMMRSignatureData::CMMRSignatureData(const UniValue &uni) :
     }
 }
 
-UniValue CMMRSignatureData::ToUniValue() const
+UniValue CSignatureData::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
 
@@ -1131,7 +1136,7 @@ UniValue CMMRSignatureData::ToUniValue() const
     return ret;
 }
 
-UniValue CVDXFMMRSignature::ToUniValue() const
+UniValue CVDXFSignatureData::ToUniValue() const
 {
     UniValue obj = ((CVDXF_Data *)this)->ToUniValue();
     obj.pushKV("signature", signature.ToUniValue());

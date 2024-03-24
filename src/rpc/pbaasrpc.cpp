@@ -10293,22 +10293,38 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
 
                     CNotaryEvidence notaryEvidence;
 
-                    // now, we have both a CMMRDescriptor as well as a CMMRSignatureData if we signed, all encrypted to the specified Z-address
+                    // now, we have both a CMMRDescriptor as well as a CSignatureData if we signed, all encrypted to the specified Z-address
                     CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdescriptor_encrypted"));
-                    CMMRSignatureData SignatureData = CMMRSignatureData(find_value(signResult, "signaturedata_encrypted"));
+                    CSignatureData SignatureData = CSignatureData(find_value(signResult, "signaturedata_encrypted"));
 
                     // if the MMR data isn't valid, we have nothing to store
-                    if (!MMRDesc.IsValid())
+                    if (!MMRDesc.IsValid() || !MMRDesc.dataDescriptors.size())
                     {
-                        throw JSONRPCError(RPC_INVALID_PARAMETER, "No valid data for data output #" + std::to_string(i));
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "No valid data for data object # " + std::to_string(i));
                     }
 
-                    // now, we will store the encrypted signature, if present, and MMRDesc in transparent outputs and put the link inside the z-memo
-                    CNotaryEvidence evidenceData(CNotaryEvidence::TYPE_IMPORT_PROOF);
-                    evidenceData.evidence << CEvidenceData(::AsVector(MMRDesc));
+                    CVDXF_Data vdxfData(CVDXF_Data::VERSION_INVALID);
+                    CVDXF_Data vdxfSignature(CVDXF_Data::VERSION_INVALID);
+
+                    // if we only have one object, the MMR is that salted object, remove the overhead
+                    if (MMRDesc.dataDescriptors.size() == 1)
+                    {
+                        vdxfData = CVDXF_Data(CVDXF_Data::DataDescriptorKey(), ::AsVector(MMRDesc.dataDescriptors[0]));
+                    }
+                    else
+                    {
+                        vdxfData = CVDXF_Data(CVDXF_Data::MMRDescriptorKey(), ::AsVector(MMRDesc));
+                    }
                     if (SignatureData.IsValid())
                     {
-                        evidenceData.evidence << CEvidenceData(::AsVector(SignatureData));
+                        vdxfSignature = CVDXF_Data(CVDXF_Data::SignatureDataKey(), ::AsVector(SignatureData));
+                    }
+
+                    CNotaryEvidence evidenceData(CNotaryEvidence::TYPE_IMPORT_PROOF);
+                    evidenceData.evidence << CEvidenceData(::AsVector(vdxfData));
+                    if (vdxfSignature.IsValid())
+                    {
+                        evidenceData.evidence << CEvidenceData(::AsVector(vdxfSignature));
                     }
 
                     CCcontract_info CC;
@@ -10329,7 +10345,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
 
                     CVDXFDataRef memoLink(uint256(), tOutputs.size(), 0);
                     std::vector<unsigned char> memoData = ::AsVector(CVDXFDataDescriptor(::AsVector(memoLink), false, uni_get_str(find_value(dataUni, "label")), uni_get_str(find_value(dataUni, "mimetype"))));
-                    if (SignatureData.IsValid())
+                    if (vdxfSignature.IsValid())
                     {
                         memoLink = CVDXFDataRef(uint256(), tOutputs.size(), 0, 1);
                         std::vector<unsigned char> memoSig = ::AsVector(CVDXFDataDescriptor(::AsVector(memoLink), false, "signature", "application/json"));
@@ -14501,22 +14517,39 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
 
                         CNotaryEvidence notaryEvidence;
 
-                        // now, we have both a CMMRDescriptor as well as a CMMRSignatureData if we signed, all encrypted to the specified Z-address
+                        // now, we have both a CMMRDescriptor as well as a CSignatureData if we signed, all encrypted to the specified Z-address
                         CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdescriptor_encrypted"));
                         CDataDescriptor SignatureData = CDataDescriptor(find_value(signResult, "signaturedata_encrypted"));
 
                         // if the MMR data isn't valid, we have nothing to store
-                        if (!MMRDesc.IsValid())
+                        if (!MMRDesc.IsValid() || !MMRDesc.dataDescriptors.size())
                         {
                             throw JSONRPCError(RPC_INVALID_PARAMETER, "No valid data for data object # " + std::to_string(i));
                         }
 
-                        // now, we will store the encrypted signature, if present, and MMRDesc in transparent outputs and put the link inside the z-memo
-                        CNotaryEvidence evidenceData(CNotaryEvidence::TYPE_IMPORT_PROOF);
-                        evidenceData.evidence << CEvidenceData(::AsVector(MMRDesc));
+                        CVDXF_Data vdxfData(CVDXF_Data::VERSION_INVALID);
+                        CVDXF_Data vdxfSignature(CVDXF_Data::VERSION_INVALID);
+
+                        // if we only have one object, the MMR is that salted object, remove the overhead
+                        if (MMRDesc.dataDescriptors.size() == 1)
+                        {
+                            vdxfData = CVDXF_Data(CVDXF_Data::DataDescriptorKey(), ::AsVector(MMRDesc.dataDescriptors[0]));
+                        }
+                        else
+                        {
+                            vdxfData = CVDXF_Data(CVDXF_Data::MMRDescriptorKey(), ::AsVector(MMRDesc));
+                        }
                         if (SignatureData.IsValid())
                         {
-                            evidenceData.evidence << CEvidenceData(::AsVector(SignatureData));
+                            vdxfSignature = CVDXF_Data(CVDXF_Data::SignatureDataKey(), ::AsVector(SignatureData));
+                        }
+
+                        // now, we will store the encrypted signature, if present, and MMRDesc in transparent outputs and put the link inside the z-memo
+                        CNotaryEvidence evidenceData(CNotaryEvidence::TYPE_IMPORT_PROOF);
+                        evidenceData.evidence << CEvidenceData(::AsVector(vdxfData));
+                        if (vdxfSignature.IsValid())
+                        {
+                            evidenceData.evidence << CEvidenceData(::AsVector(vdxfSignature));
                         }
                         uint160 key = ParseVDXFKey(keys[i]);
                         if (key.IsNull())

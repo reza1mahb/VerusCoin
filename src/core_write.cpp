@@ -1647,9 +1647,9 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
                 objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), mmrDescriptor.ToUniValue());
             }
         }
-        else if (checkVal == CVDXF_Data::MMRSignatureDataKey())
+        else if (checkVal == CVDXF_Data::SignatureDataKey())
         {
-            CMMRSignatureData sigData;
+            CSignatureData sigData;
             ss >> VARINT(version);
             ss >> VARINT(objSize);
             ss >> sigData;
@@ -1709,7 +1709,7 @@ UniValue CIdentity::VDXFDataToUniValue(const std::vector<unsigned char> &dataVch
             break;
         }
     }
-    if (bytesLeft <= sizeof(uint160))
+    if (bytesLeft && bytesLeft <= sizeof(uint160))
     {
         entryArr.push_back(HexBytes(dataVch.data() + (dataVch.size() - bytesLeft), bytesLeft));
     }

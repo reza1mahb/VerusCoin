@@ -1453,7 +1453,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
             "{\n"
             "  \"address\":\"t-addr or identity\"                               (string, required) The transparent address or identity to use for signing.\n"
             "  \"filename\" | \"message\" | \"messagehex\" | \"messagebase64\" | \"datahash\" (string, optional) Data to sign\n"
-            "  \"mmrdata\":[{\"filename | data | message | serializedhex | serializedbase64 | datahash\":\"str\"}], (array, optional) Alternate to single data parameters, this enables an MMR signing\n"
+            "  \"mmrdata\":[{\"filename | vdxfdata | message | serializedhex | serializedbase64 | datahash\":\"str\"}], (array, optional) Alternate to single data parameters, this enables an MMR signing\n"
             "             \"mmrsalt\":[\"salt\":\"str\"],                       (string, optional) Protects privacy of leaf nodes of the MMR\n"
             "             \"mmrhashtype\":\"sha256\" | \"sha256D\" | \"blake2b\" | \"keccak256\", (string, optional) Default is blake2b\n"
             "             \"priormmr\":\"[{\"idxhash\":"",\"utxoref\":{}}]\",   (array, optional)  When growing an MMR, the prior hashes can be used to construct the MMR and root w/o data\n"
@@ -1546,6 +1546,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
             {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "\"encrypttoaddress\" parameter must be a valid Sapling z-address");
             }
+            encryptToAddress = boost::get<libzcash::SaplingPaymentAddress>(addr);
         }
 
         createMMR = uni_get_bool(find_value(params[0], "createmmr"), encryptToAddress ? true : false);
@@ -1893,14 +1894,6 @@ UniValue signdata(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Unable to encrypt MMR data to address specified");
             }
             ret.pushKV("mmrdescriptor_encrypted", encryptedDescriptor.ToUniValue());
-            /* LOCK(pwalletMain->cs_wallet);
-            CDataDescriptor decryptedData;
-            if (pwalletMain->DecryptWithSaplingViewingKey(encryptedDescriptor.mmrRoot, decryptedData, &incomingViewingKey))
-            {
-                CMMRDescriptor decryptedMMR;
-                decryptedMMR = encryptedDescriptor.Decrypt(incomingViewingKey);
-                ret.pushKV("mmrdescriptor_decrypted", decryptedMMR.ToUniValue());
-            } //*/
         }
 
         ret.pushKV("mmrdescriptor", mmrDescriptor.ToUniValue());
@@ -2022,7 +2015,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
             {
                 sig = SignMessageHash(identity, msgHash, strSignature, nHeight);
             }
-            CMMRSignatureData mmrSignatureData(ASSETCHAINS_CHAINID, createMMR ? mmrHashType : hashType, std::vector<unsigned char>(msgHash.begin(), msgHash.end()), identity.GetID(), CMMRSignatureData::TYPE_VERUSID_DEFAULT, DecodeBase64(sig.c_str()), vdxfCodes, vdxfCodeNames, statements);
+            CSignatureData mmrSignatureData(ASSETCHAINS_CHAINID, createMMR ? mmrHashType : hashType, std::vector<unsigned char>(msgHash.begin(), msgHash.end()), identity.GetID(), CSignatureData::TYPE_VERUSID_DEFAULT, DecodeBase64(sig.c_str()), vdxfCodes, vdxfCodeNames, statements);
 
             if (encryptToAddress && mmrSignatureData.signatureAsVch.size())
             {
@@ -2134,7 +2127,8 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
             "\nArguments:\n"
             "{\n"
             "    \"datadescriptor\": {}                                           (object, required) Encrypted data descriptor to decrypt, uses wallet keys included in descriptor\n"
-            "    \"evk\":\"Sapling extended full viewing key\"                      (evk, optional) if known, an extended viewing key to use for decoding that is not in the descriptor\n"
+            "    \"evk\":\"Sapling extended full viewing key\"                      (evk, optional) if known, an extended viewing key to use for decoding that may not be in the descriptor\n"
+            "    \"ivk\":\"Sapling incoming viewing key hex\"                       (ivk, optional) if known, an incoming viewing key to use for decoding\n"
             "    \"retrieve\": bool                                               (bool, optional) Defaults to false. If true and the data passed is an encrypted or unencrypted reference\n"
             "                                                                                          on this chain, it retrieves the data from its reference and decrypts if it can\n"
             "}\n\n"
@@ -2170,7 +2164,10 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
     else
     {
         std::vector<unsigned char> ivkVec(ParseHex(uni_get_str(find_value(params[0], "ivk"))));
-        wIvk = uint256(ivkVec);
+        if (ivkVec.size() == 32)
+        {
+            wIvk = uint256(ivkVec);
+        }
     }
 
     // if there's an encrypted link, decrypt it
@@ -2258,7 +2255,7 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
                         }
                         else
                         {
-                            foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::MMRSignatureDataKey())));
+                            foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::SignatureDataKey())));
                             if (foundObj.isObject())
                             {
                                 objectOut.pushKV("mmrsignature", foundObj);

@@ -1142,9 +1142,9 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &_obj)
             ss << VARINT(GetSerializeSize(ss, descr));
             ss << descr;
         }
-        else if (objTypeKey == CVDXF_Data::MMRSignatureDataKey())
+        else if (objTypeKey == CVDXF_Data::SignatureDataKey())
         {
-            CMMRSignatureData sigData(oneValValues[k]);
+            CSignatureData sigData(oneValValues[k]);
             ss << objTypeKey;
             ss << VARINT(sigData.version);
             ss << VARINT(GetSerializeSize(ss, sigData));
