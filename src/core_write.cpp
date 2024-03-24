@@ -1542,15 +1542,15 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
     try
     {
         uint160 checkVal;
-        uint32_t version;
-        int64_t objSize;
+        uint32_t version = 0;
+        uint64_t objSize = 0;
         ss >> checkVal;
 
         if (checkVal == CVDXF_Data::DataCurrencyMapKey())
         {
             CCurrencyValueMap oneCurrencyMap;
             ss >> VARINT(version);
-            ss >> VARINT(objSize);
+            ss >> COMPACTSIZE(objSize);
             ss >> oneCurrencyMap;
             if (oneCurrencyMap.IsValid())
             {
@@ -1562,7 +1562,7 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
         {
             CRating oneRatingObj;
             ss >> VARINT(version);
-            ss >> VARINT(objSize);
+            ss >> COMPACTSIZE(objSize);
             ss >> oneRatingObj;
             if (oneRatingObj.IsValid())
             {
@@ -1574,7 +1574,7 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
         {
             CTransferDestination oneTransferDest;
             ss >> VARINT(version);
-            ss >> VARINT(objSize);
+            ss >> COMPACTSIZE(objSize);
             ss >> oneTransferDest;
             if (oneTransferDest.IsValid())
             {
@@ -1586,7 +1586,7 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
         {
             CContentMultiMapRemove oneContentRemove;
             ss >> VARINT(version);
-            ss >> VARINT(objSize);
+            ss >> COMPACTSIZE(objSize);
             ss >> oneContentRemove;
             if (oneContentRemove.IsValid())
             {
@@ -1598,7 +1598,7 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
         {
             std::string stringVal;
             ss >> VARINT(version);
-            ss >> VARINT(objSize);
+            ss >> COMPACTSIZE(objSize);
             ss >> stringVal;
             objectUni = UniValue(UniValue::VOBJ);
             objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), stringVal);
@@ -1607,7 +1607,7 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
         {
             std::vector<unsigned char> vecVal;
             ss >> VARINT(version);
-            ss >> VARINT(objSize);
+            ss >> COMPACTSIZE(objSize);
             ss >> vecVal;
             objectUni = HexBytes(&(vecVal[0]), vecVal.size());
         }
@@ -1615,7 +1615,7 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
         {
             CCrossChainDataRef dataRef;
             ss >> VARINT(version);
-            ss >> VARINT(objSize);
+            ss >> COMPACTSIZE(objSize);
             ss >> dataRef;
             if (dataRef.IsValid())
             {
@@ -1627,7 +1627,7 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
         {
             CDataDescriptor dataDescriptor;
             ss >> VARINT(version);
-            ss >> VARINT(objSize);
+            ss >> COMPACTSIZE(objSize);
             ss >> dataDescriptor;
             if (dataDescriptor.IsValid())
             {
@@ -1639,7 +1639,7 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
         {
             CMMRDescriptor mmrDescriptor;
             ss >> VARINT(version);
-            ss >> VARINT(objSize);
+            ss >> COMPACTSIZE(objSize);
             ss >> mmrDescriptor;
             if (mmrDescriptor.IsValid())
             {
@@ -1651,7 +1651,7 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
         {
             CSignatureData sigData;
             ss >> VARINT(version);
-            ss >> VARINT(objSize);
+            ss >> COMPACTSIZE(objSize);
             ss >> sigData;
             if (sigData.IsValid())
             {

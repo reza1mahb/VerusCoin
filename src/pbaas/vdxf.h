@@ -817,15 +817,15 @@ public:
     }
 
     CDataDescriptor(const std::vector<unsigned char> &ObjectData,
-                    bool encryptedObject=false,
                     const std::string &Label=std::string(),
                     const std::string &MimeType=std::string(),
                     const std::vector<unsigned char> &Salt=std::vector<unsigned char>(),
                     const std::vector<unsigned char> &EPK=std::vector<unsigned char>(),
                     const std::vector<unsigned char> &IVK=std::vector<unsigned char>(),
                     const std::vector<unsigned char> &SSK=std::vector<unsigned char>(),
+                    uint32_t Flags=0,
                     uint32_t Version=DEFAULT_VERSION) :
-        version(Version), objectData(ObjectData), label(Label), mimeType(MimeType), salt(Salt), epk(EPK), ivk(IVK), ssk(SSK)
+        version(Version), flags(Flags), objectData(ObjectData), label(Label), mimeType(MimeType), salt(Salt), epk(EPK), ivk(IVK), ssk(SSK)
     {
         SetFlags();
     }
@@ -1034,15 +1034,15 @@ public:
     }
 
     CVDXFDataDescriptor(const std::vector<unsigned char> &ObjectData,
-                        bool encryptedObject=false,
                         const std::string &Label=std::string(),
                         const std::string &MimeType=std::string(),
                         const std::vector<unsigned char> &Salt=std::vector<unsigned char>(),
                         const std::vector<unsigned char> &EPK=std::vector<unsigned char>(),
                         const std::vector<unsigned char> &IVK=std::vector<unsigned char>(),
                         const std::vector<unsigned char> &SSK=std::vector<unsigned char>(),
+                        uint32_t Flags=0,
                         uint32_t Version=DEFAULT_VERSION) :
-        dataDescriptor(ObjectData, encryptedObject, Label, MimeType, Salt, EPK, IVK, SSK, Version), CVDXF_Data(CVDXF_Data::DataDescriptorKey(), std::vector<unsigned char>(), Version)
+        dataDescriptor(ObjectData, Label, MimeType, Salt, EPK, IVK, SSK, Flags, Version), CVDXF_Data(CVDXF_Data::DataDescriptorKey(), std::vector<unsigned char>(), Version)
     {
     }
 

@@ -10291,8 +10291,6 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                     signParams.push_back(dataUni);
                     UniValue signResult = signdata(signParams, false);
 
-                    CNotaryEvidence notaryEvidence;
-
                     // now, we have both a CMMRDescriptor as well as a CSignatureData if we signed, all encrypted to the specified Z-address
                     CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdescriptor_encrypted"));
                     CSignatureData SignatureData = CSignatureData(find_value(signResult, "signaturedata_encrypted"));
@@ -10320,11 +10318,11 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                         vdxfSignature = CVDXF_Data(CVDXF_Data::SignatureDataKey(), ::AsVector(SignatureData));
                     }
 
-                    CNotaryEvidence evidenceData(CNotaryEvidence::TYPE_IMPORT_PROOF);
-                    evidenceData.evidence << CEvidenceData(::AsVector(vdxfData));
+                    CNotaryEvidence evidenceData(ASSETCHAINS_CHAINID, CUTXORef(uint256(), 0), CNotaryEvidence::STATE_SUPPORTING, CCrossChainProof(), CNotaryEvidence::TYPE_IMPORT_PROOF);
+                    evidenceData.evidence << CEvidenceData(CVDXF_Data::DataDescriptorKey(), ::AsVector(vdxfData));
                     if (vdxfSignature.IsValid())
                     {
-                        evidenceData.evidence << CEvidenceData(::AsVector(vdxfSignature));
+                        evidenceData.evidence << CEvidenceData(CVDXF_Data::SignatureDataKey(), ::AsVector(vdxfSignature));
                     }
 
                     CCcontract_info CC;
@@ -10338,17 +10336,17 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                     std::vector<int32_t> evidenceOuts;
 
                     COptCCParams chkP;
-                    if (!MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &notaryEvidence)).IsPayToCryptoCondition(chkP, false))
+                    if (!MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &evidenceData)).IsPayToCryptoCondition(chkP, false))
                     {
                         throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence script in data output #" + std::to_string(i));
                     }
 
                     CVDXFDataRef memoLink(uint256(), tOutputs.size(), 0);
-                    std::vector<unsigned char> memoData = ::AsVector(CVDXFDataDescriptor(::AsVector(memoLink), false, uni_get_str(find_value(dataUni, "label")), uni_get_str(find_value(dataUni, "mimetype"))));
+                    std::vector<unsigned char> memoData = ::AsVector(CVDXFDataDescriptor(::AsVector(memoLink), uni_get_str(find_value(dataUni, "label")), uni_get_str(find_value(dataUni, "mimetype"))));
                     if (vdxfSignature.IsValid())
                     {
                         memoLink = CVDXFDataRef(uint256(), tOutputs.size(), 0, 1);
-                        std::vector<unsigned char> memoSig = ::AsVector(CVDXFDataDescriptor(::AsVector(memoLink), false, "signature", "application/json"));
+                        std::vector<unsigned char> memoSig = ::AsVector(CVDXFDataDescriptor(::AsVector(memoLink), "signature", "application/json"));
                         memoData.insert(memoData.begin(), memoSig.begin(), memoSig.end());
                     }
 
@@ -10360,7 +10358,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                             dataLabel.resize(labelMaxSize);
                         }
                         std::vector<unsigned char> memoLabel = ::AsVector(CVDXF_Data(CVDXF_Data::DataStringKey(), ::AsVector(dataLabel)));
-                        memoData.insert(memoData.begin(), memoLabel.begin(), memoLabel.end());
+                        memoData.insert(memoData.end(), memoLabel.begin(), memoLabel.end());
                     }
                     memoStr = HexBytes(memoData.data(), memoData.size());
 
@@ -10369,7 +10367,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                     {
                         CNotaryEvidence emptyEvidence;
                         int baseOverhead = MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &emptyEvidence)).size() + 128;
-                        auto evidenceVec = notaryEvidence.BreakApart(CScript::MAX_SCRIPT_ELEMENT_SIZE - baseOverhead);
+                        auto evidenceVec = evidenceData.BreakApart(CScript::MAX_SCRIPT_ELEMENT_SIZE - baseOverhead);
                         if (!evidenceVec.size())
                         {
                             throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence chunk in data output #" + std::to_string(i));
@@ -10383,7 +10381,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                     }
                     else
                     {
-                        tOutputs.push_back(SendManyRecipient(EncodeDestination(CKeyID(GetDestinationID(dests[0]))), 0, "", MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &notaryEvidence))));
+                        tOutputs.push_back(SendManyRecipient(EncodeDestination(CKeyID(GetDestinationID(dests[0]))), 0, "", MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &evidenceData))));
                     }
 
                 }
@@ -14513,9 +14511,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
 
                         UniValue signParams(UniValue::VARR);
                         signParams.push_back(chainData);
-                        UniValue signResult = signdata(chainData, false);
-
-                        CNotaryEvidence notaryEvidence;
+                        UniValue signResult = signdata(signParams, false);
 
                         // now, we have both a CMMRDescriptor as well as a CSignatureData if we signed, all encrypted to the specified Z-address
                         CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdescriptor_encrypted"));
@@ -14545,11 +14541,11 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                         }
 
                         // now, we will store the encrypted signature, if present, and MMRDesc in transparent outputs and put the link inside the z-memo
-                        CNotaryEvidence evidenceData(CNotaryEvidence::TYPE_IMPORT_PROOF);
-                        evidenceData.evidence << CEvidenceData(::AsVector(vdxfData));
+                        CNotaryEvidence evidenceData(ASSETCHAINS_CHAINID, CUTXORef(uint256(), 0), CNotaryEvidence::STATE_SUPPORTING, CCrossChainProof(), CNotaryEvidence::TYPE_IMPORT_PROOF);
+                        evidenceData.evidence << CEvidenceData(CVDXF_Data::DataDescriptorKey(), ::AsVector(vdxfData));
                         if (vdxfSignature.IsValid())
                         {
-                            evidenceData.evidence << CEvidenceData(::AsVector(vdxfSignature));
+                            evidenceData.evidence << CEvidenceData(CVDXF_Data::SignatureDataKey(), ::AsVector(vdxfSignature));
                         }
                         uint160 key = ParseVDXFKey(keys[i]);
                         if (key.IsNull())
@@ -14740,7 +14736,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         }
 
         CVDXFDataRef idLink(uint256(), tb.mtx.vout.size(), 0);
-        CVDXFDataDescriptor dd(::AsVector(idLink), false, std::get<0>(oneExtraData.second), std::get<1>(oneExtraData.second));
+        CVDXFDataDescriptor dd(::AsVector(idLink), std::get<0>(oneExtraData.second), std::get<1>(oneExtraData.second));
         if (IsValidPaymentAddress(std::get<3>(oneExtraData.second)))
         {
             dd.WrapEncrypted(std::get<3>(oneExtraData.second));
@@ -14753,7 +14749,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         if (std::get<2>(oneExtraData.second).evidence.chainObjects.size() > 1)
         {
             idLink = CVDXFDataRef(uint256(), tb.mtx.vout.size(), 0, 1);
-            dd = CVDXFDataDescriptor(::AsVector(idLink), false, "signature", "application/json");
+            dd = CVDXFDataDescriptor(::AsVector(idLink), "signature", "application/json");
             if (IsValidPaymentAddress(std::get<3>(oneExtraData.second)))
             {
                 dd.WrapEncrypted(std::get<3>(oneExtraData.second));
@@ -14763,7 +14759,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                 }
             }
             std::vector<unsigned char> memoSig = ::AsVector(dd);
-            memoData.insert(memoData.begin(), memoSig.begin(), memoSig.end());
+            memoData.insert(memoData.end(), memoSig.begin(), memoSig.end());
         }
 
         newID.contentMultiMap.insert(std::make_pair(oneExtraData.first, memoData));

@@ -2724,13 +2724,18 @@ public:
                 (ref.which() == TYPE_URL_REF && boost::get<CURLRef>(ref).IsValid());
     }
 
-    bool GetOutputData(std::vector<unsigned char> &data, bool checkMemPool=true) const
+    bool GetOutputData(std::vector<unsigned char> &data, bool checkMemPool=true, const uint256 &txid=uint256()) const
     {
         switch ((int)ref.which())
         {
             case TYPE_CROSSCHAIN_DATAREF:
             {
-                return boost::get<CPBaaSEvidenceRef>(ref).GetOutputData(data, checkMemPool);
+                CPBaaSEvidenceRef er = boost::get<CPBaaSEvidenceRef>(ref);
+                if (er.output.hash.IsNull() && !txid.IsNull())
+                {
+                    er.output.hash = txid;
+                }
+                return er.GetOutputData(data, checkMemPool);
             }
             case TYPE_IDENTITY_DATAREF:
             {
@@ -2760,16 +2765,16 @@ public:
 
     CVDXFDataRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : ref(Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
     CVDXFDataRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
-        ref(op, ObjectNum, SubObject, SystemID, Flags, Version) {}
+        ref(op, ObjectNum, SubObject, SystemID, Flags, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
 
     CVDXFDataRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
-        ref(HashIn, nIn, ObjectNum, SubObject, SystemID, Flags, Version) {}
+        ref(HashIn, nIn, ObjectNum, SubObject, SystemID, Flags, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
 
     CVDXFDataRef(const CIdentityID &ID, const uint160 &Key, uint32_t HeightStart=0, uint32_t HeightEnd=0, const uint256 &DataHash=uint256(), const uint160 &SystemID=uint160(), bool keepDeleted=false, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
-        ref(ID, Key, HeightStart, HeightEnd, DataHash, SystemID, keepDeleted, Version) {}
+        ref(ID, Key, HeightStart, HeightEnd, DataHash, SystemID, keepDeleted, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
 
     CVDXFDataRef(const std::string &URL, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
-        ref(URL, Version) {}
+        ref(URL, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
 
     CVDXFDataRef(const UniValue &uni) : CVDXF_Data(uni), ref(uni) {}
 
