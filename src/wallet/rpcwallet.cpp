@@ -4740,8 +4740,8 @@ UniValue z_listunspent(const UniValue& params, bool fHelp)
             obj.push_back(Pair("amount", ValueFromAmount(CAmount(entry.note.value())))); // note.value() is equivalent to plaintext.value()
             std::vector<unsigned char> rawData(entry.memo.begin(), entry.memo.end());
             UniValue memoUni = CIdentity::VDXFDataToUniValue(rawData);
+            obj.push_back(Pair("memo", (memoUni.isObject() || memoUni.isArray()) ? memoUni : (memoUni.isStr() ? uni_get_str(memoUni) : memoUni.write(1,2))));
 
-            obj.push_back(Pair("memo", memoUni.write(1,2)));
             if (hasSaplingSpendingKey) {
                 obj.push_back(Pair("change", pwalletMain->IsNoteSaplingChange(nullifierSet, entry.address, entry.op)));
             }
@@ -6317,7 +6317,7 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
 
         std::vector<unsigned char> rawData(memo.begin(), memo.end());
         UniValue memoUni = CIdentity::VDXFDataToUniValue(rawData);
-        entry.push_back(Pair("memo", memoUni.write(1,2)));
+        entry.push_back(Pair("memo", (memoUni.isObject() || memoUni.isArray()) ? memoUni : (memoUni.isStr() ? uni_get_str(memoUni) : memoUni.write(1,2))));
 
         outputs.push_back(entry);
     }
