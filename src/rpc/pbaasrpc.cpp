@@ -10260,8 +10260,8 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                         // if memo starts with "#", convert it from a string to a hex value
                         if (memoStr.size() > 1 && memoStr[0] == '#')
                         {
-                            // make a hex string out of the chars without the "#"
-                            dataLabel = HexBytes((const unsigned char *)&(memoStr[1]), memoStr.size());
+                            // make a string out of the chars without the "#"
+                            dataLabel = std::string(memoStr.begin() + 1, memoStr.end());
                         }
                         else
                         {
