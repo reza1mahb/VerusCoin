@@ -985,7 +985,10 @@ UniValue CDataDescriptor::ToUniValue() const
         }
     }
 
-    if (isText)
+    UniValue processedObject = CIdentity::VDXFDataToUniValue(objectData);
+
+    if (isText &&
+        find_value(processedObject, EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey()))).isNull())
     {
         UniValue objectDataUni(UniValue::VOBJ);
         objectDataUni.pushKV("message", std::string(objectData.begin(), objectData.end()));
@@ -993,7 +996,7 @@ UniValue CDataDescriptor::ToUniValue() const
     }
     else
     {
-        ret.pushKV("objectdata", CIdentity::VDXFDataToUniValue(objectData));
+        ret.pushKV("objectdata", processedObject);
     }
 
     if (HasLabel())

@@ -2209,10 +2209,12 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
             {
                 // retrieve the object, and, if successful, fill in the link data, then attempt to decrypt
                 CCrossChainDataRef dataRef(foundObj);
-
-                if (dataRef.GetOutputData(encryptedDescriptor.objectData, true, txid) &&
+                std::vector<unsigned char> newObject;
+                bool haveNewObject = dataRef.GetOutputData(newObject, true, txid);
+                if (haveNewObject &&
                     (encryptedDescriptor.epk.size() || encryptedDescriptor.ssk.size()))
                 {
+                    encryptedDescriptor.objectData = newObject;
                     encryptedDescriptor.flags |= encryptedDescriptor.FLAG_ENCRYPTED_DATA;
                     if (wIvk.IsNull())
                     {
@@ -2223,7 +2225,14 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
                         encryptedDescriptor.UnwrapEncryption(wIvk);
                     }
                 }
-                newVDXFData.push_back(CIdentity::VDXFDataToUniValue(encryptedDescriptor.objectData));
+                if (haveNewObject)
+                {
+                    newVDXFData.push_back(CIdentity::VDXFDataToUniValue(encryptedDescriptor.objectData));
+                }
+                else
+                {
+                    newVDXFData.push_back(vdxfData.isObject() ? vdxfData : (vdxfData.isArray() ? vdxfData[i] : NullUniValue));
+                }
             }
         }
         if (newVDXFData.size())
@@ -2240,6 +2249,7 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
     }
 
     UniValue objectOut = encryptedDescriptor.ToUniValue();
+
     if (vdxfData.isArray())
     {
         for (int i = 0; i < vdxfData.size(); i++)
@@ -2250,28 +2260,28 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
                 UniValue foundObj = find_value(vdxfData[i], EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey())));
                 if (foundObj.isObject())
                 {
-                    objectOut.pushKV("crosschaindataref", foundObj);
+                    objectOut.pushKV(CVDXF_Data::CrossChainDataRefKeyName(), foundObj);
                 }
                 else
                 {
                     foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::DataDescriptorKey())));
                     if (foundObj.isObject())
                     {
-                        objectOut.pushKV("datadescriptor", foundObj);
+                        objectOut.pushKV(CVDXF_Data::DataDescriptorKeyName(), foundObj);
                     }
                     else
                     {
                         foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::MMRDescriptorKey())));
                         if (foundObj.isObject())
                         {
-                            objectOut.pushKV("mmrdescriptor", foundObj);
+                            objectOut.pushKV(CVDXF_Data::MMRDescriptorKeyName(), foundObj);
                         }
                         else
                         {
                             foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::SignatureDataKey())));
                             if (foundObj.isObject())
                             {
-                                objectOut.pushKV("mmrsignature", foundObj);
+                                objectOut.pushKV(CVDXF_Data::SignatureDataKeyName(), foundObj);
                             }
                         }
                     }
