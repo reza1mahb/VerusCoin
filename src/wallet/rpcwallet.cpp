@@ -5856,7 +5856,7 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
             }
             std::vector<unsigned char> rawData(entry.memo.begin(), entry.memo.end());
             UniValue memoUni = CIdentity::VDXFDataToUniValue(rawData);
-            obj.push_back(Pair("memo", memoUni.write(1,2)));
+            obj.push_back(Pair("memo", memoUni.isObject() ? memoUni : memoUni.write(1,2)));
 
             obj.push_back(Pair("outindex", (int)entry.op.n));
             obj.push_back(Pair("confirmations", entry.confirmations));

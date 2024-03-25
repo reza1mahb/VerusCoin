@@ -9684,7 +9684,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
             auto memoUni = find_value(uniOutputs[i], "memo");
             auto memoStr = uni_get_str(memoUni);
             UniValue dataUni;
-            //dataUni = find_value(uniOutputs[i], "data");
+            dataUni = find_value(uniOutputs[i], "data");
             bool preConvert = uni_get_bool(find_value(uniOutputs[i], "preconvert"));
             bool burnCurrency = uni_get_bool(find_value(uniOutputs[i], "burn")) || uni_get_bool(find_value(uniOutputs[i], "burnweight"));
             bool burnWeight = uni_get_bool(find_value(uniOutputs[i], "burnweight"));
@@ -10347,7 +10347,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                     {
                         memoLink = CVDXFDataRef(uint256(), tOutputs.size(), 0, 1);
                         std::vector<unsigned char> memoSig = ::AsVector(CVDXFDataDescriptor(::AsVector(memoLink), "signature", "application/json"));
-                        memoData.insert(memoData.begin(), memoSig.begin(), memoSig.end());
+                        memoData.insert(memoData.end(), memoSig.begin(), memoSig.end());
                     }
 
                     int labelMaxSize = std::max(std::min(dataLabel.size(), ((ZC_MEMO_SIZE - memoData.size()) - 24)), (std::size_t)0);
@@ -10405,7 +10405,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                 if (!memoUni.isNull())
                 {
                     auto memoVec = VectorEncodeVDXFUni(memoUni);
-                    memoStr = HexBytes((const unsigned char *)&(memoVec[1]), memoVec.size());
+                    memoStr = HexBytes((const unsigned char *)&(memoVec[0]), memoVec.size());
                 }
 
                 if (memoStr.size() && !IsHex(memoStr))
