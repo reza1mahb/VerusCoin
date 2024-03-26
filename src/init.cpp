@@ -78,6 +78,7 @@ extern int32_t KOMODO_LOADINGBLOCKS;
 extern bool VERUS_MINTBLOCKS;
 extern CTxDestination VERUS_DEFAULT_ARBADDRESS;
 extern std::vector<uint160> VERUS_ARBITRAGE_CURRENCIES;
+extern int64_t STORAGE_FEE_FACTOR;
 extern std::string VERUS_DEFAULT_ZADDR;
 
 ZCJoinSplit* pzcashParams = NULL;
@@ -433,6 +434,7 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageGroup(_("Wallet options:"));
     strUsage += HelpMessageOpt("-arbitragecurrencies", _("Either a JSON array or a comma separated list of currency names."));
     strUsage += HelpMessageOpt("-arbitrageaddress", _("A valid wallet address or identity controlled by this wallet that will hold the arbitrage currencies to use."));
+    strUsage += HelpMessageOpt("-storagefeefactor", _("Defaults to 6.0, which is used for 6K outputs to price storage in a currency's TransactionExportFee (ie. 6.0 = 1 TransactionExportFee per K)."));
     strUsage += HelpMessageOpt("-cheatcatcher=<sapling-address>", _("same as \"-defaultzaddr\""));
     strUsage += HelpMessageOpt("-defaultid=<i-address>", _("VerusID used for default change out and staking reward recipient"));
     strUsage += HelpMessageOpt("-defaultzaddr=<sapling-address>", _("sapling address to receive fraud proof rewards and if used with \"-privatechange=1\", z-change address for the sendcurrency command"));
@@ -1350,6 +1352,8 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         }
     }
     VERUS_DEFAULT_ARBADDRESS = DecodeDestination(GetArg("-arbitrageaddress", ""));
+
+    STORAGE_FEE_FACTOR = GetArg("-storagefeefactor", STORAGE_FEE_FACTOR);
 
     // if we are supposed to catch stake cheaters, there must be a valid sapling parameter, we need it at
     // initialization, and this is the first time we can get it. store the Sapling address here

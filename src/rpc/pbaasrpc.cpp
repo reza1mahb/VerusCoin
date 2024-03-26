@@ -9422,7 +9422,7 @@ CAmount GetMinRelayFeeForBuilder(const TransactionBuilder &tb, CAmount identityF
                 minFee += DEFAULT_TRANSACTION_FEE + ((extraSize - extraOutputCostThreshold) > 0 ? DEFAULT_TRANSACTION_FEE : 0);
             }
         }
-        minFee += (((int64_t)(extraStorageSpace)) * (CCurrencyDefinition::DEFAULT_STORAGE_OUTPUT_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
+        minFee += (((int64_t)(extraStorageSpace)) * (STORAGE_FEE_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
     }
     return minFee;
 }
@@ -9513,7 +9513,7 @@ CAmount GetMinRelayFeeForOutputs(const std::vector<SendManyRecipient> &tOutputs,
                 }
             }
         }
-        minFee += (((int64_t)(extraStorageSpace)) * (CCurrencyDefinition::DEFAULT_STORAGE_OUTPUT_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
+        minFee += (((int64_t)(extraStorageSpace)) * (STORAGE_FEE_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
     }
     return minFee;
 }

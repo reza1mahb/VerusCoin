@@ -1839,7 +1839,7 @@ CAmount GetMinRelayFeeByOutputs(const CReserveTransactionDescriptor &txDesc, con
                 }
             }
         }
-        minFee += (((int64_t)(extraStorageSpace)) * (CCurrencyDefinition::DEFAULT_STORAGE_OUTPUT_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
+        minFee += (((int64_t)(extraStorageSpace)) * (STORAGE_FEE_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
     }
     return minFee;
 }
