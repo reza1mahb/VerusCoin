@@ -257,7 +257,7 @@ public:
     static const uint8_t VERSION_VERUSID = 1;
     static const uint8_t VERSION_VAULT = 2;
     static const uint8_t VERSION_PBAAS = 3;
-    static const uint8_t VERSION_CURRENT = VERSION_VAULT;
+    static const uint8_t VERSION_CURRENT = VERSION_PBAAS;
     static const uint8_t VERSION_FIRSTVALID = 1;
     static const uint8_t VERSION_LASTVALID = 3;
 
