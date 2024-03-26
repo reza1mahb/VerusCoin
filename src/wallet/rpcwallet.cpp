@@ -1365,7 +1365,24 @@ UniValue signfile(const UniValue& params, bool fHelp)
     }
 }
 
-int FileToVector(const std::string &filepath, std::vector<unsigned char> &dataVec, int maxBytes);
+int FileToVector(const std::string &filepath, std::vector<unsigned char> &dataVec, int maxBytes)
+{
+    ifstream ifs = ifstream(filepath, std::ios::binary | std::ios::in);
+    int readNum = 0;
+    if (ifs.is_open() && !ifs.eof())
+    {
+        dataVec.resize(maxBytes);
+        readNum = ifs.readsome((char *)(&dataVec[0]), maxBytes);
+        dataVec.resize(readNum);
+        if (maxBytes == readNum && !ifs.eof())
+        {
+            ifs.close();
+            throw JSONRPCError(RPC_INVALID_PARAMS, "File too large " + filepath);
+        }
+        ifs.close();
+    }
+    return readNum;
+}
 
 size_t GetDataMessage(const UniValue &uni, CVDXF::EHashTypes hashType, std::vector<unsigned char> &dataVec, bool &isHash);
 size_t GetDataMessage(const UniValue &uni, CVDXF::EHashTypes hashType, std::vector<unsigned char> &dataVec, bool &isHash)

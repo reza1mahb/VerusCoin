@@ -9518,20 +9518,6 @@ CAmount GetMinRelayFeeForOutputs(const std::vector<SendManyRecipient> &tOutputs,
     return minFee;
 }
 
-int FileToVector(const std::string &filepath, std::vector<unsigned char> &dataVec, int maxBytes)
-{
-    ifstream ifs = ifstream(filepath, std::ios::binary | std::ios::in);
-    int readNum = 0;
-    if (ifs.is_open() && !ifs.eof())
-    {
-        dataVec.resize(maxBytes);
-        readNum = ifs.readsome((char *)(&dataVec[0]), maxBytes);
-        dataVec.resize(readNum);
-        ifs.close();
-    }
-    return readNum;
-}
-
 UniValue sendcurrency(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() < 2 || params.size() > 5)
