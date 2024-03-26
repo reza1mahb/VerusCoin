@@ -9781,7 +9781,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
             }
             else if (!dataUni.isNull())
             {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot use data paameter unless sending to a private address");
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot use data parameter unless sending to a private address");
             }
 
             CCurrencyDefinition convertToCurrencyDef;
