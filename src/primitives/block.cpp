@@ -571,7 +571,7 @@ CDefaultMMRNode CBlock::GetMMRNode(int index) const
     }
     else if (index == vtx.size())
     {
-        if (CConstVerusSolutionVector::Version(nSolution) >= CActivationHeight::ACTIVATE_PBAAS && (!PBAAS_TESTMODE || nTime >= PBAAS_TESTFORK2_TIME))
+        if (CConstVerusSolutionVector::Version(nSolution) >= CActivationHeight::ACTIVATE_PBAAS)
         {
             auto hw = CDefaultMMRNode::GetHashWriter();
             hw << GetSubstitutedPreHeader(GetVerusEntropyHashComponent((int32_t)GetHeight()));

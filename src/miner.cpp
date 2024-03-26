@@ -164,7 +164,7 @@ void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int &
     uint32_t nHeight = pindexPrev->GetHeight() + 1;
     bool isPBaaS = CConstVerusSolutionVector::GetVersionByHeight(nHeight) >= CActivationHeight::ACTIVATE_PBAAS;
     bool isPoS = pblock->IsVerusPOSBlock();
-    bool posSourceInfo = (isPBaaS && (!PBAAS_TESTMODE || pblock->nTime >= PBAAS_TESTFORK2_TIME));
+    bool posSourceInfo = isPBaaS;
 
     // Update nExtraNonce
     static uint256 hashPrevBlock;
@@ -3722,7 +3722,6 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             COptCCParams stakeP;
             if (!IsVerusActive() &&
                 verusFees &&
-                (!PBAAS_TESTMODE || pblock->nTime >= PBAAS_TESTFORK3_TIME) &&
                 coinbaseTx.vout[0].scriptPubKey.IsPayToCryptoCondition(stakeP) &&
                 stakeP.IsValid())
             {

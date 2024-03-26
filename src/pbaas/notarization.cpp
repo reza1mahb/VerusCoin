@@ -1400,14 +1400,6 @@ bool CPBaaSNotarization::NextNotarizationInfo(const CCurrencyDefinition &sourceS
                 newNotarization.SetLaunchCleared();
                 newNotarization.currencyState.SetLaunchClear();
 
-                forcedRefund = (destCurrency.IsFractional() &&
-                                        PBAAS_TESTMODE &&
-                                        destSystemID == VERUS_CHAINID &&
-                                        lastExportHeight < ConnectedChains.GetZeroViaHeight(true) &&
-                                        GetTime() > PBAAS_TESTFORK4_TIME &&
-                                        newPreConversionReservesIn.valueMap[destSystemID] &&
-                                        !newNotarization.currencyState.reserves[newNotarization.currencyState.GetReserveMap()[destSystemID]]);
-
                 // if we are connected to another currency, make sure it will also start before we confirm that we can
                 CCurrencyDefinition coLaunchCurrency;
                 CCoinbaseCurrencyState coLaunchState;
@@ -1783,7 +1775,7 @@ bool CPBaaSNotarization::NextNotarizationInfo(const CCurrencyDefinition &sourceS
                     {
                         heightCheck = chainActive.Height();
                     }
-                    if (improvedMinCheck && (!PBAAS_TESTMODE || chainActive[heightCheck]->nTime >= PBAAS_TESTFORK4_TIME))
+                    if (improvedMinCheck)
                     {
                         if (!tempState.IsLaunchCompleteMarker() &&
                             !tempState.IsRefunding() &&
@@ -2989,7 +2981,7 @@ std::vector<unsigned char> CreatePoSBlockProof(ChainMerkleMountainView &mmrView,
 
     bool isPBaaS = CConstVerusSolutionVector::GetVersionByHeight(height) >= CActivationHeight::ACTIVATE_PBAAS;
 
-    bool posSourceInfo = isPBaaS && (!PBAAS_TESTMODE || checkBlock.nTime >= PBAAS_TESTFORK2_TIME);
+    bool posSourceInfo = isPBaaS;
 
     BlockMMRange blockMMR(block.GetBlockMMRTree(posSourceInfo ? block.GetVerusEntropyHashComponent(sourceBlockNum) : uint256()));
     BlockMMView blockView(blockMMR);
@@ -3978,8 +3970,7 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
 
                             try
                             {
-                                posNewFormat = CConstVerusSolutionVector::GetVersionByHeight(posBlockHeaderAndProof.GetBlockHeight()) >= CActivationHeight::ACTIVATE_PBAAS &&
-                                                     (!PBAAS_TESTMODE || posBlockHeaderAndProof.blockHeader.nTime >= PBAAS_TESTFORK2_TIME);
+                                posNewFormat = CConstVerusSolutionVector::GetVersionByHeight(posBlockHeaderAndProof.GetBlockHeight()) >= CActivationHeight::ACTIVATE_PBAAS;
 
                                 posSourceProof = CPartialTransactionProof();
                                 ds >> posSourceProof;
@@ -4046,7 +4037,6 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
             case EXPECT_PROOF_HEADER_REF:
             {
                 // this should be a header ref proof of the header just in front of the nearest entropy hash header
-                bool skipPreHeaderChecks = PBAAS_TESTMODE && ((posBlockHeaderAndProof.blockHeader.nTime - (120 * 200)) < PBAAS_TESTFORK2_TIME);
                 posPrevMMRRoot = posBlockHeaderAndProof.blockHeader.GetPrevMMRRoot();
                 if (LogAcceptCategory("notarization") && LogAcceptCategory("verbose"))
                 {
@@ -4056,23 +4046,15 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                         ((CChainObject<CPartialTransactionProof> *)proofComponent)->object.GetProofHeight(),
                         posPrevMMRRoot.GetHex().c_str(),
                         ((CChainObject<CPartialTransactionProof> *)proofComponent)->object.CheckBlockPreHeader(proofPreHeader).GetHex().c_str());
-                    if (skipPreHeaderChecks)
-                    {
-                        LogPrintf("CheckBlockPreHeader(proofPreHeader, false): %s\n",
-                                  ((CChainObject<CPartialTransactionProof> *)proofComponent)->object.CheckBlockPreHeader(proofPreHeader, false).GetHex().c_str());
-                    }
                     LogPrintf("proofPreHeader: %s\n", proofPreHeader.ToUniValue().write(1,2).c_str());
                 }
                 if (proofComponent->objectType == CHAINOBJ_TRANSACTION_PROOF &&
-                    (posPrevMMRRoot == ((CChainObject<CPartialTransactionProof> *)proofComponent)->object.CheckBlockPreHeader(proofPreHeader) ||
-                    (skipPreHeaderChecks &&
-                     posPrevMMRRoot == ((CChainObject<CPartialTransactionProof> *)proofComponent)->object.CheckBlockPreHeader(proofPreHeader, false))))
+                    (posPrevMMRRoot == ((CChainObject<CPartialTransactionProof> *)proofComponent)->object.CheckBlockPreHeader(proofPreHeader)))
                 {
                     if (posEntropyHeadersAsTxes.size() == 2)
                     {
                         if ((proofPreHeader.hashPrevMMRRoot != posEntropyHeadersAsTxes[0].CheckBlockPreHeader(preHeader1) ||
-                             proofPreHeader.hashPrevMMRRoot != posEntropyHeadersAsTxes[1].CheckBlockPreHeader(preHeader2)) &&
-                            !skipPreHeaderChecks)
+                             proofPreHeader.hashPrevMMRRoot != posEntropyHeadersAsTxes[1].CheckBlockPreHeader(preHeader2)))
                         {
                             proofState = EXPECT_NOTHING;
                             break;
@@ -4082,11 +4064,6 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                             proofState = EXPECT_STAKE_TX;
                             break;
                         }
-                    }
-                    else if (skipPreHeaderChecks)
-                    {
-                        proofState = EXPECT_STAKE_TX;
-                        break;
                     }
                 }
                 else
@@ -4105,14 +4082,8 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                 if (lastNotarization.proofRoots.count(ASSETCHAINS_CHAINID))
                 {
                     uint32_t rootHeight = lastNotarization.proofRoots.find(ASSETCHAINS_CHAINID)->second.rootHeight;
-                    if (rootHeight < 0 ||
-                        chainActive.Height() < rootHeight ||
-                        !PBAAS_TESTMODE ||
-                        chainActive[rootHeight]->nTime > PBAAS_TESTFORK2_TIME)
-                    {
-                        proofState = EXPECT_NOTHING;
-                        break;
-                    }
+                    proofState = EXPECT_NOTHING;
+                    break;
                 }
             }
 
@@ -5644,8 +5615,7 @@ bool ProvePosBlock(uint32_t lastProofRootHeight, const CBlockIndex *pindex, CNot
     }
 
     uint256 entropyHash;
-    bool isNewFormatBlock = CConstVerusSolutionVector::GetVersionByHeight(pindex->GetHeight()) >= CActivationHeight::ACTIVATE_PBAAS &&
-                            (!PBAAS_TESTMODE || pindex->nTime >= PBAAS_TESTFORK2_TIME);
+    bool isNewFormatBlock = CConstVerusSolutionVector::GetVersionByHeight(pindex->GetHeight()) >= CActivationHeight::ACTIVATE_PBAAS;
     if (isNewFormatBlock)
     {
         entropyHash = pindex->GetVerusEntropyHashComponent();
@@ -5661,8 +5631,7 @@ bool ProvePosBlock(uint32_t lastProofRootHeight, const CBlockIndex *pindex, CNot
     }
 
     uint32_t heightAfterFirstEntropy = firstHeight + 1;
-    if (!(CConstVerusSolutionVector::Version(chainActive[heightAfterFirstEntropy]->nSolution) >= CActivationHeight::ACTIVATE_PBAAS &&
-         (!PBAAS_TESTMODE || chainActive[heightAfterFirstEntropy]->nTime >= PBAAS_TESTFORK2_TIME)))
+    if (!(CConstVerusSolutionVector::Version(chainActive[heightAfterFirstEntropy]->nSolution) >= CActivationHeight::ACTIVATE_PBAAS))
     {
         heightAfterFirstEntropy++;
     }
@@ -10374,13 +10343,10 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
 
                         // ensure that we can always find one after the first and that we have not moved backwards in the one we find
                         // any cross confirmed notarization also must have first been confirmed on this chain, so verify that as well
-                        bool posNewFormat = (!PBAAS_TESTMODE ||
-                                             chainActive[lastConfirmedAddressIndexKey.first.blockHeight]->nTime >= PBAAS_TESTFORK2_TIME);
 
                         if (foundPriorLocalCrossConfirmed &&
                             (!foundLocalCrossConfirmed ||
-                             (posNewFormat &&
-                              lastConfirmedAddressIndexKey.first.blockHeight < priorLastConfirmedAddressIndexKey.first.blockHeight)))
+                             (lastConfirmedAddressIndexKey.first.blockHeight < priorLastConfirmedAddressIndexKey.first.blockHeight)))
                         {
                             if (LogAcceptCategory("notarization"))
                             {
@@ -11319,10 +11285,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
         return state.Error("Invalid notarization output for finalization");
     }
 
-    if ((!PBAAS_TESTMODE ||
-         (haveFullChain &&
-          chainActive[height - 1]->nTime >= PBAAS_TESTFORK4_TIME)) &&
-         currentFinalization.IsConfirmed() &&
+    if (currentFinalization.IsConfirmed() &&
          height != 1 &&
          !(!txBlockHash.IsNull() &&
            (notaTxBlockIt = mapBlockIndex.find(txBlockHash)) != mapBlockIndex.end() &&
@@ -11615,7 +11578,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
                         continue;
                     }
                     LogPrint("notarization", "%s: notarization finalization tip transaction not in prior chain at height %u\n", __func__, height);
-                    if (confirmNeedsEvidence && (!PBAAS_TESTMODE || chainActive[height - 1]->nTime >= PBAAS_TESTFORK4_TIME))
+                    if (confirmNeedsEvidence)
                     {
                         return state.Error("Invalid confirmation evidence 1");
                     }

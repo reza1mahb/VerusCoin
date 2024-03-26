@@ -1960,7 +1960,7 @@ bool CWallet::VerusSelectStakeOutput(CBlock *pBlock, arith_uint256 &hashResult, 
                 CDataStream headerStream = CDataStream(SER_NETWORK, PROTOCOL_VERSION);
 
                 pBlock->nTime = std::max(chainActive.LastTip()->GetMedianTimePast()+1, GetAdjustedTime());
-                bool posSourceInfo = isPBaaS && (!PBAAS_TESTMODE || pBlock->nTime >= PBAAS_TESTFORK2_TIME);
+                bool posSourceInfo = isPBaaS;
 
                 // store:
                 // 1. PBaaS header for this block

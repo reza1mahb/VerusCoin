@@ -1177,9 +1177,6 @@ std::set<CIndexID> COptCCParams::GetIndexKeys() const
                        notarization.IsLaunchConfirmed() &&
                        notarization.currencyState.IsLaunchClear()))))
                 {
-                    // TODO: POST HARDENING confirm that the final prelaunch notarization is coming through here to index the block one
-                    // notarization of a PBaaS chain
-
                     CPBaaSNotarization checkNotarization = notarization;
                     if (checkNotarization.SetMirror(false))
                     {

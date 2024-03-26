@@ -6390,10 +6390,7 @@ bool CheckBlock(int32_t *futureblockp,int32_t height,CBlockIndex *pindex,const C
     if (isPBaaS)
     {
         uint256 entropyHash;
-        if ((!PBAAS_TESTMODE || block.nTime >= PBAAS_TESTFORK2_TIME))
-        {
-            entropyHash = chainActive.GetVerusEntropyHash(height);
-        }
+        entropyHash = chainActive.GetVerusEntropyHash(height);
         if (isPBaaS && block.GetBlockMMRRoot() != BlockMMView(block.GetBlockMMRTree(entropyHash)).GetRoot())
         {
             LogPrint("notarization", "%s: block.GetBlockMMRRoot(): %s\nBlockMMView(block.GetBlockMMRTree(entropyHash)).GetRoot(): %s\n",
