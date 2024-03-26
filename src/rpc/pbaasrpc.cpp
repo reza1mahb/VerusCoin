@@ -9779,6 +9779,10 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                 zaddrDestSet.insert(zaddressDest);
                 destStr = EncodePaymentAddress(zaddressDest);
             }
+            else if (!dataUni.isNull())
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot use data paameter unless sending to a private address");
+            }
 
             CCurrencyDefinition convertToCurrencyDef;
             uint160 convertToCurrencyID;
