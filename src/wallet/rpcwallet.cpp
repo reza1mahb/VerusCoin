@@ -1804,14 +1804,15 @@ UniValue signdata(const UniValue& params, bool fHelp)
                     mmrSalt.push_back(mmrSaltUni.size() > i ? uint256S(uni_get_str(mmrSaltUni[i])) : uint256());
                 }
                 msgHash = uint256(dataVec);
-                UniValue vdxfLink = find_value(oneItem, EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey())));
+                UniValue oneItemObj = find_value(oneItem, "vdxfdata");
+                UniValue vdxfLink = oneItemObj.isObject() ? find_value(oneItemObj, EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey()))) : NullUniValue;
                 if (vdxfLink.isObject())
                 {
                     UniValue linkUni(UniValue::VOBJ);
                     linkUni.pushKV(EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey())), vdxfLink);
                     mmrObjects.push_back(CDataDescriptor(VectorEncodeVDXFUni(linkUni), uni_get_str(find_value(oneItem, "label")), uni_get_str(find_value(oneItem, "mimetype")), mmrSalt.size() > i ? std::vector<unsigned char>(mmrSalt[i].begin(), mmrSalt[i].end()) : std::vector<unsigned char>()));
                 }
-                else if ((vdxfLink = find_value(oneItem, EncodeDestination(CIdentityID(CVDXF_Data::DataDescriptorKey())))).isObject() && (CDataDescriptor(vdxfLink).IsValid()))
+                else if ((vdxfLink = find_value(oneItemObj, EncodeDestination(CIdentityID(CVDXF_Data::DataDescriptorKey())))).isObject() && (CDataDescriptor(vdxfLink).IsValid()))
                 {
                     mmrObjects.push_back(CDataDescriptor(vdxfLink));
                 }
