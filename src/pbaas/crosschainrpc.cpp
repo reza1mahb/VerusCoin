@@ -1341,7 +1341,7 @@ CCurrencyDefinition::CCurrencyDefinition(const std::string &currencyName, bool t
             UniValue uniEra1(UniValue::VOBJ);
             uniEra1.pushKV("reward", 600000000);
             uniEra1.pushKV("decay", 0);
-            uniEra1.pushKV("halving", 1051922);
+            uniEra1.pushKV("halving", 1051924);
             uniEra1.pushKV("eraend", 0);
             uniEras.push_back(uniEra1);
 
