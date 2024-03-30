@@ -30,6 +30,7 @@ extern bool VERUS_PRIVATECHANGE;
 extern std::string VERUS_DEFAULT_ZADDR;
 extern CTxDestination VERUS_DEFAULT_ARBADDRESS;
 extern std::vector<uint160> VERUS_ARBITRAGE_CURRENCIES;
+extern int64_t STORAGE_FEE_FACTOR;
 
 std::vector<std::string> ParseSubNames(const std::string &Name, std::string &ChainOut, bool displayfilter=false, bool addVerus=true);
 CKey DecodeSecret(const std::string& str);

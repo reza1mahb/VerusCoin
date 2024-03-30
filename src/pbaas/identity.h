@@ -257,7 +257,7 @@ public:
     static const uint8_t VERSION_VERUSID = 1;
     static const uint8_t VERSION_VAULT = 2;
     static const uint8_t VERSION_PBAAS = 3;
-    static const uint8_t VERSION_CURRENT = VERSION_VAULT;
+    static const uint8_t VERSION_CURRENT = VERSION_PBAAS;
     static const uint8_t VERSION_FIRSTVALID = 1;
     static const uint8_t VERSION_LASTVALID = 3;
 
@@ -596,6 +596,12 @@ public:
     }
 
     UniValue ToUniValue() const;
+
+    template <typename Stream>
+    static UniValue VDXFDataToUniValue(Stream &ss, bool *pSuccess);
+
+    // returns multiple objects if they are consecutive in the data
+    static UniValue VDXFDataToUniValue(const std::vector<unsigned char> &dataVch);
 
     void UpgradeVersion(uint32_t height)
     {

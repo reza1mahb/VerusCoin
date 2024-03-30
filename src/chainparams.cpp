@@ -322,7 +322,7 @@ void *chainparams_commandline(void *ptr)
                                             //   total number of tx / (checkpoint block height / (24 * 24))
                 };
 
-            mainParams.consensus.nMinimumChainWork = uint256S("0x00000000000d798fd9fc9c92867f40a7000000026e5624a2f47b71ea49cda473");
+            mainParams.consensus.nMinimumChainWork = uint256S("0x00000000000000000000000000000000000000026e5624a2f47b71ea49cda473");
         }
         else
         {

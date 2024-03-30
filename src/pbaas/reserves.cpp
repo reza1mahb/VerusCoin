@@ -3507,13 +3507,6 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
     bool makeNormalOutput = true;
     uint160 systemDestID = destSystem.GetID();
 
-    bool setAuxDests = !PBAAS_TESTMODE ||
-           (PBAAS_TESTMODE &&
-            ((chainActive.Height() >= (height - 1) &&
-              chainActive[height - 1]->nTime >= PBAAS_TESTFORK3_TIME) ||
-             (chainActive.Height() < (height - 1) &&
-              chainActive.LastTip()->nTime >= PBAAS_TESTFORK3_TIME)));
-
     CTxDestination dest = TransferDestinationToDestination(destination);
     CCurrencyDefinition exportCurDef;
     if (HasNextLeg())
@@ -3568,7 +3561,7 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
                         lastLegDest.type = lastLegDest.DEST_REGISTERCURRENCY;
                         lastLegDest.destination = ::AsVector(exportCurDef);
                         newFlags |= CURRENCY_EXPORT;
-                        if (setAuxDests && destination.AuxDestCount())
+                        if (destination.AuxDestCount())
                         {
                             lastLegDest.type |= lastLegDest.FLAG_DEST_AUX;
                         }
@@ -3608,7 +3601,7 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
                     lastLegDest.type = lastLegDest.DEST_FULLID;
                     newFlags |= IDENTITY_EXPORT;
                     lastLegDest.destination = ::AsVector(fullID);
-                    if (setAuxDests && destination.AuxDestCount())
+                    if (destination.AuxDestCount())
                     {
                         lastLegDest.type |= lastLegDest.FLAG_DEST_AUX;
                     }
@@ -4214,10 +4207,8 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
     CAmount totalNativeFee = 0;
     CAmount totalVerusFee = 0;
 
-    uint32_t solveTime = (chainActive.Height() >= (height - 1)) ? chainActive[height - 1]->nTime : chainActive.LastTip()->nTime;
-    bool fullUpgrade = !PBAAS_TESTMODE || PBAAS_TESTFORK2_TIME <= solveTime;
     bool updatedPostLaunch = ConnectedChains.CheckZeroViaOnlyPostLaunch(height);
-    bool updatedPastTestFork4 = updatedPostLaunch && chainActive.Height() >= (height - 1) && (!PBAAS_TESTMODE || chainActive[height - 1]->nTime >= PBAAS_TESTFORK4_TIME);
+    bool updatedPastTestFork4 = updatedPostLaunch && chainActive.Height() >= (height - 1);
     bool preLaunchPostFees = updatedPastTestFork4 && ConnectedChains.IncludePostLaunchFees(height) && newCurrencyState.IsPrelaunch();
     bool updatedPostFees = updatedPastTestFork4 && ConnectedChains.IncludePostLaunchFees(height);
     bool isLaunchComplete = newCurrencyState.IsLaunchCompleteMarker();
@@ -4247,7 +4238,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                    (exportObjects[i].IsCurrencyExport() || exportObjects[i].IsIdentityExport() || exportObjects[i].HasNextLeg())) &&
                   !importCurrencyState.IsLaunchCompleteMarker()))
         {
-            curTransfer = exportObjects[i].GetRefundTransfer(!(systemSourceID != systemDestID && exportObjects[i].IsCrossSystem()), fullUpgrade);
+            curTransfer = exportObjects[i].GetRefundTransfer(!(systemSourceID != systemDestID && exportObjects[i].IsCrossSystem()), true);
         }
         else
         {
@@ -5591,11 +5582,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
 
     if ((isVerusMainnet && height > PBAAS_MAINDEFI3_HEIGHT) ||
         nonVerusMainnet ||
-        (PBAAS_TESTMODE &&
-            ((chainActive.Height() >= (height - 1) &&
-            chainActive[height - 1]->nTime >= PBAAS_TESTFORK3_TIME) ||
-            (chainActive.Height() < (height - 1) &&
-            chainActive.LastTip()->nTime >= PBAAS_TESTFORK3_TIME))))
+        PBAAS_TESTMODE)
     {
         burnedChangePrice += primaryLiquidityFees;
         if (updatedPostFees && isFractional && processingPreConverts && transferFees.valueMap.count(systemDestID))

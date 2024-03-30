@@ -175,6 +175,8 @@ const char* GetOpName(opcodetype opcode)
     }
 }
 
+int64_t STORAGE_FEE_FACTOR;
+
 uint160 GetConditionID(uint160 cid, int32_t condition)
 {
     CHashWriter hw(SER_GETHASH, PROTOCOL_VERSION);
@@ -1175,9 +1177,6 @@ std::set<CIndexID> COptCCParams::GetIndexKeys() const
                        notarization.IsLaunchConfirmed() &&
                        notarization.currencyState.IsLaunchClear()))))
                 {
-                    // TODO: POST HARDENING confirm that the final prelaunch notarization is coming through here to index the block one
-                    // notarization of a PBaaS chain
-
                     CPBaaSNotarization checkNotarization = notarization;
                     if (checkNotarization.SetMirror(false))
                     {

@@ -6614,12 +6614,16 @@ std::vector<SaplingNoteEntry> find_unspent_notes(const libzcash::PaymentAddress 
 
     for (auto entry : saplingEntries) {
         retVal.push_back(entry);
-        std::string data(entry.memo.begin(), entry.memo.end());
-        LogPrint("zrpcunsafe", "found unspent Sapling note (txid=%s, vShieldedSpend=%d, amount=%s, memo=%s)\n",
-            entry.op.hash.ToString().substr(0, 10),
-            entry.op.n,
-            ValueFromAmount(entry.note.value()).write(),
-            HexStr(data).substr(0, 10));
+        if (LogAcceptCategory("zrpcunsafe"))
+        {
+            std::vector<unsigned char> rawData(entry.memo.begin(), entry.memo.end());
+            UniValue memoUni = CIdentity::VDXFDataToUniValue(rawData);
+            LogPrint("zrpcunsafe", "found unspent Sapling note (txid=%s, vShieldedSpend=%d, amount=%s, memo=%s)\n",
+                     entry.op.hash.ToString().substr(0, 10).c_str(),
+                     entry.op.n,
+                     ValueFromAmount(entry.note.value()).write().c_str(),
+                     memoUni.write(1,2).c_str());
+        }
     }
 
     if (retVal.empty()) {
@@ -7304,7 +7308,8 @@ UniValue makeoffer(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Currency name must be valid with no leading or trailing spaces");
             }
             CAmount destinationAmount = AmountFromValue(find_value(forValue, "amount"));
-            auto memoStr = TrimSpaces(uni_get_str(find_value(forValue, "memo")));
+            auto memoUni = find_value(forValue, "memo");
+            auto memoStr = TrimSpaces(uni_get_str(memoUni));
 
             if (hasZDest && newCurrencyID != ASSETCHAINS_CHAINID)
             {
@@ -7325,13 +7330,31 @@ UniValue makeoffer(const UniValue& params, bool fHelp)
                     // make a hex string out of the chars without the "#"
                     memoStr = HexBytes((const unsigned char *)&(memoStr[1]), memoStr.size());
                 }
-
-                if (memoStr.size() && !IsHex(memoStr))
+                if (!memoStr.empty())
                 {
-                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Expected memo data in hexadecimal format or as a non-zero length text string, starting with \"#\".");
+                    memoUni = memoStr;
+                }
+
+                auto memoVec = VectorEncodeVDXFUni(memoUni);
+
+                if (memoVec.size() > ZC_MEMO_SIZE)
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Memo data is too large, consider creating a data transaction first and referencing it");
                 }
 
                 std::array<unsigned char, ZC_MEMO_SIZE> hexMemo;
+
+                for (int i = 0; i < ZC_MEMO_SIZE; i++)
+                {
+                    if (i < memoVec.size())
+                    {
+                        hexMemo[i] = memoVec[i];
+                    }
+                    else
+                    {
+                        hexMemo[i] = 0;
+                    }
+                }
 
                 if (memoStr.length() > ZC_MEMO_SIZE*2) {
                     throw JSONRPCError(RPC_INVALID_PARAMETER,  strprintf("Size of memo is larger than maximum allowed %d", ZC_MEMO_SIZE));
@@ -9399,7 +9422,7 @@ CAmount GetMinRelayFeeForBuilder(const TransactionBuilder &tb, CAmount identityF
                 minFee += DEFAULT_TRANSACTION_FEE + ((extraSize - extraOutputCostThreshold) > 0 ? DEFAULT_TRANSACTION_FEE : 0);
             }
         }
-        minFee += (((int64_t)(extraStorageSpace)) * (CCurrencyDefinition::DEFAULT_STORAGE_OUTPUT_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
+        minFee += (((int64_t)(extraStorageSpace)) * (STORAGE_FEE_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
     }
     return minFee;
 }
@@ -9490,23 +9513,9 @@ CAmount GetMinRelayFeeForOutputs(const std::vector<SendManyRecipient> &tOutputs,
                 }
             }
         }
-        minFee += (((int64_t)(extraStorageSpace)) * (CCurrencyDefinition::DEFAULT_STORAGE_OUTPUT_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
+        minFee += (((int64_t)(extraStorageSpace)) * (STORAGE_FEE_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
     }
     return minFee;
-}
-
-int FileToVector(const std::string &filepath, std::vector<unsigned char> &dataVec, int maxBytes)
-{
-    ifstream ifs = ifstream(filepath, std::ios::binary | std::ios::in);
-    int readNum = 0;
-    if (ifs.is_open() && !ifs.eof())
-    {
-        dataVec.resize(maxBytes);
-        readNum = ifs.readsome((char *)(&dataVec[0]), maxBytes);
-        dataVec.resize(readNum);
-        ifs.close();
-    }
-    return readNum;
 }
 
 UniValue sendcurrency(const UniValue& params, bool fHelp)
@@ -9658,9 +9667,10 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
             auto exportId = uni_get_bool(find_value(uniOutputs[i], "exportid"));
             auto exportCurrency = uni_get_bool(find_value(uniOutputs[i], "exportcurrency"));
             auto refundToStr = TrimSpaces(uni_get_str(find_value(uniOutputs[i], "refundto")));
-            auto memoStr = uni_get_str(find_value(uniOutputs[i], "memo"));
+            auto memoUni = find_value(uniOutputs[i], "memo");
+            auto memoStr = uni_get_str(memoUni);
             UniValue dataUni;
-            //dataUni = find_value(uniOutputs[i], "data");
+            dataUni = find_value(uniOutputs[i], "data");
             bool preConvert = uni_get_bool(find_value(uniOutputs[i], "preconvert"));
             bool burnCurrency = uni_get_bool(find_value(uniOutputs[i], "burn")) || uni_get_bool(find_value(uniOutputs[i], "burnweight"));
             bool burnWeight = uni_get_bool(find_value(uniOutputs[i], "burnweight"));
@@ -9768,6 +9778,10 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                 numHeavyOutputs++;
                 zaddrDestSet.insert(zaddressDest);
                 destStr = EncodePaymentAddress(zaddressDest);
+            }
+            else if (!dataUni.isNull())
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot use data parameter unless sending to a private address");
             }
 
             CCurrencyDefinition convertToCurrencyDef;
@@ -10230,9 +10244,19 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                 // if this is a data output, make one or more auxilliary data outputs
                 if (dataUni.isObject())
                 {
-                    if (!memoStr.empty())
+                    std::string dataLabel;
+                    if (!memoUni.isNull())
                     {
-                        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid combination of memo and data parameters for data output #" + std::to_string(i));
+                        // if memo starts with "#", convert it from a string to a hex value
+                        if (memoStr.size() > 1 && memoStr[0] == '#')
+                        {
+                            // make a string out of the chars without the "#"
+                            dataLabel = std::string(memoStr.begin() + 1, memoStr.end());
+                        }
+                        else
+                        {
+                            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid memo not starting with '#' as label combined with data parameter for data output #" + std::to_string(i));
+                        }
                     }
 
                     if (!find_value(dataUni, "encrypttoaddress").isNull())
@@ -10242,16 +10266,54 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
 
                     dataUni.pushKV("encrypttoaddress", EncodePaymentAddress(zaddressDest));
 
-                    UniValue signResult = signdata(dataUni, false);
+                    auto createMMR = find_value(dataUni, "createmmr");
+                    if (createMMR.isNull())
+                    {
+                        createMMR = true;
+                        dataUni.pushKV("createmmr", createMMR);
+                    }
+                    if (!uni_get_bool(createMMR))
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "If root signature is specified for data storage, it must be true");
+                    }
 
-                    // now, take the data we got back and either encode it as a data descriptor directly in the z-memo
-                    // or if too large, store link and add storage (NotaryEvidence) outputs
+                    UniValue signParams(UniValue::VARR);
+                    signParams.push_back(dataUni);
+                    UniValue signResult = signdata(signParams, false);
 
-                    CNotaryEvidence notaryEvidence;
+                    // now, we have both a CMMRDescriptor as well as a CSignatureData if we signed, all encrypted to the specified Z-address
+                    CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdescriptor_encrypted"));
+                    CSignatureData SignatureData = CSignatureData(find_value(signResult, "signaturedata_encrypted"));
 
+                    // if the MMR data isn't valid, we have nothing to store
+                    if (!MMRDesc.IsValid() || !MMRDesc.dataDescriptors.size())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "No valid data for data object # " + std::to_string(i));
+                    }
 
+                    CVDXF_Data vdxfData(CVDXF_Data::VERSION_INVALID);
+                    CVDXF_Data vdxfSignature(CVDXF_Data::VERSION_INVALID);
 
+                    // if we only have one object, the MMR is that salted object, remove the overhead
+                    if (MMRDesc.dataDescriptors.size() == 1)
+                    {
+                        vdxfData = CVDXF_Data(CVDXF_Data::DataDescriptorKey(), ::AsVector(MMRDesc.dataDescriptors[0]));
+                    }
+                    else
+                    {
+                        vdxfData = CVDXF_Data(CVDXF_Data::MMRDescriptorKey(), ::AsVector(MMRDesc));
+                    }
+                    if (SignatureData.IsValid())
+                    {
+                        vdxfSignature = CVDXF_Data(CVDXF_Data::SignatureDataKey(), ::AsVector(SignatureData));
+                    }
 
+                    CNotaryEvidence evidenceData(ASSETCHAINS_CHAINID, CUTXORef(uint256(), 0), CNotaryEvidence::STATE_SUPPORTING, CCrossChainProof(), CNotaryEvidence::TYPE_IMPORT_PROOF);
+                    evidenceData.evidence << CEvidenceData(CVDXF_Data::DataDescriptorKey(), ::AsVector(vdxfData));
+                    if (vdxfSignature.IsValid())
+                    {
+                        evidenceData.evidence << CEvidenceData(CVDXF_Data::SignatureDataKey(), ::AsVector(vdxfSignature));
+                    }
 
                     CCcontract_info CC;
                     CCcontract_info *cp;
@@ -10261,26 +10323,41 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                     cp = CCinit(&CC, EVAL_NOTARY_EVIDENCE);
                     std::vector<CTxDestination> dests({CPubKey(ParseHex(CC.CChexstr))});
 
-
-
-
-
-
-
                     std::vector<int32_t> evidenceOuts;
 
                     COptCCParams chkP;
-                    if (!MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &notaryEvidence)).IsPayToCryptoCondition(chkP, false))
+                    if (!MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &evidenceData)).IsPayToCryptoCondition(chkP, false))
                     {
                         throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence script in data output #" + std::to_string(i));
                     }
+
+                    CVDXFDataRef memoLink(uint256(), tOutputs.size(), 0);
+                    std::vector<unsigned char> memoData = ::AsVector(CVDXFDataDescriptor(::AsVector(memoLink), uni_get_str(find_value(dataUni, "label")), uni_get_str(find_value(dataUni, "mimetype"))));
+                    if (vdxfSignature.IsValid())
+                    {
+                        memoLink = CVDXFDataRef(uint256(), tOutputs.size(), 0, 1);
+                        std::vector<unsigned char> memoSig = ::AsVector(CVDXFDataDescriptor(::AsVector(memoLink), "signature", "application/json"));
+                        memoData.insert(memoData.end(), memoSig.begin(), memoSig.end());
+                    }
+
+                    int labelMaxSize = std::max(std::min(dataLabel.size(), ((ZC_MEMO_SIZE - memoData.size()) - 24)), (std::size_t)0);
+                    if (labelMaxSize)
+                    {
+                        if (labelMaxSize < dataLabel.size())
+                        {
+                            dataLabel.resize(labelMaxSize);
+                        }
+                        std::vector<unsigned char> memoLabel = ::AsVector(CVDXF_Data(CVDXF_Data::DataStringKey(), ::AsVector(dataLabel)));
+                        memoData.insert(memoData.end(), memoLabel.begin(), memoLabel.end());
+                    }
+                    memoStr = HexBytes(memoData.data(), memoData.size());
 
                     // the value should be considered for reduction
                     if (chkP.AsVector().size() >= CScript::MAX_SCRIPT_ELEMENT_SIZE)
                     {
                         CNotaryEvidence emptyEvidence;
                         int baseOverhead = MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &emptyEvidence)).size() + 128;
-                        auto evidenceVec = notaryEvidence.BreakApart(CScript::MAX_SCRIPT_ELEMENT_SIZE - baseOverhead);
+                        auto evidenceVec = evidenceData.BreakApart(CScript::MAX_SCRIPT_ELEMENT_SIZE - baseOverhead);
                         if (!evidenceVec.size())
                         {
                             throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence chunk in data output #" + std::to_string(i));
@@ -10289,32 +10366,19 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                         {
                             dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
                             evidenceOuts.push_back(tb.mtx.vout.size());
-                            tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &oneProof)), 0);
+                            tOutputs.push_back(SendManyRecipient(EncodeDestination(CKeyID(GetDestinationID(dests[0]))), 0, "", MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &oneProof))));
                         }
                     }
                     else
                     {
-                        evidenceOuts.push_back(tb.mtx.vout.size());
-                        tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &notaryEvidence)), 0);
+                        tOutputs.push_back(SendManyRecipient(EncodeDestination(CKeyID(GetDestinationID(dests[0]))), 0, "", MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &evidenceData))));
                     }
+
                 }
                 else if (!dataUni.isNull())
                 {
                     throw JSONRPCError(RPC_INVALID_PARAMETER, "data parameter must be valid parameters for the signdata command");
                 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
                 // if memo starts with "#", convert it from a string to a hex value
                 if (memoStr.size() > 1 && memoStr[0] == '#')
@@ -10323,12 +10387,23 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                     memoStr = HexBytes((const unsigned char *)&(memoStr[1]), memoStr.size());
                 }
 
+                if (!memoStr.empty())
+                {
+                    memoUni = memoStr;
+                }
+
+                if (!memoUni.isNull())
+                {
+                    auto memoVec = VectorEncodeVDXFUni(memoUni);
+                    memoStr = HexBytes((const unsigned char *)&(memoVec[0]), memoVec.size());
+                }
+
                 if (memoStr.size() && !IsHex(memoStr))
                 {
                     throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected memo data in hexadecimal format or as a non-zero length string, starting with \"#\".");
                 }
 
-                if (memoStr.length() > ZC_MEMO_SIZE*2) {
+                if (memoStr.length() > (ZC_MEMO_SIZE << 1)) {
                     throw JSONRPCError(RPC_INVALID_PARAMETER,  strprintf("Invalid parameter, size of memo is larger than maximum allowed %d", ZC_MEMO_SIZE ));
                 }
 
@@ -13168,7 +13243,7 @@ UniValue registernamecommitment(const UniValue& params, bool fHelp)
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Referral identity for commitment must be a currently valid, unrevoked friendly name or i-address");
         }
-        if (referrerIdentity.parent != parentID)
+        if (referrerIdentity.parent != parentID && referrer != parentID)
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Referrals must be from an identity of the same parent");
         }
@@ -14348,6 +14423,167 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         }
     }
 
+    // each one of these is entered into the ID as one idexed link to the data output on chain
+    // data has key, label, mimetype, actual data, encrypttoaddress
+    std::multimap<uint160, std::tuple<std::string, std::string, CNotaryEvidence, libzcash::SaplingPaymentAddress, libzcash::SaplingIncomingViewingKey>> extraData;
+
+    // pull out data to be stored outside the ID definition to extraData
+    if (uniOldID.count("contentmultimap"))
+    {
+        UniValue multiMapUni = uniOldID["contentmultimap"];
+        if (multiMapUni.isObject())
+        {
+            std::vector<int> toRemoveKeys;
+            std::vector<std::string> keys = multiMapUni.getKeys();
+            std::vector<UniValue> values = multiMapUni.getValues();
+            for (int i = 0; i < keys.size(); i++)
+            {
+                if (values[i].isObject())
+                {
+                    UniValue valueArr(UniValue::VARR);
+                    valueArr.push_back(values[i]);
+                    values[i] = valueArr;
+                } else if (!values[i].isArray())
+                {
+                    continue;
+                }
+
+                std::vector<int> toRemoveValues;
+                for (int j = 0; j < values[i].size(); j++)
+                {
+                    UniValue chainData = find_value(values[i][j], "data");
+
+                    // if we have a data element, the data will be stored on the transaction and referenced in the ID
+                    if (!chainData.isNull())
+                    {
+                        auto createMMR = find_value(chainData, "createmmr");
+                        auto dataLabel = uni_get_str(find_value(chainData, "label"));
+                        auto mimeType = uni_get_str(find_value(chainData, "mimetype"));
+                        libzcash::PaymentAddress encryptToAddress;
+                        libzcash::SaplingIncomingViewingKey ivk;
+
+                        bool encryptData = pwalletMain->GetAndValidateSaplingZAddress(uni_get_str(find_value(chainData, "encrypttoaddress")), encryptToAddress);
+                        if (!encryptData)
+                        {
+                            if (!find_value(chainData, "encrypttoaddress").isNull())
+                            {
+                                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid encryption address in object #" + std::to_string(i));
+                            }
+
+                            // if we have no encryption key, we still need a random z-address for encryption
+                            HDSeed seed(HDSeed::Random());
+                            auto m = libzcash::SaplingExtendedSpendingKey::Master(seed);
+                            uint32_t bip44CoinType = Params().BIP44CoinType();
+
+                            // We use a fixed keypath scheme of m/32'/coin_type'/account'
+                            // Derive m/32'
+                            auto m_32h = m.Derive(32 | ZIP32_HARDENED_KEY_LIMIT);
+                            // Derive m/32'/coin_type'
+                            auto m_32h_cth = m_32h.Derive(bip44CoinType | ZIP32_HARDENED_KEY_LIMIT);
+
+                            // Derive account key at next index, skip keys already known to the wallet
+                            libzcash::SaplingExtendedSpendingKey xsk = m_32h_cth.Derive(0 | ZIP32_HARDENED_KEY_LIMIT);
+                            chainData.pushKV("encrypttoaddress", EncodePaymentAddress(xsk.DefaultAddress()));
+                            encryptToAddress = xsk.DefaultAddress();
+
+                            // if this is encrypted to a random key, publish the viewing key in the link
+                            ivk = xsk.expsk.full_viewing_key().in_viewing_key();
+                        }
+                        if (createMMR.isNull())
+                        {
+                            createMMR = true;
+                            chainData.pushKV("createmmr", createMMR);
+                        }
+                        if (!uni_get_bool(createMMR))
+                        {
+                            throw JSONRPCError(RPC_INVALID_PARAMETER, "If root signature is specified for data storage, it must be true");
+                        }
+
+                        UniValue signParams(UniValue::VARR);
+                        signParams.push_back(chainData);
+                        UniValue signResult = signdata(signParams, false);
+
+                        // now, we have both a CMMRDescriptor as well as a CSignatureData if we signed, all encrypted to the specified Z-address
+                        CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdescriptor_encrypted"));
+                        CDataDescriptor SignatureData = CDataDescriptor(find_value(signResult, "signaturedata_encrypted"));
+
+                        // if the MMR data isn't valid, we have nothing to store
+                        if (!MMRDesc.IsValid() || !MMRDesc.dataDescriptors.size())
+                        {
+                            throw JSONRPCError(RPC_INVALID_PARAMETER, "No valid data for data object # " + std::to_string(i));
+                        }
+
+                        CVDXF_Data vdxfData(CVDXF_Data::VERSION_INVALID);
+                        CVDXF_Data vdxfSignature(CVDXF_Data::VERSION_INVALID);
+
+                        // if we only have one object, the MMR is that salted object, remove the overhead
+                        if (MMRDesc.dataDescriptors.size() == 1)
+                        {
+                            vdxfData = CVDXF_Data(CVDXF_Data::DataDescriptorKey(), ::AsVector(MMRDesc.dataDescriptors[0]));
+                        }
+                        else
+                        {
+                            vdxfData = CVDXF_Data(CVDXF_Data::MMRDescriptorKey(), ::AsVector(MMRDesc));
+                        }
+                        if (SignatureData.IsValid())
+                        {
+                            vdxfSignature = CVDXF_Data(CVDXF_Data::SignatureDataKey(), ::AsVector(SignatureData));
+                        }
+
+                        // now, we will store the encrypted signature, if present, and MMRDesc in transparent outputs and put the link inside the z-memo
+                        CNotaryEvidence evidenceData(ASSETCHAINS_CHAINID, CUTXORef(uint256(), 0), CNotaryEvidence::STATE_SUPPORTING, CCrossChainProof(), CNotaryEvidence::TYPE_IMPORT_PROOF);
+                        evidenceData.evidence << CEvidenceData(CVDXF_Data::DataDescriptorKey(), ::AsVector(vdxfData));
+                        if (vdxfSignature.IsValid())
+                        {
+                            evidenceData.evidence << CEvidenceData(CVDXF_Data::SignatureDataKey(), ::AsVector(vdxfSignature));
+                        }
+                        uint160 key = ParseVDXFKey(keys[i]);
+                        if (key.IsNull())
+                        {
+                            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid vdxfkey value: " + keys[i]);
+                        }
+
+                        libzcash::SaplingPaymentAddress *pEncryptTo = boost::get<libzcash::SaplingPaymentAddress>(&encryptToAddress);
+                        libzcash::SaplingPaymentAddress encryptTo = pEncryptTo ? *pEncryptTo : libzcash::SaplingPaymentAddress();
+                        extraData.insert(std::make_pair(key, std::make_tuple(dataLabel, MMRDesc.dataDescriptors.size() > 1 ? "application/json" : mimeType, evidenceData, encryptTo, ivk)));
+                        toRemoveValues.push_back(j);
+                        continue;
+                    }
+                }
+                if (toRemoveValues.size())
+                {
+                    UniValue newUniValue(UniValue::VARR);
+                    int removeIdx = 0;
+                    for (int j = 0; toRemoveValues.size() && j < values[i].size(); j++)
+                    {
+                        if (removeIdx < toRemoveValues.size() && toRemoveValues[removeIdx] == j)
+                        {
+                            removeIdx++;
+                            continue;
+                        }
+                        newUniValue.push_back(values[i][j]);
+                    }
+                    values[i] = newUniValue;
+                }
+                if (!values[i].size())
+                {
+                    toRemoveKeys.push_back(i);
+                }
+            }
+            for (auto rit = toRemoveKeys.rbegin(); rit != toRemoveKeys.rend(); rit++)
+            {
+                keys.erase(keys.begin() + *rit);
+                values.erase(values.begin() + *rit);
+            }
+            multiMapUni = UniValue(UniValue::VOBJ);
+            for (int i = 0; i < keys.size(); i++)
+            {
+                multiMapUni.pushKV(keys[i], values[i]);
+            }
+            uniOldID["contentmultimap"] = multiMapUni;
+        }
+    }
+
     UniValue newUniID = MapToUniObject(uniOldID);
     CIdentity newID(newUniID);
 
@@ -14472,6 +14708,73 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
     tb.AddTransparentInput(idTxIn.prevout,
                            oldIdTx.vout[idTxIn.prevout.n].scriptPubKey,
                            oldIdTx.vout[idTxIn.prevout.n].nValue);
+
+    for (auto &oneExtraData : extraData)
+    {
+        CCcontract_info CC;
+        CCcontract_info *cp;
+
+        // now add the notary evidence and finalization that uses it to assert validity
+        // make the evidence notarization output
+        cp = CCinit(&CC, EVAL_NOTARY_EVIDENCE);
+        std::vector<CTxDestination> dests({CPubKey(ParseHex(CC.CChexstr))});
+
+        COptCCParams chkP;
+        if (!MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &std::get<2>(oneExtraData.second))).IsPayToCryptoCondition(chkP, false))
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence script in ID data output #" + std::to_string(tb.mtx.vout.size()));
+        }
+
+        CVDXFDataRef idLink(uint256(), tb.mtx.vout.size(), 0);
+        CVDXFDataDescriptor dd(::AsVector(idLink), std::get<0>(oneExtraData.second), std::get<1>(oneExtraData.second));
+        if (IsValidPaymentAddress(std::get<3>(oneExtraData.second)))
+        {
+            dd.WrapEncrypted(std::get<3>(oneExtraData.second));
+            if (!std::get<4>(oneExtraData.second).IsNull())
+            {
+                dd.dataDescriptor.ivk = std::vector<unsigned char>(std::get<4>(oneExtraData.second).begin(), std::get<4>(oneExtraData.second).end());
+            }
+        }
+        std::vector<unsigned char> memoData = ::AsVector(dd);
+        if (std::get<2>(oneExtraData.second).evidence.chainObjects.size() > 1)
+        {
+            idLink = CVDXFDataRef(uint256(), tb.mtx.vout.size(), 0, 1);
+            dd = CVDXFDataDescriptor(::AsVector(idLink), "signature", "application/json");
+            if (IsValidPaymentAddress(std::get<3>(oneExtraData.second)))
+            {
+                dd.WrapEncrypted(std::get<3>(oneExtraData.second));
+                if (!std::get<4>(oneExtraData.second).IsNull())
+                {
+                    dd.dataDescriptor.ivk = std::vector<unsigned char>(std::get<4>(oneExtraData.second).begin(), std::get<4>(oneExtraData.second).end());
+                }
+            }
+            std::vector<unsigned char> memoSig = ::AsVector(dd);
+            memoData.insert(memoData.end(), memoSig.begin(), memoSig.end());
+        }
+
+        newID.contentMultiMap.insert(std::make_pair(oneExtraData.first, memoData));
+
+        // the value should be considered for reduction
+        if (chkP.AsVector().size() >= CScript::MAX_SCRIPT_ELEMENT_SIZE)
+        {
+            CNotaryEvidence emptyEvidence;
+            int baseOverhead = MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &emptyEvidence)).size() + 128;
+            auto evidenceVec = std::get<2>(oneExtraData.second).BreakApart(CScript::MAX_SCRIPT_ELEMENT_SIZE - baseOverhead);
+            if (!evidenceVec.size())
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence chunk in ID data output #" + std::to_string(tb.mtx.vout.size()));
+            }
+            for (auto &oneProof : evidenceVec)
+            {
+                dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
+                tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &oneProof)), 0);
+            }
+        }
+        else
+        {
+            tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &std::get<2>(oneExtraData.second))), 0);
+        }
+    }
 
     tb.AddTransparentOutput(newID.IdentityUpdateOutputScript(nHeight + 1), oldIdTx.vout[idTxIn.prevout.n].nValue);
 

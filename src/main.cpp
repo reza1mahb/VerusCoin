@@ -1839,7 +1839,7 @@ CAmount GetMinRelayFeeByOutputs(const CReserveTransactionDescriptor &txDesc, con
                 }
             }
         }
-        minFee += (((int64_t)(extraStorageSpace)) * (CCurrencyDefinition::DEFAULT_STORAGE_OUTPUT_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
+        minFee += (((int64_t)(extraStorageSpace)) * (STORAGE_FEE_FACTOR * ConnectedChains.ThisChain().transactionExportFee)) / CScript::MAX_SCRIPT_ELEMENT_SIZE;
     }
     return minFee;
 }
@@ -6390,10 +6390,7 @@ bool CheckBlock(int32_t *futureblockp,int32_t height,CBlockIndex *pindex,const C
     if (isPBaaS)
     {
         uint256 entropyHash;
-        if ((!PBAAS_TESTMODE || block.nTime >= PBAAS_TESTFORK2_TIME))
-        {
-            entropyHash = chainActive.GetVerusEntropyHash(height);
-        }
+        entropyHash = chainActive.GetVerusEntropyHash(height);
         if (isPBaaS && block.GetBlockMMRRoot() != BlockMMView(block.GetBlockMMRTree(entropyHash)).GetRoot())
         {
             LogPrint("notarization", "%s: block.GetBlockMMRRoot(): %s\nBlockMMView(block.GetBlockMMRTree(entropyHash)).GetRoot(): %s\n",

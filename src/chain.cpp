@@ -257,8 +257,7 @@ CPartialTransactionProof CChain::GetPreHeaderProof(const CBlock &block, uint32_t
     uint256 entropyHash;
     if (block.IsAdvancedHeader() != 0)
     {
-        bool posEntropyInfo = CVerusSolutionVector((*this)[blockHeight]->nSolution).Version() >= CActivationHeight::ACTIVATE_PBAAS &&
-                                (!PBAAS_TESTMODE || block.nTime >= PBAAS_TESTFORK2_TIME);
+        bool posEntropyInfo = CVerusSolutionVector((*this)[blockHeight]->nSolution).Version() >= CActivationHeight::ACTIVATE_PBAAS;
 
         if (posEntropyInfo)
         {
