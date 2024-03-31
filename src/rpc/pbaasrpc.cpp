@@ -6338,7 +6338,7 @@ UniValue estimateconversion(const UniValue& params, bool fHelp)
         }
     }
 
-    if (!pFractionalCurrency->IsFractional() && (!preConvert || pFractionalCurrency->startBlock >= nHeight))
+    if (!pFractionalCurrency->IsFractional() && (!preConvert || pFractionalCurrency->startBlock <= nHeight))
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, pFractionalCurrency->name + " must be a fractional currency or prior to start block to estimate a conversion price");
     }
@@ -6391,12 +6391,12 @@ UniValue estimateconversion(const UniValue& params, bool fHelp)
     }
     else
     {
-        if (preConvert && !(pFractionalCurrency->IsGatewayConverter() && pFractionalCurrency->launchSystemID == ASSETCHAINS_CHAINID))
+        if (preConvert && pFractionalCurrency->launchSystemID != ASSETCHAINS_CHAINID)
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Can only preconvert to currencies launching on the current chain");
         }
         CChainNotarizationData cnd;
-        if (!GetNotarizationData(fractionalCurrencyID, cnd))
+        if (GetNotarizationData(fractionalCurrencyID, cnd))
         {
             notarization = cnd.vtx[cnd.forks[cnd.bestChain].back()].second;
         }
