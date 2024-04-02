@@ -6878,7 +6878,7 @@ void CCoinbaseCurrencyState::RevertReservesAndSupply(const CCurrencyDefinition &
                 IsLaunchClear() &&
                 !IsPrelaunch() &&
                 (revertCur.IsGatewayConverter() || reversionUpdate >= ReversionUpdate::PBAAS_1_0_12) &&
-                (!PBAAS_TESTMODE || reserves[reserveMap[systemID]] == revertCur.gatewayConverterIssuance))
+                (!pbaasInitialChainCurrency || reserves[reserveMap[systemID]] == revertCur.gatewayConverterIssuance))
             {
                 fees = std::vector<int64_t>(fees.size(), 0);
                 conversionFees = std::vector<int64_t>(conversionFees.size(), 0);

@@ -1389,13 +1389,16 @@ bool CPBaaSNotarization::NextNotarizationInfo(const CCurrencyDefinition &sourceS
         {
             bool initialPBaaSStart = destCurrency.IsGatewayConverter() || destCurrency.IsPBaaSChain();
 
-            // the first block executes the second time through
             if (newNotarization.IsLaunchCleared())
             {
                 newNotarization.SetPreLaunch(false);
                 newNotarization.currencyState.SetLaunchClear();
                 newNotarization.currencyState.SetPrelaunch(false);
                 newNotarization.currencyState.RevertReservesAndSupply(destCurrency, destCurrency.systemID, initialPBaaSStart, reversionUpdate);
+                if (destCurrency.IsPBaaSChain())
+                {
+                    newNotarization.currencyState.supply = 0;
+                }
             }
             else
             {
