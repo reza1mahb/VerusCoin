@@ -1225,6 +1225,8 @@ bool CPBaaSNotarization::NextNotarizationInfo(const CCurrencyDefinition &sourceS
                                 1 :
                                 notaHeight + 1;
 
+    bool preLaunchPBaaSUpdate = ConnectedChains.PreLaunchPBaaSUpdateEnabled(notaHeight + 1);
+
     bool improvedMinCheck = (externalSystemID == ASSETCHAINS_CHAINID && ConnectedChains.CheckZeroViaOnlyPostLaunch(currentHeight)) ||
                             (!PBAAS_TESTMODE && externalSystemID != ASSETCHAINS_CHAINID) ||
                             (PBAAS_TESTMODE &&
@@ -1617,7 +1619,10 @@ bool CPBaaSNotarization::NextNotarizationInfo(const CCurrencyDefinition &sourceS
             tempState.reserveIn = tempState.AddVectors(tempState.reserveIn, this->currencyState.reserveIn);
             if (!destCurrency.IsFractional() && !this->IsDefinitionNotarization() && !tempState.IsLaunchClear())
             {
-                tempState.supply += this->currencyState.supply - this->currencyState.emitted;
+                if (!preLaunchPBaaSUpdate)
+                {
+                    tempState.supply += this->currencyState.supply - this->currencyState.emitted;
+                }
                 tempState.preConvertedOut += this->currencyState.preConvertedOut;
                 tempState.primaryCurrencyOut += this->currencyState.primaryCurrencyOut;
             }
