@@ -10351,6 +10351,11 @@ void CConnectedChains::AggregateChainTransfers(const CTransferDestination &feeRe
                     std::vector<CTxOut> exportTxOuts;
                     std::vector<CReserveTransfer> exportTransfers;
 
+                    while (txInputs.size() && txInputs.begin()->first <= ccx.sourceHeightEnd)
+                    {
+                        txInputs.erase(txInputs.begin());
+                    }
+
                     while (txInputs.size() || launchCurrencies.count(lastChain))
                     {
                         launchCurrencies.erase(lastChain);
