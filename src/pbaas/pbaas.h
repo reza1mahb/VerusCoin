@@ -1220,7 +1220,8 @@ public:
     bool DiscernBlockOneLaunchInfo(uint32_t height) const;
     uint32_t AutoArbitrageEnabledHeight(bool getVerusHeight) const;
     bool AutoArbitrageEnabled(uint32_t height) const;
-
+    uint32_t PreLaunchPBaaSUpdateHeight(bool getVerusHeight) const;
+    bool PreLaunchPBaaSUpdateEnabled(uint32_t height) const;
 
     std::vector<CCurrencyDefinition> GetMergeMinedChains()
     {

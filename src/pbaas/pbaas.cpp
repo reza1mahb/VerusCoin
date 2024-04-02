@@ -6497,6 +6497,16 @@ bool CConnectedChains::AutoArbitrageEnabled(uint32_t height) const
     return height >= AutoArbitrageEnabledHeight(false);
 }
 
+uint32_t CConnectedChains::PreLaunchPBaaSUpdateHeight(bool getVerusHeight) const
+{
+    return (getVerusHeight || IsVerusActive()) && !PBAAS_TESTMODE ? 3019000 : 0;
+}
+
+bool CConnectedChains::PreLaunchPBaaSUpdateEnabled(uint32_t height) const
+{
+    return height >= PreLaunchPBaaSUpdateHeight(false);
+}
+
 bool CConnectedChains::ConfigureEthBridge(bool callToCheck)
 {
     // first time through, we initialize the VETH gateway config file
@@ -10350,6 +10360,11 @@ void CConnectedChains::AggregateChainTransfers(const CTransferDestination &feeRe
                     int32_t numInputsUsed;
                     std::vector<CTxOut> exportTxOuts;
                     std::vector<CReserveTransfer> exportTransfers;
+
+                    while (txInputs.size() && txInputs.begin()->first <= ccx.sourceHeightEnd)
+                    {
+                        txInputs.erase(txInputs.begin());
+                    }
 
                     while (txInputs.size() || launchCurrencies.count(lastChain))
                     {

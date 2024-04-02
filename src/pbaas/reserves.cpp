@@ -3697,11 +3697,17 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
             {
                 CChainNotarizationData cnd;
                 uint160 nextSysID = nextSys.GetID();
+                std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> pbnTuple;
+                if (chainActive.Height() > height)
+                {
+                    pbnTuple = GetLastConfirmedNotarization(nextSysID, height);
+                }
                 if (GetNotarizationData(nextSysID, cnd) && cnd.vtx.size())
                 {
                     int vtxIdx = cnd.IsConfirmed() ? cnd.lastConfirmed : 0;
-                    feeConversionRate = cnd.IsConfirmed() && cnd.vtx[vtxIdx].second.proofRoots.count(nextSysID) ?
-                                            cnd.vtx[vtxIdx].second.proofRoots[nextSysID].gasPrice :
+                    CPBaaSNotarization pbn = std::get<2>(pbnTuple).IsValid() ? std::get<2>(pbnTuple) : cnd.vtx[vtxIdx].second;
+                    feeConversionRate = cnd.IsConfirmed() && pbn.proofRoots.count(nextSysID) ?
+                                            pbn.proofRoots[nextSysID].gasPrice :
                                             nextSys.conversions.size() ?
                                                 cnd.vtx[vtxIdx].second.currencyState.conversionPrice[0] :
                                                 feeConversionRate;
@@ -6872,7 +6878,7 @@ void CCoinbaseCurrencyState::RevertReservesAndSupply(const CCurrencyDefinition &
                 IsLaunchClear() &&
                 !IsPrelaunch() &&
                 (revertCur.IsGatewayConverter() || reversionUpdate >= ReversionUpdate::PBAAS_1_0_12) &&
-                (!PBAAS_TESTMODE || reserves[reserveMap[systemID]] == revertCur.gatewayConverterIssuance))
+                (!pbaasInitialChainCurrency || reserves[reserveMap[systemID]] == revertCur.gatewayConverterIssuance))
             {
                 fees = std::vector<int64_t>(fees.size(), 0);
                 conversionFees = std::vector<int64_t>(conversionFees.size(), 0);

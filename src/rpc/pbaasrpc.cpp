@@ -415,7 +415,15 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef)
     assert(ConnectedChains.ThisChain().name.size() < sizeof(ASSETCHAINS_SYMBOL));
     strcpy(ASSETCHAINS_SYMBOL, ConnectedChains.ThisChain().name.c_str());
 
-    ASSETCHAINS_STARTING_DIFF = ConnectedChains.ThisChain().initialBits;
+    if (ConnectedChains.ThisChain().GetID() == GetDestinationID(DecodeDestination("iExBJfZYK7KREDpuhj6PzZBzqMAKaFg7d2")))
+    {
+        arith_uint256 initialTargetVARRR = UintToArith256(uint256S("00000000007f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"));
+        ASSETCHAINS_STARTING_DIFF = initialTargetVARRR.GetCompact();
+    }
+    else
+    {
+        ASSETCHAINS_STARTING_DIFF = ConnectedChains.ThisChain().initialBits;
+    }
     //printf("Starting PBaaS chain:\n%s\n", ConnectedChains.ThisChain().ToUniValue().write(1,2).c_str());
 
     if (!IsVerusActive())
@@ -6338,7 +6346,7 @@ UniValue estimateconversion(const UniValue& params, bool fHelp)
         }
     }
 
-    if (!pFractionalCurrency->IsFractional() && (!preConvert || pFractionalCurrency->startBlock >= nHeight))
+    if (!pFractionalCurrency->IsFractional() && (!preConvert || pFractionalCurrency->startBlock <= nHeight))
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, pFractionalCurrency->name + " must be a fractional currency or prior to start block to estimate a conversion price");
     }
@@ -6391,12 +6399,12 @@ UniValue estimateconversion(const UniValue& params, bool fHelp)
     }
     else
     {
-        if (preConvert && !(pFractionalCurrency->IsGatewayConverter() && pFractionalCurrency->launchSystemID == ASSETCHAINS_CHAINID))
+        if (preConvert && pFractionalCurrency->launchSystemID != ASSETCHAINS_CHAINID)
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Can only preconvert to currencies launching on the current chain");
         }
         CChainNotarizationData cnd;
-        if (!GetNotarizationData(fractionalCurrencyID, cnd))
+        if (GetNotarizationData(fractionalCurrencyID, cnd))
         {
             notarization = cnd.vtx[cnd.forks[cnd.bestChain].back()].second;
         }

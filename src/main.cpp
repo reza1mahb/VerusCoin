@@ -9204,7 +9204,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         //
         // (Allow disabling optimization in case there are unexpected problems.)
         bool hasNewHeaders = true;
-        if (GetBoolArg("-optimize-getheaders", true) && IsInitialBlockDownload(chainparams)) {
+        if (GetBoolArg("-optimize-getheaders", false) && IsInitialBlockDownload(chainparams)) {
             hasNewHeaders = (mapBlockIndex.count(headers.back().GetHash()) == 0);
         }
 
@@ -9324,7 +9324,6 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             }
         }
     }
-
 
     // This asymmetric behavior for inbound and outbound connections was introduced
     // to prevent a fingerprinting attack: an attacker can send specific fake addresses
