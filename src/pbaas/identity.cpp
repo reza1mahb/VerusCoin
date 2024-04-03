@@ -2847,7 +2847,7 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                     }
                     else
                     {
-                        return false;
+                        return state.Error("Invalid block one coinbase");
                     }
                 }
                 else
