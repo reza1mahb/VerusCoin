@@ -8454,9 +8454,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         if (nVersion == 10300)
             nVersion = 300;
 
-        if (CConstVerusSolutionVector::activationHeight.ActiveVersion(nHeight) >= CConstVerusSolutionVector::activationHeight.ACTIVATE_PBAAS ?
-                                                                                 nVersion < MIN_PBAAS_VERSION :
-                                                                                 nVersion < MIN_PEER_PROTO_VERSION)
+        if (ConnectedChains.vARRRUpdateEnabled(nHeight) ? nVersion < MIN_VARRR_VERSION : nVersion < MIN_PEER_PROTO_VERSION)
         {
             // disconnect from peers older than this proto version
             LogPrintf("peer=%d using obsolete version %i; disconnecting\n", pfrom->id, pfrom->nVersion);
