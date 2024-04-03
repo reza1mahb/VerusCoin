@@ -15623,6 +15623,12 @@ bool CConnectedChains::GetNotaryIDs(const CRPCChainData notaryChain,
             }
         }
 
+        if (untilHeight >= ConnectedChains.vARRRUpdateHeight(notaryChain.GetID() == VERUS_CHAINID))
+        {
+            oneDef.contentMap.clear();
+            oneDef.contentMultiMap.clear();
+        }
+
         {
             identities[oneDef.GetID()] = oneDef;
         }
