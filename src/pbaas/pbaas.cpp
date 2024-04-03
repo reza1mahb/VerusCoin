@@ -1933,9 +1933,7 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                 ::AsVector(checkNotarization.currencyState) != ::AsVector(notarization.currencyState))
             {
                 checkNotarization.currencyState.reserveIn = notarization.currencyState.reserveIn;
-                if (notarization.IsRefunding() &&
-                    (ConnectedChains.CheckZeroViaOnlyPostLaunch(height) ||
-                     ::AsVector(checkNotarization.currencyState) != ::AsVector(notarization.currencyState)))
+                if (ConnectedChains.CheckZeroViaOnlyPostLaunch(height) || ::AsVector(checkNotarization.currencyState) != ::AsVector(notarization.currencyState))
                 {
                     if (LogAcceptCategory("defi"))
                     {
@@ -6497,14 +6495,14 @@ bool CConnectedChains::AutoArbitrageEnabled(uint32_t height) const
     return height >= AutoArbitrageEnabledHeight(false);
 }
 
-uint32_t CConnectedChains::PreLaunchPBaaSUpdateHeight(bool getVerusHeight) const
+uint32_t CConnectedChains::vARRRUpdateHeight(bool getVerusHeight) const
 {
-    return (getVerusHeight || IsVerusActive()) && !PBAAS_TESTMODE ? 3019000 : 0;
+    return (getVerusHeight || IsVerusActive()) && !PBAAS_TESTMODE ? 3000000 : 0;
 }
 
-bool CConnectedChains::PreLaunchPBaaSUpdateEnabled(uint32_t height) const
+bool CConnectedChains::vARRRUpdateEnabled(uint32_t height) const
 {
-    return height >= PreLaunchPBaaSUpdateHeight(false);
+    return height >= vARRRUpdateHeight(false);
 }
 
 bool CConnectedChains::ConfigureEthBridge(bool callToCheck)
