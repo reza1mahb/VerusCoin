@@ -1067,7 +1067,7 @@ public:
         ret.pushKV("action", (int64_t)action);
         if (action != ACTION_CLEAR_MAP)
         {
-            ret.pushKV("entrykey", entryKey.GetHex());
+            ret.pushKV("entrykey", EncodeDestination(CIdentityID(entryKey)));
             if (action != ACTION_REMOVE_ALL_KEY)
             {
                 ret.pushKV("valuehash", valueHash.GetHex());

@@ -1225,7 +1225,7 @@ bool CPBaaSNotarization::NextNotarizationInfo(const CCurrencyDefinition &sourceS
                                 1 :
                                 notaHeight + 1;
 
-    bool preLaunchPBaaSUpdate = ConnectedChains.PreLaunchPBaaSUpdateEnabled(notaHeight + 1);
+    bool preLaunchPBaaSUpdate = ConnectedChains.vARRRUpdateEnabled(notaHeight + 1);
 
     bool improvedMinCheck = (externalSystemID == ASSETCHAINS_CHAINID && ConnectedChains.CheckZeroViaOnlyPostLaunch(currentHeight)) ||
                             (!PBAAS_TESTMODE && externalSystemID != ASSETCHAINS_CHAINID) ||
@@ -3366,10 +3366,20 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                                                                         const CCurrencyDefinition &newChainCurrency,
                                                                         CValidationState &state);
                                             CValidationState state;
-                                            if (!IsValidBlockOneCoinbase(outTx.vout,
-                                                                         CRPCChainData(ConnectedChains.ThisChain(), "", ConnectedChains.GetThisChainPort(), ""),
-                                                                         externalSystem,
-                                                                         state))
+
+                                            bool isNewChainvARRR = externalSystemID == GetDestinationID(DecodeDestination("iExBJfZYK7KREDpuhj6PzZBzqMAKaFg7d2"));
+                                            if (isNewChainvARRR)
+                                            {
+                                                if (txHash != uint256S("9986facba28a68bc7d06095b536873f2cd31b0a45b574fa73a994b7a89cba1da") ||
+                                                    !ConnectedChains.vARRRUpdateEnabled(height))
+                                                {
+                                                    lastNotarization = CPBaaSNotarization();
+                                                }
+                                            }
+                                            else if (!IsValidBlockOneCoinbase(outTx.vout,
+                                                                              CRPCChainData(ConnectedChains.ThisChain(), "", ConnectedChains.GetThisChainPort(), ""),
+                                                                              externalSystem,
+                                                                              state))
                                             {
                                                 lastNotarization = CPBaaSNotarization();
                                             }

@@ -13076,7 +13076,9 @@ UniValue registernamecommitment(const UniValue& params, bool fHelp)
             "\nArguments\n"
             "\"name\"                           (string, required)  the unique name to commit to. creating a name commitment is not a registration, and if one is\n"
             "                                                       created for a name that exists, it may succeed, but will never be able to be used.\n"
-            "\"controladdress\"                 (address, required) address that will control this commitment\n"
+            "\"controladdress\"                 (address, required) address that will control this commitment. IMPORTANT: this is not necessarily the address that should\n"
+            "                                                         control the actual ID, and it should be present in the current wallet that is registering the ID.\n"
+            "                                                         Change may go to this address.\n"
             "\"referralidentity\"               (identity, optional)friendly name or identity address that is provided as a referral mechanism and to lower network cost of the ID\n"
             "\"parentnameorid-pbaasonly\"       (currency, optional)friendly name or currency i-address, which will be the parent of this ID and dictate issuance rules & pricing\n"
             "\"sourceoffunds\"                  (addressorid, optional) optional address to use for source of funds. if not specified, transparent wildcard \"*\" is used\n\n"
@@ -13234,6 +13236,26 @@ UniValue registernamecommitment(const UniValue& params, bool fHelp)
         if (!controlIdentity.IsValidUnrevoked())
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "If control address in an identity, it must be a currently valid and unrevoked friendly name or i-address");
+        }
+        if (!pwalletMain)
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "If control address in an identity, it must be present in this wallet");
+        }
+
+        std::pair<CIdentityMapKey, CIdentityMapValue> keyAndIdentity;
+        LOCK(pwalletMain->cs_wallet);
+        if (!pwalletMain->GetIdentity(GetDestinationID(dest), keyAndIdentity) ||
+            !keyAndIdentity.first.CanSign())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "If control address in an identity, this wallet must have the ability to sign");
+        }
+    }
+    else if (dest.which() == COptCCParams::ADDRTYPE_PK || dest.which() == COptCCParams::ADDRTYPE_PK)
+    {
+        LOCK(pwalletMain->cs_wallet);
+        if (!pwalletMain->HaveKey(GetDestinationID(dest)))
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Use a control address that is an ID which this wallet can sign for, or a key address under the control of this wallet.");
         }
     }
 
@@ -13431,6 +13453,10 @@ UniValue registernamecommitment(const UniValue& params, bool fHelp)
     }
     else
     {
+        if (dest.which() == COptCCParams::ADDRTYPE_ID)
+        {
+
+        }
         tb.SendChangeTo(dest);
         changeDest = dest;
     }
@@ -15595,6 +15621,12 @@ bool CConnectedChains::GetNotaryIDs(const CRPCChainData notaryChain,
                 printf("Unable to get identity for %s\n", EncodeDestination(CIdentityID(curID)).c_str());
                 return false;
             }
+        }
+
+        if (untilHeight >= ConnectedChains.vARRRUpdateHeight(notaryChain.GetID() == VERUS_CHAINID))
+        {
+            oneDef.contentMap.clear();
+            oneDef.contentMultiMap.clear();
         }
 
         {
