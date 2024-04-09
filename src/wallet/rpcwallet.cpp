@@ -1423,6 +1423,10 @@ size_t GetDataMessage(const UniValue &uni, CVDXF::EHashTypes hashType, std::vect
     }
     else if (!strFileName.empty())
     {
+        if (!GetBoolArg("-enablefileencryption", false))
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot read file: " + strFileName + " for data output");
+        }
         int bytesRead = FileToVector(strFileName, dataVec, MAX_TX_SIZE_AFTER_SAPLING >> 1);
         if (!bytesRead)
         {
