@@ -6325,6 +6325,16 @@ void CConnectedChains::CheckOracleUpgrades()
     }
 
     CUpgradeDescriptor oneUpgrade;
+
+    // compatible with vARRR update notarization modulo reset, even if no
+    // or different oracle used
+    if (IsVerusMainnetActive() &&
+        height >= vARRRUpdateHeight(false) &&
+        (height - vARRRUpdateHeight(false)) < 800)
+    {
+        activeUpgradesByKey[ResetNotarizationModuloKey()] = CUpgradeDescriptor(ResetNotarizationModuloKey(), 16908802, 3000000, 0);
+    }
+
     if (upgradeData.size())
     {
         for (auto &oneUpgrade : upgradeData)
