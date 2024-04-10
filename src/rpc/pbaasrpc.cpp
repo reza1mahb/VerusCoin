@@ -15629,6 +15629,8 @@ bool CConnectedChains::GetNotaryIDs(const CRPCChainData notaryChain,
             oneDef.contentMultiMap.clear();
         }
 
+        oneDef.UpgradeVersion(1);
+
         {
             identities[oneDef.GetID()] = oneDef;
         }
