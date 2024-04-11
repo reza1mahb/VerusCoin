@@ -3889,6 +3889,11 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
                 return false;
             }
 
+            if (ConnectedChains.ForceIdentityUpgrade(height))
+            {
+                importedID.UpgradeVersion(height);
+            }
+
             // check for collisions and if not present, make an ID output
             bool idCollision = false, currencyCollision = false;
 

@@ -6325,6 +6325,16 @@ void CConnectedChains::CheckOracleUpgrades()
     }
 
     CUpgradeDescriptor oneUpgrade;
+
+    // compatible with vARRR update notarization modulo reset, even if no
+    // or different oracle used
+    if (IsVerusMainnetActive() &&
+        height >= vARRRUpdateHeight(false) &&
+        (height - vARRRUpdateHeight(false)) < 800)
+    {
+        activeUpgradesByKey[ResetNotarizationModuloKey()] = CUpgradeDescriptor(ResetNotarizationModuloKey(), 16908802, 3000000, 0);
+    }
+
     if (upgradeData.size())
     {
         for (auto &oneUpgrade : upgradeData)
@@ -6503,6 +6513,29 @@ uint32_t CConnectedChains::vARRRUpdateHeight(bool getVerusHeight) const
 bool CConnectedChains::vARRRUpdateEnabled(uint32_t height) const
 {
     return height >= vARRRUpdateHeight(false);
+}
+
+uint160 CConnectedChains::vARRRChainID() const
+{
+    static uint160 vARRRID = GetDestinationID(DecodeDestination("iExBJfZYK7KREDpuhj6PzZBzqMAKaFg7d2"));
+    return vARRRID;
+}
+
+bool CConnectedChains::ForceIdentityUpgrade(uint32_t height) const
+{
+    if (vARRRChainID() != ASSETCHAINS_CHAINID || height >= 18250)
+    {
+        return true;
+    }
+
+    auto iiuIt = ConnectedChains.activeUpgradesByKey.find(ConnectedChains.ForceIdentityUpgradeKey());
+    if (iiuIt != ConnectedChains.activeUpgradesByKey.end() &&
+        height >= iiuIt->second.upgradeBlockHeight)
+    {
+        return true;
+    }
+
+    return false;
 }
 
 bool CConnectedChains::ConfigureEthBridge(bool callToCheck)

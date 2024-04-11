@@ -1222,6 +1222,8 @@ public:
     bool AutoArbitrageEnabled(uint32_t height) const;
     uint32_t vARRRUpdateHeight(bool getVerusHeight) const;
     bool vARRRUpdateEnabled(uint32_t height) const;
+    uint160 vARRRChainID() const;
+    bool ForceIdentityUpgrade(uint32_t height) const;
 
     std::vector<CCurrencyDefinition> GetMergeMinedChains()
     {
@@ -1302,6 +1304,18 @@ public:
     {
         static uint160 nameSpace;
         static uint160 key = CVDXF_Data::GetDataKey(ResetNotarizationModuloKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string ForceIdentityUpgradeKeyName()
+    {
+        return "vrsc::system.upgradedata.forceidentityupgrade";
+    }
+
+    static uint160 ForceIdentityUpgradeKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(ForceIdentityUpgradeKeyName(), nameSpace);
         return key;
     }
 
