@@ -987,6 +987,16 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &_obj)
 
     UniValue obj = _obj;
 
+    if (!obj.isObject())
+    {
+        std::string objStr = uni_get_str(obj);
+        if (IsHex(objStr))
+        {
+            return ParseHex(objStr);
+        }
+        return std::vector<unsigned char>(objStr.begin(), objStr.end());
+    }
+
     std::string serializedHex = uni_get_str(find_value(obj, "serializedhex"));
     if (!serializedHex.empty())
     {
@@ -1008,16 +1018,6 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &_obj)
     if (!serializedMessage.empty())
     {
         return std::vector<unsigned char>(serializedMessage.begin(), serializedMessage.end());
-    }
-
-    if (obj.isStr())
-    {
-        std::string objStr = uni_get_str(obj);
-        if (IsHex(objStr))
-        {
-            return ParseHex(objStr);
-        }
-        return std::vector<unsigned char>(objStr.begin(), objStr.end());
     }
 
     // this should be an object with "vdxfkey" as the key and {object} as the json object to serialize
