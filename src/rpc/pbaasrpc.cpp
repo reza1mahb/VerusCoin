@@ -10589,6 +10589,11 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                             {
                                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot find identity to export (" + EncodeDestination(destination) + ")");
                             }
+                            if (destIdentity.unlockAfter && !destIdentity.IsLocked())
+                            {
+                                std::string correctCommand = "Identity time lock should be zeroed before sending cross-chain to avoid inadvertent locking on destination chain. Run the command:\nupdateidentity \'{\"name\":" + destIdentity.name + "\",\"parent\":\"" + EncodeDestination(CIdentityID(destIdentity.parent)) + "\",\"timelock\":0}\'\nto zero the timelock value before exporting to another chain";
+                                throw JSONRPCError(RPC_INVALID_PARAMETER, correctCommand);
+                            }
                             destIdentity.contentMap.clear();
                             destIdentity.contentMultiMap.clear();
                             dest = CTransferDestination(CTransferDestination::DEST_FULLID, ::AsVector(destIdentity));
@@ -11318,7 +11323,8 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
     }
 
     // if fee offer was not specified, calculate
-    if (!feeAmount)
+    // only a string value of "-0" is considered as specifying an actual zero fee
+    if (!feeAmount && (params.size() <= 3 || uni_get_str(params[3]) != "-0"))
     {
         feeAmount = GetMinRelayFeeForOutputs(tOutputs, zOutputs, 0, false);
     }
