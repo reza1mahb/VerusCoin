@@ -676,6 +676,12 @@ public:
         }
     }
 
+    void ClearLock()
+    {
+        flags &= ~FLAG_LOCKED;
+        unlockAfter = 0;
+    }
+
     // This only returns the state of the lock flag. Note that an ID stays locked from spending or
     // signing until the height it was unlocked plus the time lock applied when it was locked.
     bool IsLocked() const
@@ -686,12 +692,7 @@ public:
     // consider the unlockAfter height as well
     // this continues to return that it is locked after it is unlocked
     // until passed the parameter of the height at which it was unlocked, plus the time lock
-    bool IsLocked(uint32_t height) const
-    {
-        return nVersion >= VERSION_VAULT &&
-               (IsLocked() || unlockAfter >= height) &&
-               !IsRevoked();
-    }
+    bool IsLocked(uint32_t height) const;
 
     int32_t UnlockHeight() const
     {

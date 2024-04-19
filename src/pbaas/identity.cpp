@@ -583,6 +583,13 @@ CIdentity::GetIdentityContentByKey(const uint160 &idID,
     return retVec;
 }
 
+bool CIdentity::IsLocked(uint32_t height) const
+{
+    return nVersion >= VERSION_VAULT &&
+            (IsLocked() || (!ConnectedChains.IdentityLockOverride(*this, height) && unlockAfter >= height)) &&
+            !IsRevoked();
+}
+
 CIdentity CIdentity::LookupIdentity(const std::string &name, uint32_t height, uint32_t *pHeightOut, CTxIn *idTxIn)
 {
     return LookupIdentity(GetID(name), height, pHeightOut, idTxIn);
