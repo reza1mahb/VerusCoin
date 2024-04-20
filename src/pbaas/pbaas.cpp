@@ -3169,7 +3169,8 @@ bool ValidateReserveDeposit(struct CCcontract_info *cp, Eval* eval, const CTrans
         bool isUpdatedConversion = ConnectedChains.CheckZeroViaOnlyPostLaunch(nHeight);
 
         int32_t transitionBlocks = (PBAAS_TESTMODE ? ((24 * 60 * 60) / ConnectedChains.ThisChain().blockTime) : 100);
-        bool clearConvertTransition = destCurDef.IsFractional() &&
+        bool clearConvertTransition = IsVerusMainnetActive() &&
+                                      destCurDef.IsFractional() &&
                                       !ConnectedChains.CheckClearConvert(std::max(((int32_t)nHeight) - transitionBlocks, 1)) &&
                                       ConnectedChains.CheckClearConvert(nHeight);
 
@@ -6492,7 +6493,18 @@ bool CConnectedChains::DiscernBlockOneLaunchInfo(uint32_t height) const
 
 bool CConnectedChains::CheckClearConvert(uint32_t height) const
 {
-    return (!PBAAS_TESTMODE && (!IsVerusActive() || height >= PBAAS_CLEARCONVERT_HEIGHT));
+    if (!IsVerusActive())
+    {
+        return true;
+    }
+    if (IsVerusMainnetActive())
+    {
+        return height >= PBAAS_CLEARCONVERT_HEIGHT;
+    }
+    // TODO: TESTNET RESET - remove these exception heights
+    // testnet exception heights to prevent testnet reset
+    static std::set<uint32_t> pendingTestnetExportHeights({5723, 5724, 5751, 5752, 5757, 5758, 5770, 5771, 6229, 6230, 6431, 6432, 7014, 7015, 7048, 7049, 7078, 7079, 7593, 7594, 7633, 7634, 7635, 7636});
+    return height >= 8330 || pendingTestnetExportHeights.count(height);
 }
 
 uint32_t CConnectedChains::AutoArbitrageEnabledHeight(bool getVerusHeight) const
@@ -6535,6 +6547,38 @@ bool CConnectedChains::ForceIdentityUpgrade(uint32_t height) const
         return true;
     }
 
+    return false;
+}
+
+#define FORCE_IDENTITY_UNLOCK_HEIGHT 67000
+
+bool CConnectedChains::ForceIdentityUnlock(uint32_t height) const
+{
+    if (vARRRChainID() != ASSETCHAINS_CHAINID || height >= FORCE_IDENTITY_UNLOCK_HEIGHT)
+    {
+        return true;
+    }
+
+    auto iiuIt = ConnectedChains.activeUpgradesByKey.find(ConnectedChains.ForceIdentityUnlockKey());
+    if (iiuIt != ConnectedChains.activeUpgradesByKey.end() &&
+        height >= iiuIt->second.upgradeBlockHeight)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+bool CConnectedChains::IdentityLockOverride(const CIdentity &identity, uint32_t height) const
+{
+    if (identity.unlockAfter > 800000 &&
+        ASSETCHAINS_CHAINID == ConnectedChains.vARRRChainID() &&
+        ForceIdentityUnlock(height) &&
+        height < (FORCE_IDENTITY_UNLOCK_HEIGHT + 10000))
+    {
+        static std::set<CIdentityID> exemptIDs({GetDestinationID(DecodeDestination("iSXF8KbbvpHDWBm4zHxeA4n7uc1LsfR15X")), GetDestinationID(DecodeDestination("i4UxDzYtNR5oeGEEVritXuzAKjKzoVgiPK")), GetDestinationID(DecodeDestination("i5nQeKAWmxaXdNYv36qLQzz6XV8gZEqbaV"))});
+        return exemptIDs.count(identity.GetID());
+    }
     return false;
 }
 
@@ -7930,6 +7974,7 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
                         lastNotarization.ToUniValue().write(1,2).c_str(),
                         nextHeight,
                         EntropyHashFromHeight(CBlockIndex::BlockEntropyKey(), nextHeight, lastNotarization.currencyID).GetHex().c_str());
+            LogPrint("crosschainimports", "Expected next notarization %s\n", newNotarization.ToUniValue().write(1,2).c_str());
         }
 
         // after the last clear launch export is imported, we have completed launch
@@ -7957,7 +8002,8 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
         }
 
         int32_t transitionBlocks = (PBAAS_TESTMODE ? ((24 * 60 * 60) / ConnectedChains.ThisChain().blockTime) : 100) - 1;
-        bool clearConvertTransition = destCur.IsFractional() &&
+        bool clearConvertTransition = IsVerusMainnetActive() &&
+                                      destCur.IsFractional() &&
                                       !ConnectedChains.CheckClearConvert(std::max(((int32_t)nHeight) - transitionBlocks, 1)) &&
                                       ConnectedChains.CheckClearConvert(nHeight + 1) &&
                                       !ConnectedChains.CheckClearConvert(lastNotarization.notarizationHeight) && ConnectedChains.CheckClearConvert(nHeight);

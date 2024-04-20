@@ -1224,6 +1224,8 @@ public:
     bool vARRRUpdateEnabled(uint32_t height) const;
     uint160 vARRRChainID() const;
     bool ForceIdentityUpgrade(uint32_t height) const;
+    bool ForceIdentityUnlock(uint32_t height) const;
+    bool IdentityLockOverride(const CIdentity &identity, uint32_t height) const;
 
     std::vector<CCurrencyDefinition> GetMergeMinedChains()
     {
@@ -1316,6 +1318,18 @@ public:
     {
         static uint160 nameSpace;
         static uint160 key = CVDXF_Data::GetDataKey(ForceIdentityUpgradeKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string ForceIdentityUnlockKeyName()
+    {
+        return "vrsc::system.upgradedata.forceidentityunlock";
+    }
+
+    static uint160 ForceIdentityUnlockKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(ForceIdentityUnlockKeyName(), nameSpace);
         return key;
     }
 
