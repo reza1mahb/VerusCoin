@@ -407,7 +407,7 @@ bool ImportHasAdequateFees(const CTransaction &tx,
             {
                 return state.Error("Fees for currency launch preconversions must include launch currency: " + oneTransfer.ToUniValue().write(1,2));
             }
-            if (!importingToDef.GetCurrenciesMap().count(oneTransfer.FirstCurrency()))
+            if (ConnectedChains.DoImportPreconvertReserveTransferPrecheck(height) && !importingToDef.GetCurrenciesMap().count(oneTransfer.FirstCurrency()))
             {
                 return state.Error("Invalid source currency for preconversion: " + oneTransfer.ToUniValue().write(1,2));
             }
@@ -1340,7 +1340,7 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                             {
                                 return state.Error("Fees for currency launch preconversions must include launch currency: " + oneTransfer.ToUniValue().write(1,2));
                             }
-                            if (!importingToDef.GetCurrenciesMap().count(oneTransfer.FirstCurrency()))
+                            if (ConnectedChains.DoImportPreconvertReserveTransferPrecheck(height) && !importingToDef.GetCurrenciesMap().count(oneTransfer.FirstCurrency()))
                             {
                                 return state.Error("Invalid source currency for preconversion: " + oneTransfer.ToUniValue().write(1,2));
                             }
@@ -2007,6 +2007,10 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                     return state.Error("Insufficient fees for currency definition with export");
                 }
             }
+        }
+        else if (!(ccx.IsChainDefinition() && ASSETCHAINS_CHAINID == ccx.destCurrencyID && IsVerusActive()) && (totalCurrencyExported + extraLaunchFee) != reserveDepositOutput)
+        {
+            return state.Error("Invalid export transaction");
         }
     }
 
@@ -6580,6 +6584,39 @@ bool CConnectedChains::IdentityLockOverride(const CIdentity &identity, uint32_t 
         return exemptIDs.count(identity.GetID());
     }
     return false;
+}
+
+bool CConnectedChains::DoPreconvertReserveTransferPrecheck(uint32_t height) const
+{
+    if (IsVerusMainnetActive())
+    {
+        uint32_t triggerHeight = 3050060;
+        auto iiuIt = ConnectedChains.activeUpgradesByKey.find(ConnectedChains.PreconvertReserveTransferPrecheckKey());
+        if (iiuIt != ConnectedChains.activeUpgradesByKey.end())
+        {
+            triggerHeight = iiuIt->second.upgradeBlockHeight;
+        }
+        return height >= triggerHeight;
+    }
+    else
+    {
+        return ForceIdentityUnlock(height);
+    }
+}
+
+bool CConnectedChains::DoImportPreconvertReserveTransferPrecheck(uint32_t height) const
+{
+    if (IsVerusMainnetActive())
+    {
+        uint32_t triggerHeight = 3050000;
+        auto iiuIt = ConnectedChains.activeUpgradesByKey.find(ConnectedChains.ImportPreconvertReserveTransferPrecheckKey());
+        if (iiuIt != ConnectedChains.activeUpgradesByKey.end())
+        {
+            triggerHeight = iiuIt->second.upgradeBlockHeight;
+        }
+        return height < triggerHeight;
+    }
+    return !ForceIdentityUnlock(height);
 }
 
 bool CConnectedChains::ConfigureEthBridge(bool callToCheck)

@@ -1226,6 +1226,8 @@ public:
     bool ForceIdentityUpgrade(uint32_t height) const;
     bool ForceIdentityUnlock(uint32_t height) const;
     bool IdentityLockOverride(const CIdentity &identity, uint32_t height) const;
+    bool DoPreconvertReserveTransferPrecheck(uint32_t height) const;
+    bool DoImportPreconvertReserveTransferPrecheck(uint32_t height) const;
 
     std::vector<CCurrencyDefinition> GetMergeMinedChains()
     {
@@ -1330,6 +1332,30 @@ public:
     {
         static uint160 nameSpace;
         static uint160 key = CVDXF_Data::GetDataKey(ForceIdentityUnlockKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string PreconvertReserveTransferPrecheckKeyName()
+    {
+        return "vrsc::system.upgradedata.preconvertreservetransferprecheck";
+    }
+
+    static uint160 PreconvertReserveTransferPrecheckKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(PreconvertReserveTransferPrecheckKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string ImportPreconvertReserveTransferPrecheckKeyName()
+    {
+        return "vrsc::system.upgradedata.importpreconvertreservetransferprecheck";
+    }
+
+    static uint160 ImportPreconvertReserveTransferPrecheckKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(ImportPreconvertReserveTransferPrecheckKeyName(), nameSpace);
         return key;
     }
 
