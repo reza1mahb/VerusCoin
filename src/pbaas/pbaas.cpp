@@ -6588,9 +6588,9 @@ bool CConnectedChains::IdentityLockOverride(const CIdentity &identity, uint32_t 
 
 bool CConnectedChains::DoPreconvertReserveTransferPrecheck(uint32_t height) const
 {
-    if (IsVerusMainnetActive())
+    uint32_t triggerHeight = IsVerusMainnetActive() ? 3050060 : (vARRRChainID() != ASSETCHAINS_CHAINID ? 67000 : 0);
+    if (IsVerusMainnetActive() || vARRRChainID() == ASSETCHAINS_CHAINID)
     {
-        uint32_t triggerHeight = 3050060;
         auto iiuIt = ConnectedChains.activeUpgradesByKey.find(ConnectedChains.PreconvertReserveTransferPrecheckKey());
         if (iiuIt != ConnectedChains.activeUpgradesByKey.end())
         {
@@ -6598,17 +6598,15 @@ bool CConnectedChains::DoPreconvertReserveTransferPrecheck(uint32_t height) cons
         }
         return height >= triggerHeight;
     }
-    else
-    {
-        return ForceIdentityUnlock(height);
-    }
+    return true;
 }
 
 bool CConnectedChains::DoImportPreconvertReserveTransferPrecheck(uint32_t height) const
 {
-    if (IsVerusMainnetActive())
+    uint32_t triggerHeight = IsVerusMainnetActive() ? 3050000 : (vARRRChainID() != ASSETCHAINS_CHAINID ? 67000 : 0);
+
+    if (IsVerusMainnetActive() || vARRRChainID() != ASSETCHAINS_CHAINID)
     {
-        uint32_t triggerHeight = 3050000;
         auto iiuIt = ConnectedChains.activeUpgradesByKey.find(ConnectedChains.ImportPreconvertReserveTransferPrecheckKey());
         if (iiuIt != ConnectedChains.activeUpgradesByKey.end())
         {
@@ -6616,7 +6614,7 @@ bool CConnectedChains::DoImportPreconvertReserveTransferPrecheck(uint32_t height
         }
         return height < triggerHeight;
     }
-    return !ForceIdentityUnlock(height);
+    return false;
 }
 
 bool CConnectedChains::ConfigureEthBridge(bool callToCheck)
