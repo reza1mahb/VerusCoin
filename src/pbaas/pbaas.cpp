@@ -6588,7 +6588,7 @@ bool CConnectedChains::IdentityLockOverride(const CIdentity &identity, uint32_t 
 
 bool CConnectedChains::DoPreconvertReserveTransferPrecheck(uint32_t height) const
 {
-    uint32_t triggerHeight = IsVerusMainnetActive() ? 3050060 : (vARRRChainID() != ASSETCHAINS_CHAINID ? 67000 : 0);
+    uint32_t triggerHeight = IsVerusMainnetActive() ? 3038800 : (vARRRChainID() != ASSETCHAINS_CHAINID ? 67000 : 0);
     if (IsVerusMainnetActive() || vARRRChainID() == ASSETCHAINS_CHAINID)
     {
         auto iiuIt = ConnectedChains.activeUpgradesByKey.find(ConnectedChains.PreconvertReserveTransferPrecheckKey());
@@ -6603,9 +6603,9 @@ bool CConnectedChains::DoPreconvertReserveTransferPrecheck(uint32_t height) cons
 
 bool CConnectedChains::DoImportPreconvertReserveTransferPrecheck(uint32_t height) const
 {
-    uint32_t triggerHeight = IsVerusMainnetActive() ? 3050000 : (vARRRChainID() != ASSETCHAINS_CHAINID ? 67000 : 0);
+    uint32_t triggerHeight = IsVerusMainnetActive() ? 3038400 : (vARRRChainID() != ASSETCHAINS_CHAINID ? 67000 : 0);
 
-    if (IsVerusMainnetActive() || vARRRChainID() != ASSETCHAINS_CHAINID)
+    if (IsVerusMainnetActive() || vARRRChainID() == ASSETCHAINS_CHAINID)
     {
         auto iiuIt = ConnectedChains.activeUpgradesByKey.find(ConnectedChains.ImportPreconvertReserveTransferPrecheckKey());
         if (iiuIt != ConnectedChains.activeUpgradesByKey.end())
@@ -8667,7 +8667,7 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
             }
             else
             {
-                //printf("%s: success adding %s to mempool\n", __func__, newImportTx.GetHash().GetHex().c_str());
+                printf("%s: success adding %s to mempool\n", __func__, newImportTx.GetHash().GetHex().c_str());
                 if (!arbitrageTransfersIn.size())
                 {
                     RelayTransaction(newImportTx);
