@@ -407,7 +407,7 @@ bool ImportHasAdequateFees(const CTransaction &tx,
             {
                 return state.Error("Fees for currency launch preconversions must include launch currency: " + oneTransfer.ToUniValue().write(1,2));
             }
-            if (!importingToDef.GetCurrenciesMap().count(oneTransfer.FirstCurrency()))
+            if (ConnectedChains.DoImportPreconvertReserveTransferPrecheck(height) && !importingToDef.GetCurrenciesMap().count(oneTransfer.FirstCurrency()))
             {
                 return state.Error("Invalid source currency for preconversion: " + oneTransfer.ToUniValue().write(1,2));
             }
@@ -1340,7 +1340,7 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                             {
                                 return state.Error("Fees for currency launch preconversions must include launch currency: " + oneTransfer.ToUniValue().write(1,2));
                             }
-                            if (!importingToDef.GetCurrenciesMap().count(oneTransfer.FirstCurrency()))
+                            if (ConnectedChains.DoImportPreconvertReserveTransferPrecheck(height) && !importingToDef.GetCurrenciesMap().count(oneTransfer.FirstCurrency()))
                             {
                                 return state.Error("Invalid source currency for preconversion: " + oneTransfer.ToUniValue().write(1,2));
                             }
@@ -1964,6 +1964,7 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
         CCurrencyValueMap reserveDepositOutput;
         CCurrencyValueMap expectedReserveDeposits;
         CCurrencyValueMap expectedBurn;
+        CCrossChainImport cci;
         for (int i = 0; i < tx.vout.size(); i++)
         {
             COptCCParams p;
@@ -1973,9 +1974,17 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                 p.evalCode == EVAL_RESERVE_DEPOSIT &&
                 p.vData.size() &&
                 (rd = CReserveDeposit(p.vData[0])).IsValid() &&
-                rd.controllingCurrencyID == reserveDepositHolder)
-            {
+                rd.controllingCurrencyID == reserveDepositHolder) {
                 reserveDepositOutput += rd.reserveValues;
+            }
+            else if (p.IsValid() &&
+                       p.evalCode == EVAL_CROSSCHAIN_IMPORT &&
+                       !ccx.IsChainDefinition() &&
+                       p.vData.size() &&
+                       (cci = CCrossChainImport(p.vData[0])).IsValid() &&
+                       cci.importCurrencyID == ccx.destCurrencyID)
+            {
+                return state.Error("Invalid export combined with import without currency definition");
             }
         }
         // if cross system, we may remove some due to burning
@@ -2007,6 +2016,10 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                     return state.Error("Insufficient fees for currency definition with export");
                 }
             }
+        }
+        else if (!(ccx.IsChainDefinition() && ASSETCHAINS_CHAINID == ccx.destCurrencyID && IsVerusActive()) && (totalCurrencyExported + extraLaunchFee) != reserveDepositOutput)
+        {
+            return state.Error("Invalid export transaction");
         }
     }
 
@@ -6582,6 +6595,37 @@ bool CConnectedChains::IdentityLockOverride(const CIdentity &identity, uint32_t 
     return false;
 }
 
+bool CConnectedChains::DoPreconvertReserveTransferPrecheck(uint32_t height) const
+{
+    uint32_t triggerHeight = IsVerusMainnetActive() ? 3050060 : (vARRRChainID() != ASSETCHAINS_CHAINID ? 67000 : 0);
+    if (IsVerusMainnetActive() || vARRRChainID() == ASSETCHAINS_CHAINID)
+    {
+        auto iiuIt = ConnectedChains.activeUpgradesByKey.find(ConnectedChains.PreconvertReserveTransferPrecheckKey());
+        if (iiuIt != ConnectedChains.activeUpgradesByKey.end())
+        {
+            triggerHeight = iiuIt->second.upgradeBlockHeight;
+        }
+        return height >= triggerHeight;
+    }
+    return true;
+}
+
+bool CConnectedChains::DoImportPreconvertReserveTransferPrecheck(uint32_t height) const
+{
+    uint32_t triggerHeight = IsVerusMainnetActive() ? 3050000 : (vARRRChainID() != ASSETCHAINS_CHAINID ? 67000 : 0);
+
+    if (IsVerusMainnetActive() || vARRRChainID() == ASSETCHAINS_CHAINID)
+    {
+        auto iiuIt = ConnectedChains.activeUpgradesByKey.find(ConnectedChains.ImportPreconvertReserveTransferPrecheckKey());
+        if (iiuIt != ConnectedChains.activeUpgradesByKey.end())
+        {
+            triggerHeight = iiuIt->second.upgradeBlockHeight;
+        }
+        return height < triggerHeight;
+    }
+    return false;
+}
+
 bool CConnectedChains::ConfigureEthBridge(bool callToCheck)
 {
     // first time through, we initialize the VETH gateway config file
@@ -8632,7 +8676,7 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
             }
             else
             {
-                //printf("%s: success adding %s to mempool\n", __func__, newImportTx.GetHash().GetHex().c_str());
+                printf("%s: success adding %s to mempool\n", __func__, newImportTx.GetHash().GetHex().c_str());
                 if (!arbitrageTransfersIn.size())
                 {
                     RelayTransaction(newImportTx);

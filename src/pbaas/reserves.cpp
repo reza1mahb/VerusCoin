@@ -4713,6 +4713,12 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     auto reserveIdx = currencyIndexMap.find(curTransfer.FirstCurrency());
                     if (reserveIdx == currencyIndexMap.end())
                     {
+                        if (ConnectedChains.DoPreconvertReserveTransferPrecheck(height))
+                        {
+                            printf("%s: invalid currency for preconversion to %s\n", __func__, importCurrencyDef.name.c_str());
+                            LogPrint("reservetransfers", "%s: invalid currency for preconversion to %s\n", __func__, importCurrencyDef.name.c_str());
+                            return false;
+                        }
                         curTransfer = curTransfer.GetRefundTransfer();
                     }
                     else if (maxPreconvert.valueMap.size())

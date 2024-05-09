@@ -10149,10 +10149,10 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                         converterCurrency.GetCurrenciesMap().count(exportToCurrencyDef.systemID) &&
                         converterCurrency.GetCurrenciesMap().count(feeCurrencyID) &&
                         converterCurrency.GetCurrenciesMap().count(toFractional ? sourceCurrencyID : convertToCurrencyID))) ||
-                      (convertToCurrencyID == exportToCurrencyID &&
+                      (convertToCurrencyID == exportToCurrencyDef.GetID() &&
                        exportToCurrencyDef.systemID == destSystemID)))
                 {
-                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid export syntax. Fractional converter must be from current chain before \"exportto\" a system currency or if on the alternate system, then it must be the same destination as \"exportto\".");
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid export syntax. Fractional converter must be from current chain before \"exportto\" a system currency or if on the alternate system, then that system must be the same destination as \"exportto\".");
                 }
 
                 // if fee currency is the export system destination

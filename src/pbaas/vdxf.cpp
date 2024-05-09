@@ -1055,7 +1055,7 @@ CSignatureData::CSignatureData(const UniValue &uni) :
     }
     signatureHash = std::vector<unsigned char>(dataHash.begin(), dataHash.end());
 
-    std::string sigString = DecodeBase64(uni_get_str(find_value(uni, "identityid")));
+    std::string sigString = DecodeBase64(uni_get_str(find_value(uni, "signature")));
     signatureAsVch = std::vector<unsigned char>(sigString.begin(), sigString.end());
 
     auto vdxfKeysUni = find_value(uni, "vdxfkeys");
