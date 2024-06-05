@@ -1964,6 +1964,7 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
         CCurrencyValueMap reserveDepositOutput;
         CCurrencyValueMap expectedReserveDeposits;
         CCurrencyValueMap expectedBurn;
+        CCrossChainImport cci;
         for (int i = 0; i < tx.vout.size(); i++)
         {
             COptCCParams p;
@@ -1973,9 +1974,17 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                 p.evalCode == EVAL_RESERVE_DEPOSIT &&
                 p.vData.size() &&
                 (rd = CReserveDeposit(p.vData[0])).IsValid() &&
-                rd.controllingCurrencyID == reserveDepositHolder)
-            {
+                rd.controllingCurrencyID == reserveDepositHolder) {
                 reserveDepositOutput += rd.reserveValues;
+            }
+            else if (p.IsValid() &&
+                       p.evalCode == EVAL_CROSSCHAIN_IMPORT &&
+                       !ccx.IsChainDefinition() &&
+                       p.vData.size() &&
+                       (cci = CCrossChainImport(p.vData[0])).IsValid() &&
+                       cci.importCurrencyID == ccx.destCurrencyID)
+            {
+                return state.Error("Invalid export combined with import without currency definition");
             }
         }
         // if cross system, we may remove some due to burning
