@@ -4464,7 +4464,7 @@ void CWallet::ReacceptWalletTransactions()
 
         CValidationState state;
         // attempt to add them, but don't set any DOS level
-        if (!::AcceptToMemoryPool(mempool, state, wtx, false, NULL, true, 0))
+        if (!::AcceptToMemoryPool(mempool, state, wtx, false, true, NULL, true, 0))
         {
             int nDoS;
             bool invalid = state.IsInvalid(nDoS);
@@ -8303,10 +8303,10 @@ int CMerkleTx::GetBlocksToMaturity() const
     return(ut < toMaturity ? toMaturity : ut);
 }
 
-bool CMerkleTx::AcceptToMemoryPool(bool fLimitFree, bool fRejectAbsurdFee)
+bool CMerkleTx::AcceptToMemoryPool(bool fLimitFree, bool fRejectAbsurdFee, bool fLimitDust)
 {
     CValidationState state;
-    return ::AcceptToMemoryPool(mempool, state, *this, fLimitFree, NULL, fRejectAbsurdFee);
+    return ::AcceptToMemoryPool(mempool, state, *this, fLimitFree, fLimitDust, NULL, fRejectAbsurdFee);
 }
 
 /**

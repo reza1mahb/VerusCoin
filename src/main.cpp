@@ -745,7 +745,7 @@ void InitializePremineSupply()
     }
 }
 
-bool IsStandardTx(const CTransaction& tx, string& reason, const CChainParams& chainparams, const int nHeight)
+bool IsStandardTx(const CTransaction& tx, string& reason, bool fLimitDust, const CChainParams& chainparams, const int nHeight)
 {
     bool overwinterActive = chainparams.GetConsensus().NetworkUpgradeActive(nHeight,  Consensus::UPGRADE_OVERWINTER);
     bool saplingActive = chainparams.GetConsensus().NetworkUpgradeActive(nHeight, Consensus::UPGRADE_SAPLING);
@@ -822,6 +822,8 @@ bool IsStandardTx(const CTransaction& tx, string& reason, const CChainParams& ch
             return false;
         }
 
+        COptCCParams checkP;
+
         if (whichType == TX_NULL_DATA)
         {
             if ( txout.scriptPubKey.size() > IGUANA_MAXSCRIPTSIZE )
@@ -835,7 +837,7 @@ bool IsStandardTx(const CTransaction& tx, string& reason, const CChainParams& ch
         else if ((whichType == TX_MULTISIG) && (!fIsBareMultisigStd)) {
             reason = "bare-multisig";
             return false;
-        } else if (!txout.scriptPubKey.IsPayToCryptoCondition() && !tx.vout.back().scriptPubKey.IsOpReturn() && !isCoinbase && txout.IsDust(::minRelayTxFee)) {
+        } else if (fLimitDust && !txout.scriptPubKey.IsPayToCryptoCondition() && !tx.vout.back().scriptPubKey.IsOpReturn() && !isCoinbase && txout.IsDust(::minRelayTxFee)) {
             reason = "dust";
             return false;
         }
@@ -1874,7 +1876,7 @@ CAmount GetMinRelayFee(const CTransaction& tx, unsigned int nBytes, bool fAllowF
     return nMinFee;
 }
 
-bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree,
+bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree, bool fLimitDust,
                            bool* pfMissingInputs, bool fRejectAbsurdFee, int dosLevel)
 {
     if (tx.IsCoinBase())
@@ -1882,10 +1884,10 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
         fprintf(stderr,"Cannot accept coinbase as individual tx\n");
         return state.DoS(100, error("AcceptToMemoryPool: coinbase as individual tx"),REJECT_INVALID, "coinbase");
     }
-    return AcceptToMemoryPoolInt(pool, state, tx, fLimitFree, pfMissingInputs, fRejectAbsurdFee, dosLevel);
+    return AcceptToMemoryPoolInt(pool, state, tx, fLimitFree, fLimitDust, pfMissingInputs, fRejectAbsurdFee, dosLevel);
 }
 
-bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree, bool* pfMissingInputs, bool fRejectAbsurdFee, int dosLevel, int32_t simHeight, int expireThreshold)
+bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree, bool fLimitDust, bool* pfMissingInputs, bool fRejectAbsurdFee, int dosLevel, int32_t simHeight, int expireThreshold)
 {
     AssertLockHeld(cs_main);
     if (pfMissingInputs)
@@ -1952,7 +1954,7 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
 
     // Rather not work on nonstandard transactions (unless -testnet/-regtest)
     string reason;
-    if (Params().RequireStandard() && !IsStandardTx(tx, reason, chainParams, nextBlockHeight))
+    if (Params().RequireStandard() && !IsStandardTx(tx, reason, fLimitDust, chainParams, nextBlockHeight))
     {
         //
         //fprintf(stderr,"AcceptToMemoryPool reject nonstandard transaction: %s\nscriptPubKey: %s\n",reason.c_str(),tx.vout[0].scriptPubKey.ToString().c_str());
@@ -2442,14 +2444,14 @@ bool GetAddressUnspent(const uint160& addressHash, int type,
     return true;
 }
 
-bool myAddtomempool(CTransaction &tx, CValidationState *pstate, int32_t simHeight, bool limitFree, bool *missinginputs)
+bool myAddtomempool(CTransaction &tx, CValidationState *pstate, int32_t simHeight, bool limitFree, bool fLimitDust, bool *missinginputs)
 {
     CValidationState state;
     if (!pstate)
         pstate = &state;
     CTransaction Ltx; bool fOverrideFees = false;
     if ( mempool.lookup(tx.GetHash(),Ltx) == 0 )
-        return(AcceptToMemoryPoolInt(mempool, *pstate, tx, limitFree, missinginputs, !fOverrideFees, -1, simHeight));
+        return(AcceptToMemoryPoolInt(mempool, *pstate, tx, limitFree, fLimitDust, missinginputs, !fOverrideFees, -1, simHeight));
     else return(true);
 }
 
@@ -3935,22 +3937,14 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         // do not connect a tip that is in conflict with an existing notarization
         if (pindex->pprev != NULL)
         {
-            int32_t prevMoMheight; uint256 notarizedhash, txid;
+            uint256 notarizedhash;
             CBlockIndex *pNotarizedIndex = nullptr;
 
             CProofRoot confirmedRoot = ConnectedChains.FinalizedChainRoot();
-            uint32_t kNotHeight = komodo_notarized_height(&prevMoMheight, &notarizedhash, &txid);
-            bool optionalPBaaSUpgrade = ConnectedChains.IsUpgradeActive(CConnectedChains::OptionalPBaaSUpgradeKey(), pindex->pprev->GetHeight());
 
-            if (confirmedRoot.IsValid() || optionalPBaaSUpgrade)
+            if (confirmedRoot.IsValid())
             {
-                if (optionalPBaaSUpgrade ||
-                    kNotHeight <= confirmedRoot.rootHeight ||
-                    !mapBlockIndex.count(notarizedhash) ||
-                    mapBlockIndex[notarizedhash]->GetAncestor(confirmedRoot.rootHeight)->GetBlockHash() != confirmedRoot.blockHash)
-                {
-                    notarizedhash = confirmedRoot.blockHash;
-                }
+                notarizedhash = confirmedRoot.blockHash;
             }
 
             if (mapBlockIndex.count(notarizedhash))
@@ -4113,7 +4107,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                   chainActive.Height() >= pindex->GetHeight()) &&
                  !ContextualCheckTransaction(tx, state, chainparams, nHeight, 10)) ||
                 (!(tx.IsCoinBase() || isPosTx || chainActive.Height() >= pindex->GetHeight()) &&
-                 !AcceptToMemoryPoolInt(mempool, state, tx, false, &missingInputs, false, 10, nHeight, 0) &&
+                 !AcceptToMemoryPoolInt(mempool, state, tx, false, !ConnectedChains.IsEnhancedDustCheck(nHeight), &missingInputs, false, 10, nHeight, 0) &&
                  !(state.GetRejectReason() == "already in mempool" ||
                    state.GetRejectReason() == "already have coins") &&
                  !(state.GetRejectReason() == "staking" &&
@@ -5401,24 +5395,14 @@ bool static DisconnectTip(CValidationState &state, const CChainParams& chainpara
 
     // do not disconnect a notarized tip
     {
-        int32_t prevMoMheight; uint256 notarizedhash,txid;
+        int32_t prevMoMheight;
+        uint256 notarizedhash;
 
         CProofRoot confirmedRoot = ConnectedChains.FinalizedChainRoot();
-        uint32_t kNotHeight = komodo_notarized_height(&prevMoMheight, &notarizedhash, &txid);
-        bool optionalPBaaSUpgrade = ConnectedChains.IsUpgradeActive(CConnectedChains::OptionalPBaaSUpgradeKey(), pindexDelete->GetHeight());
 
-        if (confirmedRoot.IsValid() ||
-            optionalPBaaSUpgrade)
+        if (confirmedRoot.IsValid())
         {
-            CBlockIndex *pAncestor;
-            if (optionalPBaaSUpgrade ||
-                kNotHeight <= confirmedRoot.rootHeight ||
-                !mapBlockIndex.count(notarizedhash) ||
-                !(pAncestor = mapBlockIndex[notarizedhash]->GetAncestor(confirmedRoot.rootHeight)) ||
-                pAncestor->GetBlockHash() != confirmedRoot.blockHash)
-            {
-                notarizedhash = confirmedRoot.blockHash;
-            }
+            notarizedhash = confirmedRoot.blockHash;
         }
 
         if ( block.GetHash() == notarizedhash )
@@ -5483,7 +5467,7 @@ bool static DisconnectTip(CValidationState &state, const CChainParams& chainpara
                 {
                     continue;
                 }
-                AcceptToMemoryPool(mempool, stateDummy, tx, false, NULL);
+                AcceptToMemoryPool(mempool, stateDummy, tx, false, true, NULL);
             }
             // if this is a staking tx, and we are on Verus Sapling with nothing at stake solution,
             // save staking tx as a possible cheat
@@ -5730,12 +5714,11 @@ static bool ActivateBestChainStep(CValidationState& state, const CChainParams& c
 
     auto blkIt = mapBlockIndex.find(notarizedhash);
 
-    if (!ConnectedChains.IsUpgradeActive(CConnectedChains::OptionalPBaaSUpgradeKey(), oldHeight) &&
-        pindexFork != 0 &&
+    if (pindexFork != 0 &&
         oldHeight > notarizedht &&
         blkIt != mapBlockIndex.end() &&
         chainActive.Contains(blkIt->second) &&
-        pindexFork->GetHeight() < notarizedht )
+        pindexFork->GetHeight() < notarizedht)
     {
         LogPrintf("oldHeight.%d > notarizedht %d && pindexFork->GetHeight().%d is < notarizedht %d, so ignore it\n",(int32_t)oldHeight,notarizedht,(int32_t)pindexFork->GetHeight(),notarizedht);
         // *** DEBUG ***
@@ -9023,7 +9006,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         bool isCoinBase = tx.IsCoinBase();
 
         // coinbases would be accepted to the mem pool for instant spend transactions, stop them here
-        if (!isCoinBase && !AlreadyHave(inv) && AcceptToMemoryPool(mempool, state, tx, true, &fMissingInputs))
+        if (!isCoinBase && !AlreadyHave(inv) && AcceptToMemoryPool(mempool, state, tx, true, true, &fMissingInputs))
         {
             mempool.check(pcoinsTip);
             RelayTransaction(tx);
@@ -9057,7 +9040,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
 
                     if (setMisbehaving.count(fromPeer))
                         continue;
-                    if (AcceptToMemoryPool(mempool, stateDummy, orphanTx, true, &fMissingInputs2))
+                    if (AcceptToMemoryPool(mempool, stateDummy, orphanTx, true, true, &fMissingInputs2))
                     {
                         LogPrint("mempool", "   accepted orphan tx %s\n", orphanHash.ToString());
                         RelayTransaction(orphanTx);

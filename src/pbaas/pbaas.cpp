@@ -6626,6 +6626,12 @@ bool CConnectedChains::DoImportPreconvertReserveTransferPrecheck(uint32_t height
     return false;
 }
 
+bool CConnectedChains::IsEnhancedDustCheck(uint32_t height) const
+{
+    uint32_t triggerHeight = IsVerusMainnetActive() ? 3093850 : (vARRRChainID() != ASSETCHAINS_CHAINID ? 107590 : 0);
+    return height >= triggerHeight;
+}
+
 bool CConnectedChains::ConfigureEthBridge(bool callToCheck)
 {
     // first time through, we initialize the VETH gateway config file
@@ -8656,8 +8662,14 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
             // mempool.removeConflicts(newImportTx, removed);
 
             // add to mem pool and relay
-            if (!myAddtomempool(newImportTx, &state))
+            if (!myAddtomempool(newImportTx, &state, nHeight + 1, true, !ConnectedChains.IsEnhancedDustCheck(nHeight)))
             {
+                if (LogAcceptCategory("failimporttx"))
+                {
+                    UniValue uni(UniValue::VOBJ);
+                    TxToUniv(newImportTx, uint256(), uni);
+                    printf("%s: newImportTx:\n%s\n", __func__, uni.write(1,2).c_str());
+                }
                 if (arbitrageTransfersIn.size())
                 {
                     std::list<CTransaction> removedTxes;
@@ -10798,7 +10810,7 @@ void CConnectedChains::SignAndCommitImportTransactions(const CTransaction &lastI
             //TxToJSON(tx, uint256(), jsonTX);
             //printf("signed transaction:\n%s\n", jsonTX.write(1, 2).c_str());
 
-            if (!AcceptToMemoryPool(mempool, state, signedTx, false, &fMissingInputs)) {
+            if (!AcceptToMemoryPool(mempool, state, signedTx, false, false, &fMissingInputs)) {
                 if (state.IsInvalid()) {
                     //UniValue txUni(UniValue::VOBJ);
                     //TxToUniv(signedTx, uint256(), txUni);
