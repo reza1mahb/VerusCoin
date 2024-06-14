@@ -586,8 +586,6 @@ class CCompactSolutionVector
 {
     private:
         static bool useCompression;
-        std::vector<unsigned char> vch;
-        uint16_t _size;
         std::vector<std::pair<uint16_t,uint16_t>>  ofsAndRepeat;
 
         enum Constants {
@@ -595,6 +593,9 @@ class CCompactSolutionVector
         };
 
     public:
+        std::vector<unsigned char> vch;
+        uint16_t _size;
+
         CCompactSolutionVector(const std::vector<unsigned char> &_vch) : _size(_vch.size())
         {
             if (!useCompression)
