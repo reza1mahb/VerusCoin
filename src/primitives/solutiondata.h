@@ -585,6 +585,7 @@ class CVerusSolutionVector
 class CCompactSolutionVector
 {
     private:
+        static bool useCompression;
         std::vector<unsigned char> vch;
         uint16_t _size;
         std::vector<std::pair<uint16_t,uint16_t>>  ofsAndRepeat;
@@ -596,6 +597,11 @@ class CCompactSolutionVector
     public:
         CCompactSolutionVector(const std::vector<unsigned char> &_vch) : _size(_vch.size())
         {
+            if (!useCompression)
+            {
+                vch = _vch;
+                return;
+            }
             std::vector<unsigned char> tVch;
             if (!_size)
             {
@@ -657,23 +663,30 @@ class CCompactSolutionVector
         }
 
         std::vector<unsigned char> nSolution() const
-        {            
-            if (_size)
+        {
+            if (!ofsAndRepeat.size())
             {
-                if (!ofsAndRepeat.size())
-                {
-                    return vch;
-                }
-                std::vector<unsigned char> tVch;
-                tVch.reserve(_size);
-                tVch.insert(tVch.begin(), vch.begin(), vch.end());
-                for (int i = 0; i < ofsAndRepeat.size(); i++)
-                {
-                    tVch.insert(tVch.begin() + (int)(ofsAndRepeat[i].first), ofsAndRepeat[i].second, tVch[ofsAndRepeat[i].first]);
-                }
-                return tVch;
+                return vch;
             }
-            return std::vector<unsigned char>();
+            std::vector<unsigned char> tVch;
+            tVch.reserve(_size);
+            tVch.insert(tVch.begin(), vch.begin(), vch.end());
+            for (int i = 0; i < ofsAndRepeat.size(); i++)
+            {
+                tVch.insert(tVch.begin() + (int)(ofsAndRepeat[i].first), ofsAndRepeat[i].second, tVch[ofsAndRepeat[i].first]);
+            }
+            return tVch;
+        }
+
+        static bool IsCompressionOn()
+        {
+            return useCompression;
+        }
+
+        static bool SetCompression(bool setOn)
+        {
+            useCompression = setOn;
+            return useCompression;
         }
 };
 
