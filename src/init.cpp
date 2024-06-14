@@ -1356,7 +1356,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     STORAGE_FEE_FACTOR = GetArg("-storagefeefactor", STORAGE_FEE_FACTOR);
 
-    CCompactSolutionVector::SetCompression(!GetBoolArg("-fastload", !CCompactSolutionVector::IsCompressionOn()));
+    printf("\nCompression is: %s\n", CCompactSolutionVector::SetCompression(!GetBoolArg("-fastload", !CCompactSolutionVector::IsCompressionOn())) ? "on" : "off");
 
     // if we are supposed to catch stake cheaters, there must be a valid sapling parameter, we need it at
     // initialization, and this is the first time we can get it. store the Sapling address here
