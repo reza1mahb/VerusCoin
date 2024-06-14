@@ -6628,7 +6628,7 @@ bool CConnectedChains::DoImportPreconvertReserveTransferPrecheck(uint32_t height
 
 bool CConnectedChains::IsEnhancedDustCheck(uint32_t height) const
 {
-    uint32_t triggerHeight = IsVerusMainnetActive() ? 3093850 : (vARRRChainID() != ASSETCHAINS_CHAINID ? 107590 : 0);
+    uint32_t triggerHeight = IsVerusMainnetActive() ? 3093850 : (vARRRChainID() == ASSETCHAINS_CHAINID ? 107590 : 0);
     return height >= triggerHeight;
 }
 
