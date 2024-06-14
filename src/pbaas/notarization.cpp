@@ -5649,7 +5649,7 @@ bool ProvePosBlock(uint32_t lastProofRootHeight, const CBlockIndex *pindex, CNot
     }
 
     uint32_t heightAfterFirstEntropy = firstHeight + 1;
-    if (!(CConstVerusSolutionVector::Version(chainActive[heightAfterFirstEntropy]->nSolution) >= CActivationHeight::ACTIVATE_PBAAS))
+    if (!(CConstVerusSolutionVector::Version(chainActive[heightAfterFirstEntropy]->nSolution.nSolution()) >= CActivationHeight::ACTIVATE_PBAAS))
     {
         heightAfterFirstEntropy++;
     }

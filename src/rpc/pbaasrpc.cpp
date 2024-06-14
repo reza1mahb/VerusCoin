@@ -11481,7 +11481,7 @@ UniValue refundfailedlaunch(const UniValue& params, bool fHelp)
             CValidationState state;
             bool fMissingInputs;
             CTransaction signedTx(newTx);
-            if (!AcceptToMemoryPool(mempool, state, signedTx, false, &fMissingInputs)) {
+            if (!AcceptToMemoryPool(mempool, state, signedTx, false, false, &fMissingInputs)) {
                 if (state.IsInvalid()) {
                     fprintf(stderr,"refundfailedlaunch: rejected by memory pool for %s\n", state.GetRejectReason().c_str());
                     LogPrintf("refundfailedlaunch: rejected by memory pool for %s\n", state.GetRejectReason().c_str());

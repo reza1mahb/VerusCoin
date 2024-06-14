@@ -56,7 +56,7 @@ bool CBlockIndex::GetRawVerusPOSHash(uint256 &ret) const
     //                          )
     //    hashWriter << height;
     //    return hashWriter.GetHash();
-    ret = CBlockHeader::GetRawVerusPOSHash(nVersion, CConstVerusSolutionVector::Version(nSolution), ASSETCHAINS_MAGIC, nNonce, GetHeight());
+    ret = CBlockHeader::GetRawVerusPOSHash(nVersion, CConstVerusSolutionVector::Version(nSolution.nSolution()), ASSETCHAINS_MAGIC, nNonce, GetHeight());
     return true;
 }
 
@@ -257,7 +257,8 @@ CPartialTransactionProof CChain::GetPreHeaderProof(const CBlock &block, uint32_t
     uint256 entropyHash;
     if (block.IsAdvancedHeader() != 0)
     {
-        bool posEntropyInfo = CVerusSolutionVector((*this)[blockHeight]->nSolution).Version() >= CActivationHeight::ACTIVATE_PBAAS;
+        std::vector<unsigned char> nSol((*this)[blockHeight]->nSolution.nSolution());
+        bool posEntropyInfo = CVerusSolutionVector(nSol).Version() >= CActivationHeight::ACTIVATE_PBAAS;
 
         if (posEntropyInfo)
         {

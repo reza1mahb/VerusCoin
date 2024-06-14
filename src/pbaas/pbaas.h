@@ -1228,6 +1228,7 @@ public:
     bool IdentityLockOverride(const CIdentity &identity, uint32_t height) const;
     bool DoPreconvertReserveTransferPrecheck(uint32_t height) const;
     bool DoImportPreconvertReserveTransferPrecheck(uint32_t height) const;
+    bool IsEnhancedDustCheck(uint32_t height) const;
 
     std::vector<CCurrencyDefinition> GetMergeMinedChains()
     {
