@@ -638,16 +638,25 @@ public:
         READWRITE(nTime);
         READWRITE(nBits);
         READWRITE(nNonce);
-        std::vector<unsigned char> tmpSolution;
-        if (ser_action.ForRead())
+
+        if (CCompactSolutionVector::IsCompressionOn())
         {
-            READWRITE(tmpSolution);
-            nSolution = tmpSolution;
+            std::vector<unsigned char> tmpSolution;
+            if (ser_action.ForRead())
+            {
+                READWRITE(tmpSolution);
+                nSolution = tmpSolution;
+            }
+            else
+            {
+                tmpSolution = nSolution.nSolution();
+                READWRITE(tmpSolution);
+            }
         }
         else
         {
-            tmpSolution = nSolution.nSolution();
-            READWRITE(tmpSolution);
+            READWRITE(nSolution.vch);
+            nSolution._size = nSolution.vch.size();
         }
 
         // Only read/write nSproutValue if the client version used to create
