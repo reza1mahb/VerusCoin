@@ -439,6 +439,7 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-defaultid=<i-address>", _("VerusID used for default change out and staking reward recipient"));
     strUsage += HelpMessageOpt("-defaultzaddr=<sapling-address>", _("sapling address to receive fraud proof rewards and if used with \"-privatechange=1\", z-change address for the sendcurrency command"));
     strUsage += HelpMessageOpt("-disablewallet", _("Do not load the wallet and disable wallet RPC calls"));
+    strUsage += HelpMessageOpt("-fastload", _("If fastload is true, the daemon will load much faster, potentially saving an hour off of load time, and it will also require up to 4GB more RAM for the same tasks"));
     strUsage += HelpMessageOpt("-keypool=<n>", strprintf(_("Set key pool size to <n> (default: %u)"), 100));
     strUsage += HelpMessageOpt("-maxtxfee=<amt>", strprintf(_("Maximum total fees (in %s) to use in a single wallet transaction; setting this too low may abort large transactions (default: %s)"),
         CURRENCY_UNIT, FormatMoney(maxTxFee)));
@@ -1354,6 +1355,8 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     VERUS_DEFAULT_ARBADDRESS = DecodeDestination(GetArg("-arbitrageaddress", ""));
 
     STORAGE_FEE_FACTOR = GetArg("-storagefeefactor", STORAGE_FEE_FACTOR);
+
+    printf("\nCompression is: %s\n", CCompactSolutionVector::SetCompression(!GetBoolArg("-fastload", !CCompactSolutionVector::IsCompressionOn())) ? "on" : "off");
 
     // if we are supposed to catch stake cheaters, there must be a valid sapling parameter, we need it at
     // initialization, and this is the first time we can get it. store the Sapling address here
