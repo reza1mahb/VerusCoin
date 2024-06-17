@@ -51,15 +51,6 @@ extern string PBAAS_USERPASS;
 extern int32_t PBAAS_PORT;
 extern std::string VERUS_CHAINNAME;
 
-uint32_t PBAAS_TESTFORK2_TIME = 1684281600;
-uint32_t PBAAS_TESTFORK3_TIME = 1685379600;
-uint32_t PBAAS_TESTFORK4_TIME = 1686416400;
-uint32_t PBAAS_TESTFORK5_TIME = 1687042800;
-uint32_t PBAAS_TESTFORK6_TIME = 1687994100;
-uint32_t PBAAS_TESTFORK7_TIME = 1688799600;
-uint32_t PBAAS_TESTFORK8_TIME = 1690304400;
-uint32_t PBAAS_TESTFORK9_TIME = 1701240000;
-
 uint32_t PBAAS_MAINDEFI3_HEIGHT = 2553500;
 uint32_t PBAAS_CLEARCONVERT_HEIGHT = 2588590;
 uint32_t PBAAS_LASTKNOWNCLEARORACLE_HEIGHT = 2597525;
@@ -1350,7 +1341,7 @@ CCurrencyDefinition::CCurrencyDefinition(const std::string &currencyName, bool t
             UniValue uniEra1(UniValue::VOBJ);
             uniEra1.pushKV("reward", 600000000);
             uniEra1.pushKV("decay", 0);
-            uniEra1.pushKV("halving", 1051922);
+            uniEra1.pushKV("halving", 1051924);
             uniEra1.pushKV("eraend", 0);
             uniEras.push_back(uniEra1);
 

@@ -49,7 +49,7 @@ bool SelectArbitrageFromOffers(const std::vector<
                                                         const CCurrencyDefinition &destCurrency,
                                                         uint32_t startHeight,
                                                         uint32_t nextHeight,
-                                                        std::vector<CReserveTransfer> exportTransfers,
+                                                        std::vector<CReserveTransfer> &exportTransfers,
                                                         uint256 &transferHash,
                                                         CPBaaSNotarization &newNotarization,
                                                         std::vector<CTxOut> &newOutputs,
@@ -58,7 +58,7 @@ bool SelectArbitrageFromOffers(const std::vector<
                                                         CCurrencyValueMap &spentCurrencyOut,
                                                         const CTransferDestination &rewardDest,
                                                         const CCurrencyValueMap &arbitrageCurrencies,
-                                                        std::vector<std::pair<CInputDescriptor, CReserveTransfer>> &arbitrageInputs);
+                                                        std::vector<std::tuple<CInputDescriptor, CReserveTransfer, CTransaction>> &arbitrageInputs);
 
 UniValue getcurrency(const UniValue& params, bool fHelp);
 UniValue getnotarizationdata(const UniValue& params, bool fHelp);

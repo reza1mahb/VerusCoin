@@ -100,6 +100,21 @@ UniValue convertpassphrase(const UniValue& params, bool fHelp)
     ret.push_back(Pair("walletpassphrase", strAgamaPassphrase));
 
     CKey tempkey = DecodeSecret(strAgamaPassphrase);
+
+    // if we have a check here, print out additional information - do not remove this block
+    // this also seems to compensate for a hard to reproduce compiler/CPU issue only affecting Windows 11 on non-English versions
+    if (LogAcceptCategory("windowspassphrasecheck"))
+    {
+        ret.push_back(Pair("iscodedsecret", tempkey.IsValid()));
+        std::string rawChars;
+        for (int i = 0; i < strAgamaPassphrase.length(); i++)
+        {
+            char ch = strAgamaPassphrase.c_str()[i];
+            rawChars = rawChars + std::to_string((unsigned char)ch);
+        }
+        ret.push_back(Pair("rawcharvalues", rawChars));
+    }
+
     /* first we should check if user pass wif to method, instead of passphrase */
     if (!tempkey.IsValid()) {
         /* it's a passphrase, not wif */

@@ -17,6 +17,7 @@
 #include "main.h"
 #include "mmr.h"
 #include "net.h"
+#include "random.h"
 #include "rpc/protocol.h"
 #include "rpc/server.h"
 #include "script/script.h"
@@ -33,6 +34,7 @@
 #include "pbaas/identity.h"
 #include "pbaas/pbaas.h"
 
+#include <algorithm>
 #include <assert.h>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -2013,7 +2015,7 @@ bool CWallet::VerusSelectStakeOutput(CBlock *pBlock, arith_uint256 &hashResult, 
                 CDataStream headerStream = CDataStream(SER_NETWORK, PROTOCOL_VERSION);
 
                 pBlock->nTime = std::max(chainActive.LastTip()->GetMedianTimePast()+1, GetAdjustedTime());
-                bool posSourceInfo = isPBaaS && (!PBAAS_TESTMODE || pBlock->nTime >= PBAAS_TESTFORK2_TIME);
+                bool posSourceInfo = isPBaaS;
 
                 // store:
                 // 1. PBaaS header for this block
@@ -4485,7 +4487,7 @@ void CWallet::ReacceptWalletTransactions()
 
         CValidationState state;
         // attempt to add them, but don't set any DOS level
-        if (!::AcceptToMemoryPool(mempool, state, wtx, false, NULL, true, 0))
+        if (!::AcceptToMemoryPool(mempool, state, wtx, false, true, NULL, true, 0))
         {
             int nDoS;
             bool invalid = state.IsInvalid(nDoS);
@@ -5681,7 +5683,7 @@ bool CWallet::SelectCoinsMinConf(const CAmount& nTargetValue, int nConfMine, int
     vector<pair<CAmount, pair<const CWalletTx*,unsigned int> > > vValue;
     CAmount nTotalLower = 0;
 
-    random_shuffle(vCoins.begin(), vCoins.end(), GetRandInt);
+    std::shuffle(vCoins.begin(), vCoins.end(), ZcashRandomEngine());
 
     BOOST_FOREACH(const COutput &output, vCoins)
     {
@@ -5936,7 +5938,7 @@ bool CWallet::SelectReserveUTXOs(const CCurrencyValueMap& targetValues,
     std::vector<std::pair<CUTXORef, CCurrencyValueMap>> vOutputsToOptimize;
     std::vector<int> vOutputsToOptimizeIndexes;
 
-    random_shuffle(vCoins.begin(), vCoins.end(), GetRandInt);
+    std::shuffle(vCoins.begin(), vCoins.end(), ZcashRandomEngine());
 
     CCurrencyValueMap nTotalTarget = targetValues.CanonicalMap();
 
@@ -6066,7 +6068,7 @@ bool CWallet::SelectReserveUTXOs(const CCurrencyValueMap& targetValues,
         for (auto oneOut : lowerOuts)
         {
             mapCoinsRet.insert(std::make_pair(vCoins[oneOut.first].first, oneOut.second));
-            valueRet += oneOut.second;
+            valueRet += vCoins[oneOut.first].second;
         }
         nativeValueRet += valueRet.valueMap[ASSETCHAINS_CHAINID];
         valueRet.valueMap.erase(ASSETCHAINS_CHAINID);
@@ -8324,10 +8326,10 @@ int CMerkleTx::GetBlocksToMaturity() const
     return(ut < toMaturity ? toMaturity : ut);
 }
 
-bool CMerkleTx::AcceptToMemoryPool(bool fLimitFree, bool fRejectAbsurdFee)
+bool CMerkleTx::AcceptToMemoryPool(bool fLimitFree, bool fRejectAbsurdFee, bool fLimitDust)
 {
     CValidationState state;
-    return ::AcceptToMemoryPool(mempool, state, *this, fLimitFree, NULL, fRejectAbsurdFee);
+    return ::AcceptToMemoryPool(mempool, state, *this, fLimitFree, fLimitDust, NULL, fRejectAbsurdFee);
 }
 
 /**

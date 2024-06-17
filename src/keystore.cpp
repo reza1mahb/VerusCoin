@@ -746,7 +746,26 @@ bool CBasicKeyStore::GetSaplingIncomingViewingKey(const libzcash::SaplingPayment
     return false;
 }
 
-bool CBasicKeyStore::GetSaplingExtendedSpendingKey(const libzcash::SaplingPaymentAddress &addr, 
+bool CBasicKeyStore::DecryptWithSaplingViewingKey(const CDataDescriptor &dataDescr, CDataDescriptor &decryptedDescr, libzcash::SaplingIncomingViewingKey *pIvkOut) const
+{
+    bool decrypted = false;
+    for (auto &oneIvk : mapSaplingIncomingViewingKeys)
+    {
+        decryptedDescr = dataDescr;
+        decrypted = decryptedDescr.UnwrapEncryption(oneIvk.second, true);
+        if (decrypted)
+        {
+            if (pIvkOut)
+            {
+                *pIvkOut = oneIvk.second;
+            }
+            break;
+        }
+    }
+    return decrypted;
+}
+
+bool CBasicKeyStore::GetSaplingExtendedSpendingKey(const libzcash::SaplingPaymentAddress &addr,
                                     libzcash::SaplingExtendedSpendingKey &extskOut) const {
     libzcash::SaplingIncomingViewingKey ivk;
     libzcash::SaplingExtendedFullViewingKey extfvk;

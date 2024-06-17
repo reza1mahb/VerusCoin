@@ -583,6 +583,13 @@ CIdentity::GetIdentityContentByKey(const uint160 &idID,
     return retVec;
 }
 
+bool CIdentity::IsLocked(uint32_t height) const
+{
+    return nVersion >= VERSION_VAULT &&
+            (IsLocked() || (!ConnectedChains.IdentityLockOverride(*this, height) && unlockAfter >= height)) &&
+            !IsRevoked();
+}
+
 CIdentity CIdentity::LookupIdentity(const std::string &name, uint32_t height, uint32_t *pHeightOut, CTxIn *idTxIn)
 {
     return LookupIdentity(GetID(name), height, pHeightOut, idTxIn);
@@ -2839,30 +2846,44 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
             // for block one IDs, ensure they are valid as per the launch parameters
             if (tx.IsCoinBase())
             {
-                // we only check coinbase on the first identity
-                int i;
-                for (i = 0; i < tx.vout.size(); i++)
+                if (ASSETCHAINS_CHAINID == GetDestinationID(DecodeDestination("iExBJfZYK7KREDpuhj6PzZBzqMAKaFg7d2")))
                 {
-                    if (CIdentity(tx.vout[i].scriptPubKey).IsValid())
-                    {
-                        break;
-                    }
-                }
-                if (i == outNum)
-                {
-                    if (ConnectedChains.FirstNotaryChain().IsValid() &&
-                        IsValidBlockOneCoinbase(tx.vout, ConnectedChains.FirstNotaryChain(), ConnectedChains.ThisChain(), state))
+                    if (tx.GetHash() == uint256S("9986facba28a68bc7d06095b536873f2cd31b0a45b574fa73a994b7a89cba1da"))
                     {
                         return true;
                     }
                     else
                     {
-                        return state.Error("Invalid block 1 coinbase");
+                        return state.Error("Invalid block one coinbase");
                     }
                 }
                 else
                 {
-                    return true;
+                    // we only check coinbase on the first identity
+                    int i;
+                    for (i = 0; i < tx.vout.size(); i++)
+                    {
+                        if (CIdentity(tx.vout[i].scriptPubKey).IsValid())
+                        {
+                            break;
+                        }
+                    }
+                    if (i == outNum)
+                    {
+                        if (ConnectedChains.FirstNotaryChain().IsValid() &&
+                            IsValidBlockOneCoinbase(tx.vout, ConnectedChains.FirstNotaryChain(), ConnectedChains.ThisChain(), state))
+                        {
+                            return true;
+                        }
+                        else
+                        {
+                            return state.Error("Invalid block 1 coinbase");
+                        }
+                    }
+                    else
+                    {
+                        return true;
+                    }
                 }
             }
             else

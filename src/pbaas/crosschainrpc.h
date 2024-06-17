@@ -439,8 +439,6 @@ public:
 class CCurrencyDefinition
 {
 public:
-    static const int64_t DEFAULT_ID_REGISTRATION_AMOUNT = 10000000000;
-
     enum EVersion
     {
         VERSION_INVALID = 0,
@@ -459,6 +457,7 @@ public:
         IDENTITY_REGISTRATION_FEE = 10000000000,    // 100 full price to register an identity
         IDENTITY_IMPORT_FEE = 2000000,              // 0.02 in native currency to import an identity
         EXTRA_Z_OUTPUT_FEE = (TRANSACTION_TRANSFER_FEE >> 1), // 2 or more z-outputs accompanied by t-outputs on a transaction
+        DEFAULT_STORAGE_OUTPUT_FACTOR = 6,          // default multiplier times the export fee to equal the cost of 6K of storage output
         MIN_CURRENCY_LIFE = 480,                    // 8 hour minimum lifetime, which gives 8 hours of minimum billing to notarize conclusion
         DEFAULT_OUTPUT_VALUE = 0,                   // 0 VRSC default output value
         DEFAULT_ID_REFERRAL_LEVELS = 3,
@@ -793,6 +792,10 @@ public:
                 READWRITE(rewardsDecay);
                 READWRITE(halving);
                 READWRITE(eraEnd);
+            }
+            else if (ser_action.ForRead())
+            {
+                blockNotarizationModulo = BLOCK_NOTARIZATION_MODULO;
             }
         }
         else

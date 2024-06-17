@@ -41,15 +41,7 @@ class CPBaaSNotarization;
 extern uint160 ASSETCHAINS_CHAINID;
 
 
-extern uint32_t PBAAS_TESTFORK2_TIME;
 extern uint32_t PBAAS_ENFORCE_CORRECT_EVIDENCE_TIME;
-extern uint32_t PBAAS_TESTFORK3_TIME;
-extern uint32_t PBAAS_TESTFORK4_TIME;
-extern uint32_t PBAAS_TESTFORK5_TIME;
-extern uint32_t PBAAS_TESTFORK6_TIME;
-extern uint32_t PBAAS_TESTFORK7_TIME;
-extern uint32_t PBAAS_TESTFORK8_TIME;
-extern uint32_t PBAAS_TESTFORK9_TIME;
 extern uint32_t PBAAS_MAINDEFI3_HEIGHT;
 extern uint32_t PBAAS_CLEARCONVERT_HEIGHT;
 extern uint32_t PBAAS_LASTKNOWNCLEARORACLE_HEIGHT;
@@ -828,6 +820,7 @@ public:
 
     std::vector<CReserveTransfer> GetArbitrageTransfers(const CTransaction &tx,
                                                         CValidationState &state,
+                                                        uint32_t nHeight,
                                                         std::vector<CTransaction> *pArbTxes=nullptr,
                                                         std::vector<CUTXORef> *pArbOuts=nullptr,
                                                         std::vector<uint256> *pArbTxBlockHash=nullptr) const;
@@ -1748,7 +1741,8 @@ public:
         IS_IDENTITY_DEFINITION=0x400,           // If set, this is an identity definition
         IS_HIGH_FEE=0x800,                      // If set, this may have "absurdly high fees"
         IS_CURRENCY_DEFINITION=0x1000,          // If set, this is a currency definition
-        IS_CHAIN_NOTARIZATION=0x2000            // If set, this is to do with primary chain notarization and connection
+        IS_CHAIN_NOTARIZATION=0x2000,            // If set, this is to do with primary chain notarization and connection
+        IS_EVIDENCE_STORAGE=0x4000              // If set, this is evidence or storage
     };
 
     enum ESubIndexCodes {
@@ -1791,6 +1785,7 @@ public:
     bool IsExport() const { return flags & IS_EXPORT; }
     bool IsCurrencyDefinition() const { return flags & IS_CURRENCY_DEFINITION; }
     bool IsNotaryPrioritized() const { return flags & IS_CHAIN_NOTARIZATION; }
+    bool IsEvidenceOrStorage() const { return flags & IS_EVIDENCE_STORAGE; }
     bool IsIdentityDefinition() const { return flags & IS_IDENTITY_DEFINITION; }
     bool IsHighFee() const { return flags & IS_HIGH_FEE; }
 

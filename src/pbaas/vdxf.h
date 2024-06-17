@@ -154,10 +154,13 @@
 #define VDXF_H
 
 #include "mmr.h"
+#include "zcash/Address.hpp"
+#include "zcash/address/zip32.h"
 #include <boost/algorithm/string.hpp>
 
 extern std::string VERUS_CHAINNAME;
 extern uint160 VERUS_CHAINID;
+class CNativeHashWriter;
 
 template <typename SERIALIZABLE>
 std::vector<unsigned char> AsVector(const SERIALIZABLE &obj)
@@ -177,7 +180,7 @@ void FromVector(const std::vector<unsigned char> &vch, SERIALIZABLE &obj, bool *
     }
     try
     {
-        obj.Unserialize(s);
+        s >> obj;
         if (pSuccess)
         {
             *pSuccess = true;
@@ -193,6 +196,17 @@ void FromVector(const std::vector<unsigned char> &vch, SERIALIZABLE &obj, bool *
 class CVDXF
 {
 public:
+    enum EHashTypes
+    {
+        HASH_INVALID = 0,
+        HASH_BLAKE2BMMR = 1,
+        HASH_BLAKE2BMMR2 = 2,
+        HASH_KECCAK = 3,
+        HASH_SHA256D = 4,
+        HASH_SHA256 = 5,
+        HASH_LASTTYPE = 5
+    };
+
     static uint160 STRUCTURED_DATA_KEY;
     static uint160 ZMEMO_MESSAGE_KEY;
     static uint160 ZMEMO_SIGNATURE_KEY;
@@ -211,6 +225,7 @@ public:
     uint32_t version;
 
     CVDXF(uint32_t Version=0) : version(Version) {}
+    CVDXF(const UniValue &uni);
     CVDXF(const uint160 &Key, uint32_t Version=DEFAULT_VERSION) : key(Key), version(Version) {}
 
     ADD_SERIALIZE_METHODS;
@@ -232,15 +247,18 @@ public:
     {
         return !key.IsNull() && version >= FIRST_VERSION && version <= LAST_VERSION;
     }
+    UniValue ToUniValue() const;
 };
 
+// VDXF data that describes an encrypted chunk of data
 class CVDXF_Data : public CVDXF
 {
 public:
     std::vector<unsigned char> data;
 
     CVDXF_Data(uint32_t Version=DEFAULT_VERSION) : CVDXF(Version) {}
-    CVDXF_Data(const uint160 &Key, const std::vector<unsigned char> &Data, uint32_t Version=DEFAULT_VERSION) : CVDXF(Key, Version), data(Data) {}
+    CVDXF_Data(const uint160 &Key, const std::vector<unsigned char> &Data=std::vector<unsigned char>(), uint32_t Version=DEFAULT_VERSION) : CVDXF(Key, Version), data(Data) {}
+    CVDXF_Data(const UniValue &uni);
 
     ADD_SERIALIZE_METHODS;
 
@@ -444,6 +462,86 @@ public:
         static uint160 key = GetDataKey(UTXORefKeyName(), nameSpace);
         return key;
     }
+    static std::string CrossChainDataRefKeyName()
+    {
+        return "vrsc::data.type.object.crosschaindataref";
+    }
+    static uint160 CrossChainDataRefKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(CrossChainDataRefKeyName(), nameSpace);
+        return key;
+    }
+    static std::string EncryptionDescriptorKeyName()
+    {
+        return "vrsc::data.type.encryptiondescriptor";
+    }
+    static uint160 EncryptionDescriptorKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(EncryptionDescriptorKeyName(), nameSpace);
+        return key;
+    }
+    static std::string SaltedDataKeyName()
+    {
+        return "vrsc::data.type.salteddata";
+    }
+    static uint160 SaltedDataKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(SaltedDataKeyName(), nameSpace);
+        return key;
+    }
+    static std::string DataDescriptorKeyName()
+    {
+        return "vrsc::data.type.object.datadescriptor";
+    }
+    static uint160 DataDescriptorKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(DataDescriptorKeyName(), nameSpace);
+        return key;
+    }
+    static std::string SignatureDataKeyName()
+    {
+        return "vrsc::data.signaturedata";
+    }
+    static uint160 SignatureDataKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(SignatureDataKeyName(), nameSpace);
+        return key;
+    }
+    static std::string VectorUint256KeyName()
+    {
+        return "vrsc::data.mmrhashes";
+    }
+    static uint160 VectorUint256Key()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(VectorUint256KeyName(), nameSpace);
+        return key;
+    }
+    static std::string MMRLinksKeyName()
+    {
+        return "vrsc::data.mmrlinks";
+    }
+    static uint160 MMRLinksKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(MMRLinksKeyName(), nameSpace);
+        return key;
+    }
+    static std::string MMRDescriptorKeyName()
+    {
+        return "vrsc::data.mmrdescriptor";
+    }
+    static uint160 MMRDescriptorKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(MMRDescriptorKeyName(), nameSpace);
+        return key;
+    }
     static std::string TypeDefinitionKeyName()
     {
         return "vrsc::data.type.typedefinition";
@@ -473,6 +571,19 @@ public:
         static uint160 nameSpace;
         static uint160 key = GetDataKey(ContentMultiMapRemoveKeyName(), nameSpace);
         return key;
+    }
+
+    // for any ID, this key indexes content that applies to representing the profile of
+    // that ID. there may be many mime-type instances of a particular piece of profile media
+    static std::string ProfileMediaKeyName()
+    {
+        return "vrsc::identity.profile.media";
+    }
+    static uint160 ProfileMediaKey()
+    {
+        static uint160 nameSpace;
+        static uint160 profileMediaKey = GetDataKey(ProfileMediaKeyName(), nameSpace);
+        return profileMediaKey;
     }
 
     static std::string ZMemoMessageKeyName()
@@ -512,6 +623,758 @@ public:
     {
         return CVDXF::IsValid();
     }
+
+    UniValue ToUniValue() const
+    {
+        UniValue ret(UniValue::VOBJ);
+
+        ret = ((CVDXF *)this)->ToUniValue();
+        ret.pushKV("data", HexBytes(data.data(), data.size()));
+        return ret;
+    }
+
+    uint256 GetHash(CNativeHashWriter &hw) const;
+};
+
+class CSaltedData : public CVDXF_Data
+{
+public:
+    enum {
+        VERSION_INVALID = 0,
+        FIRST_VERSION = 1,
+        LAST_VERSION = 1,
+        DEFAULT_VERSION = 1,
+    };
+
+    uint256 salt;
+
+    CSaltedData(const std::vector<unsigned char> &Data, const uint256 Salt=FreshSalt(), uint32_t Version=DEFAULT_VERSION) :
+        salt(Salt), CVDXF_Data(CVDXF_Data::SaltedDataKey(), Data, Version)
+    {}
+
+    CSaltedData(uint32_t Version=DEFAULT_VERSION, const uint256 Salt=FreshSalt()) :
+        salt(Salt), CVDXF_Data(CVDXF_Data::SaltedDataKey(), std::vector<unsigned char>(), Version)
+    {}
+
+    CSaltedData(const UniValue &uni);
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(*(CVDXF *)this);
+
+        if (ser_action.ForRead())
+        {
+            READWRITE(data);
+            if (data.size() >= sizeof(uint256))
+            {
+                salt = uint256(std::vector<unsigned char>(data.end() - sizeof(uint256)), data.end());
+                data.resize(data.size() - sizeof(uint256));
+            }
+        }
+        else
+        {
+            data.insert(data.end(), salt.begin(), salt.end());
+            READWRITE(data);
+            data.resize(data.size() - sizeof(uint256));
+        }
+    }
+
+    static uint256 FreshSalt();
+
+    // initialize the random salt
+    void SetSalt(const uint256 &Salt=FreshSalt())
+    {
+        salt = Salt;
+    }
+
+    uint256 GetHash(CNativeHashWriter &hw) const;
+
+    UniValue ToUniValue() const;
+};
+
+class CVDXFEncryptor : public CVDXF_Data
+{
+public:
+    enum {
+        VERSION_INVALID = 0,
+        FIRST_VERSION = 1,
+        LAST_VERSION = 1,
+        DEFAULT_VERSION = 1,
+    };
+
+    enum {
+        ENCRYPTION_UNKNOWN = 0,
+        ENCRYPTION_PLAINTEXT = 1,
+        ENCRYPTION_CHACHA20POLY1305 = 2,
+        CHACHA20POLY1305_CIPHEROVERHEAD = 16,
+    };
+
+    int32_t encType;
+    std::vector<unsigned char> keyData;         // if Sapling encryption, this is the encryption public key set after an encrypt operation
+    std::vector<unsigned char> cipherData;      // encrypted data or CVDXFDataDescriptor link to encrypted data
+
+    CVDXFEncryptor(int32_t EncryptionType=ENCRYPTION_CHACHA20POLY1305,
+                    const std::vector<unsigned char> &KeyData=std::vector<unsigned char>(),
+                    const std::vector<unsigned char> &CipherData=std::vector<unsigned char>(),
+                    uint32_t Version=DEFAULT_VERSION) :
+        CVDXF_Data(CVDXF_Data::EncryptionDescriptorKey(), std::vector<unsigned char>(), Version), encType(EncryptionType), keyData(KeyData), cipherData(CipherData) {}
+
+    CVDXFEncryptor(const UniValue &uni);
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(*(CVDXF *)this);
+
+        if (ser_action.ForRead())
+        {
+            if (IsValid())
+            {
+                READWRITE(data);
+                CDataStream readData(data, SER_DISK, PROTOCOL_VERSION);
+                data.clear();
+                readData >> VARINT(encType);
+                readData >> keyData;
+                readData >> cipherData;
+            }
+        }
+        else
+        {
+            if (IsValid())
+            {
+                CDataStream writeData(SER_DISK, PROTOCOL_VERSION);
+                writeData << VARINT(encType);
+                writeData << keyData;
+                writeData << cipherData;
+                std::vector<unsigned char> vch(writeData.begin(), writeData.end());
+                READWRITE(vch);
+            }
+        }
+    }
+
+    uint256 GetEPK() const
+    {
+        return uint256(keyData);
+    }
+
+    // given a sapling destination address, generate an encryption key and encrypt into the ciphertext
+    bool Encrypt(const libzcash::SaplingPaymentAddress &saplingAddress, const std::vector<unsigned char> &plainText, std::vector<unsigned char> *pSsk=nullptr);
+
+    // given an initialized, encryption key in the descriptor and an incoming viewing key of the original destination z-address, generate a decryption key
+    bool GetDecryptionKey(const libzcash::SaplingIncomingViewingKey &ivk, std::vector<unsigned char> &Ssk);
+
+    // given an initialized, encryption key +data in the descriptor and an incoming viewing key of the original destination z-address, decrypt the data
+    bool Decrypt(const libzcash::SaplingIncomingViewingKey &ivk, std::vector<unsigned char> &plainText, std::vector<unsigned char> *pSsk=nullptr);
+
+    // decrypt data using a symmetric encryption key
+    bool Decrypt(const std::vector<unsigned char> &Ssk, std::vector<unsigned char> &plainText);
+
+    UniValue ToUniValue() const;
+};
+
+class CDataDescriptor
+{
+public:
+    enum {
+        VERSION_INVALID = 0,
+        FIRST_VERSION = 1,
+        LAST_VERSION = 1,
+        DEFAULT_VERSION = 1,
+
+        FLAG_ENCRYPTED_DATA = 1,
+        FLAG_SALT_PRESENT = 2,
+        FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT = 4,
+        FLAG_INCOMING_VIEWING_KEY_PRESENT = 8,
+        FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT = 0x10,
+        FLAG_LABEL_PRESENT = 0x20,
+        FLAG_MIME_TYPE_PRESENT = 0x40,
+        FLAG_MASK = (FLAG_ENCRYPTED_DATA + FLAG_SALT_PRESENT + FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT + FLAG_INCOMING_VIEWING_KEY_PRESENT + FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT + FLAG_LABEL_PRESENT + FLAG_MIME_TYPE_PRESENT)
+    };
+
+    uint32_t version;
+    uint32_t flags;
+    std::vector<unsigned char> objectData; // either direct data or serialized UTXORef +offset, length, and/or other type of info for different links
+    std::string label;                  // label associated with this data
+    std::string mimeType;               // optional mime type
+    std::vector<unsigned char> salt;    // encryption public key, data only present if encrypted or data referenced by unencrypted link is encrypted
+    std::vector<unsigned char> epk;     // encryption public key, data only present if encrypted or data referenced by unencrypted link is encrypted
+    std::vector<unsigned char> ivk;     // incoming viewing key, optional and contains data only if full viewing key is published at this encryption level
+    std::vector<unsigned char> ssk;     // specific symmetric key, optional and only to decrypt this linked sub-object
+
+    CDataDescriptor(uint32_t Version=DEFAULT_VERSION) :
+        version(Version), flags(0)
+    {}
+
+    CDataDescriptor(const UniValue &uni);
+
+    CDataDescriptor(const std::vector<uint256> &hashVector, uint32_t Version=DEFAULT_VERSION) : version(Version), flags(0)
+    {
+        CVDXF_Data linkObject(CVDXF_Data::VectorUint256Key(), ::AsVector(hashVector));
+        objectData = ::AsVector(linkObject);
+    }
+
+    CDataDescriptor(const std::vector<unsigned char> &ObjectData,
+                    const std::string &Label=std::string(),
+                    const std::string &MimeType=std::string(),
+                    const std::vector<unsigned char> &Salt=std::vector<unsigned char>(),
+                    const std::vector<unsigned char> &EPK=std::vector<unsigned char>(),
+                    const std::vector<unsigned char> &IVK=std::vector<unsigned char>(),
+                    const std::vector<unsigned char> &SSK=std::vector<unsigned char>(),
+                    uint32_t Flags=0,
+                    uint32_t Version=DEFAULT_VERSION) :
+        version(Version), flags(Flags), objectData(ObjectData), label(Label), mimeType(MimeType), salt(Salt), epk(EPK), ivk(IVK), ssk(SSK)
+    {
+        SetFlags();
+    }
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        if (!ser_action.ForRead())
+        {
+            SetFlags();
+        }
+        READWRITE(VARINT(version));
+        READWRITE(VARINT(flags));
+        READWRITE(objectData);
+        if (HasLabel())
+        {
+            READWRITE(LIMITED_STRING(label, 64));
+        }
+        if (HasMIME())
+        {
+            READWRITE(LIMITED_STRING(mimeType, 128));
+        }
+        if (HasSalt())
+        {
+            READWRITE(salt);
+        }
+        if (HasEPK())
+        {
+            READWRITE(epk);
+        }
+        if (HasIVK())
+        {
+            READWRITE(ivk);
+        }
+        if (HasSSK())
+        {
+            READWRITE(ssk);
+        }
+    }
+
+    bool HasEncryptedData() const
+    {
+        return flags & FLAG_ENCRYPTED_DATA;
+    }
+
+    // this will take our existing instance, encode it as a VDXF tagged data structure, and embed it as a new, tagged, encrypted CDataDescriptor
+    bool WrapEncrypted(const libzcash::SaplingPaymentAddress &saplingAddress, std::vector<unsigned char> *pSsk=nullptr)
+    {
+        // package us as a nested, tagged object
+        CVDXF_Data nestedObject = CVDXF_Data(CVDXF_Data::DataDescriptorKey(), ::AsVector(*this));
+
+        // encrypt the entire tagged object
+        if (EncryptData(saplingAddress, ::AsVector(nestedObject), pSsk))
+        {
+            label = "";
+            mimeType = "";
+            SetFlags();
+            return true;
+        }
+        return false;
+    }
+
+    bool HasSalt() const
+    {
+        return flags & FLAG_SALT_PRESENT;
+    }
+
+    bool HasEPK() const
+    {
+        return flags & FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT;
+    }
+
+    bool HasMIME() const
+    {
+        return flags & FLAG_MIME_TYPE_PRESENT;
+    }
+
+    bool HasIVK() const
+    {
+        return flags & FLAG_INCOMING_VIEWING_KEY_PRESENT;
+    }
+
+    bool HasSSK() const
+    {
+        return flags & FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT;
+    }
+
+    bool HasLabel() const
+    {
+        return flags & FLAG_LABEL_PRESENT;
+    }
+
+    uint32_t CalcFlags() const
+    {
+        return (flags & FLAG_ENCRYPTED_DATA) +
+               (label.size() ? FLAG_LABEL_PRESENT : 0) +
+               (mimeType.size() ? FLAG_MIME_TYPE_PRESENT : 0) +
+               (salt.size() ? FLAG_SALT_PRESENT : 0) +
+               (epk.size() ? FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT : 0) +
+               (ivk.size() ? FLAG_INCOMING_VIEWING_KEY_PRESENT : 0) +
+               (ssk.size() ? FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT : 0);
+    }
+
+    uint32_t SetFlags()
+    {
+        return flags = CalcFlags();
+    }
+
+    // in the specific case that the data contained is a tagged hash vector
+    // there should be a better, extensible way to define, store, and return contained types, such as bidirectional VectorEncodeVDXFUni
+    std::vector<uint256> DecodeHashVector() const;
+
+    // encrypts to a specific z-address incoming viewing key
+    bool EncryptData(const libzcash::SaplingPaymentAddress &saplingAddress, const std::vector<unsigned char> &plainText, std::vector<unsigned char> *pSsk=nullptr);
+
+    // decrypts objectData only if there is a valid key available to decrypt with already present in this object
+    bool DecryptData(std::vector<unsigned char> &plainText, std::vector<unsigned char> *pSsk=nullptr) const;
+
+    // decrypts objectData either with the provided viewing key, or if a key is available
+    bool DecryptData(const libzcash::SaplingIncomingViewingKey &Ivk, std::vector<unsigned char> &plainText, bool ivkOnly=false, std::vector<unsigned char> *pSsk=nullptr) const;
+
+    // decrypts objectData either with the provided specific symmetric encryption key, or if a key is available on the link
+    bool DecryptData(const std::vector<unsigned char> &decryptionKey, std::vector<unsigned char> &plainText, bool sskOnly=false) const;
+
+    bool GetSSK(std::vector<unsigned char> &Ssk) const;
+
+    bool GetSSK(const libzcash::SaplingIncomingViewingKey &Ivk, std::vector<unsigned char> &Ssk, bool ivkOnly=false) const;
+
+    bool UnwrapEncryption();
+
+    bool UnwrapEncryption(const libzcash::SaplingIncomingViewingKey &Ivk, bool ivkOnly=false);
+
+    bool UnwrapEncryption(const std::vector<unsigned char> &decryptionKey, bool sskOnly=false);
+
+    bool IsValid() const
+    {
+        return version >= FIRST_VERSION && version <= LAST_VERSION && (flags & ~FLAG_MASK) == 0;
+    }
+
+    UniValue ToUniValue() const;
+};
+
+class CVDXFDataDescriptor : public CVDXF_Data
+{
+public:
+    CDataDescriptor dataDescriptor;
+
+    CVDXFDataDescriptor(uint32_t Version=DEFAULT_VERSION) :
+        dataDescriptor(Version), CVDXF_Data(CVDXF_Data::DataDescriptorKey(), std::vector<unsigned char>(), Version)
+    {}
+
+    CVDXFDataDescriptor(const UniValue &uni);
+
+    CVDXFDataDescriptor(const CVDXF_Data &vdxfData)
+    {
+        version = vdxfData.version;
+        key = vdxfData.key;
+        CDataStream readData(vdxfData.data, SER_DISK, PROTOCOL_VERSION);
+        readData >> dataDescriptor;
+    }
+
+    bool HasEncryptedData() const
+    {
+        return dataDescriptor.HasEncryptedData();
+    }
+
+    bool WrapEncrypted(const libzcash::SaplingPaymentAddress &saplingAddress)
+    {
+        return dataDescriptor.WrapEncrypted(saplingAddress);
+    }
+
+    bool HasLabel() const
+    {
+        return dataDescriptor.HasLabel();
+    }
+
+    bool HasSalt() const
+    {
+        return dataDescriptor.HasSalt();
+    }
+
+    bool HasEPK() const
+    {
+        return dataDescriptor.HasEPK();
+    }
+
+    bool HasIVK() const
+    {
+        return dataDescriptor.HasIVK();
+    }
+
+    bool HasSSK() const
+    {
+        return dataDescriptor.HasSSK();
+    }
+
+    uint32_t CalcFlags() const
+    {
+        return dataDescriptor.CalcFlags();
+    }
+
+    uint32_t SetFlags()
+    {
+        return dataDescriptor.SetFlags();
+    }
+
+    CVDXFDataDescriptor(const std::vector<unsigned char> &ObjectData,
+                        const std::string &Label=std::string(),
+                        const std::string &MimeType=std::string(),
+                        const std::vector<unsigned char> &Salt=std::vector<unsigned char>(),
+                        const std::vector<unsigned char> &EPK=std::vector<unsigned char>(),
+                        const std::vector<unsigned char> &IVK=std::vector<unsigned char>(),
+                        const std::vector<unsigned char> &SSK=std::vector<unsigned char>(),
+                        uint32_t Flags=0,
+                        uint32_t Version=DEFAULT_VERSION) :
+        dataDescriptor(ObjectData, Label, MimeType, Salt, EPK, IVK, SSK, Flags, Version), CVDXF_Data(CVDXF_Data::DataDescriptorKey(), std::vector<unsigned char>(), Version)
+    {
+    }
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(*(CVDXF *)this);
+
+        if (ser_action.ForRead())
+        {
+            if (IsValid())
+            {
+                READWRITE(data);
+                CDataStream readData(data, SER_DISK, PROTOCOL_VERSION);
+                data.clear();
+                readData >> dataDescriptor;
+            }
+        }
+        else
+        {
+            if (IsValid())
+            {
+                CDataStream writeData(SER_DISK, PROTOCOL_VERSION);
+                writeData << dataDescriptor;
+                std::vector<unsigned char> vch(writeData.begin(), writeData.end());
+                READWRITE(vch);
+            }
+        }
+    }
+
+    UniValue ToUniValue() const;
+};
+
+class CSignatureData
+{
+public:
+    enum {
+        VERSION_INVALID = 0,
+        FIRST_VERSION = 1,
+        LAST_VERSION = 1,
+        DEFAULT_VERSION = 1,
+
+        TYPE_VERUSID_DEFAULT = 1
+    };
+
+    uint32_t version;
+    uint160 systemID;
+    CVDXF::EHashTypes hashType;
+    std::vector<unsigned char> signatureHash; // MMR root or signature hash as a vector to enable more bits in the future
+    uint32_t sigType;
+    uint160 identityID;
+    std::vector<uint160> vdxfKeys;
+    std::vector<std::string> vdxfKeyNames;
+    std::vector<uint256> boundHashes;
+    std::vector<unsigned char> signatureAsVch; // binary encoded signature
+
+    CSignatureData(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version) {}
+
+    CSignatureData(const UniValue &uni);
+
+    CSignatureData(const uint160 &SystemID,
+                      CVDXF::EHashTypes HashType,
+                      const std::vector<unsigned char> &SignatureHash,
+                      const uint160 &IdentityID,
+                      uint8_t SigType=TYPE_VERUSID_DEFAULT,
+                      const std::vector<unsigned char> &SignatureAsVch=std::vector<unsigned char>(),
+                      const std::vector<uint160> &VdxfKeys=std::vector<uint160>(),
+                      const std::vector<std::string> &VdxfKeyNames=std::vector<std::string>(),
+                      const std::vector<uint256> &BoundHashes=std::vector<uint256>(),
+                      uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+        version(Version), sigType(SigType), systemID(SystemID), identityID(IdentityID), hashType(HashType), vdxfKeys(VdxfKeys), vdxfKeyNames(VdxfKeyNames), boundHashes(BoundHashes), signatureHash(SignatureHash), signatureAsVch(SignatureAsVch)
+    {}
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(VARINT(version));
+        READWRITE(systemID);
+        READWRITE(VARINT((int32_t)hashType));
+        READWRITE(signatureHash);
+        READWRITE(identityID);
+        READWRITE(VARINT(sigType));
+        READWRITE(vdxfKeys);
+        READWRITE(vdxfKeyNames);
+        READWRITE(boundHashes);
+        READWRITE(signatureAsVch);
+    }
+
+    UniValue ToUniValue() const;
+
+    bool IsValid() const
+    {
+        return version >= FIRST_VERSION && version <= LAST_VERSION && !systemID.IsNull();
+    }
+};
+
+class CVDXFSignatureData : public CVDXF_Data
+{
+public:
+    enum {
+        VERSION_INVALID = 0,
+        FIRST_VERSION = 1,
+        LAST_VERSION = 1,
+        DEFAULT_VERSION = 1,
+    };
+
+    CSignatureData signature;
+
+    CVDXFSignatureData(uint32_t Version=DEFAULT_VERSION) : signature(Version), CVDXF_Data(CVDXF_Data::SignatureDataKey(), std::vector<unsigned char>(), Version) {}
+
+    CVDXFSignatureData(const UniValue &uni) : CVDXF_Data(uni), signature(find_value(uni, "signature")) {}
+
+    CVDXFSignatureData(const CVDXF_Data &vdxfData)
+    {
+        version = vdxfData.version;
+        key = vdxfData.key;
+        CDataStream readData(vdxfData.data, SER_DISK, PROTOCOL_VERSION);
+
+        readData >> signature;
+    }
+
+    CVDXFSignatureData(const uint160 &SystemID,
+                      CVDXF::EHashTypes HashType,
+                      const std::vector<unsigned char> &SignatureHash,
+                      const uint160 &IdentityID,
+                      uint8_t SigType=CSignatureData::TYPE_VERUSID_DEFAULT,
+                      const std::vector<unsigned char> &SignatureAsVch=std::vector<unsigned char>(),
+                      const std::vector<uint160> &VdxfKeys=std::vector<uint160>(),
+                      const std::vector<std::string> &VdxfKeyNames=std::vector<std::string>(),
+                      const std::vector<uint256> &BoundHashes=std::vector<uint256>(),
+                      uint32_t Version=DEFAULT_VERSION) :
+        signature(SystemID, HashType, SignatureHash, IdentityID, SigType, SignatureAsVch, VdxfKeys, VdxfKeyNames, BoundHashes, Version), CVDXF_Data(CVDXF_Data::SignatureDataKey(), std::vector<unsigned char>(), Version)
+    {}
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(*(CVDXF *)this);
+
+        if (ser_action.ForRead())
+        {
+            if (IsValid())
+            {
+                READWRITE(data);
+                CDataStream readData(data, SER_DISK, PROTOCOL_VERSION);
+                data.clear();
+                readData >> signature;
+            }
+        }
+        else
+        {
+            if (IsValid())
+            {
+                CDataStream writeData(SER_DISK, PROTOCOL_VERSION);
+                writeData << signature;
+                std::vector<unsigned char> vch(writeData.begin(), writeData.end());
+                READWRITE(vch);
+            }
+        }
+    }
+
+    UniValue ToUniValue() const;
+};
+
+class CMMRDescriptor
+{
+public:
+    enum {
+        VERSION_INVALID = 0,
+        FIRST_VERSION = 1,
+        LAST_VERSION = 1,
+        DEFAULT_VERSION = 1,
+    };
+
+    uint32_t version;
+    CVDXF::EHashTypes objectHashType;
+    CVDXF::EHashTypes mmrHashType;
+    CDataDescriptor mmrRoot;
+    CDataDescriptor mmrHashes;
+    std::vector<CDataDescriptor> dataDescriptors;
+
+    CMMRDescriptor(uint32_t Version=DEFAULT_VERSION) : version(Version), objectHashType(CVDXF_Data::HASH_SHA256), mmrHashType(CVDXF_Data::HASH_BLAKE2BMMR) {}
+
+    CMMRDescriptor(const UniValue &uni);
+
+    CMMRDescriptor(CVDXF::EHashTypes ObjectHash,
+                   CVDXF::EHashTypes MmrHash,
+                   const uint256 &MmrRoot,
+                   const std::vector<uint256> &MmrHashes,
+                   const std::vector<CDataDescriptor> &DataDescriptors,
+                   uint32_t Version=DEFAULT_VERSION) :
+        version(Version),
+        objectHashType(ObjectHash),
+        mmrHashType(MmrHash),
+        mmrRoot(CDataDescriptor(std::vector<unsigned char>(MmrRoot.begin(), MmrRoot.end()))),
+        mmrHashes(CDataDescriptor(MmrHashes)),
+        dataDescriptors(DataDescriptors)
+    {}
+
+    CMMRDescriptor(CVDXF::EHashTypes ObjectHash,
+                   CVDXF::EHashTypes MmrHash,
+                   const uint256 &MmrRoot,
+                   const CDataDescriptor &MmrHashes,
+                   const std::vector<CDataDescriptor> &DataDescriptors,
+                   uint32_t Version=DEFAULT_VERSION) :
+        version(Version),
+        objectHashType(ObjectHash),
+        mmrHashType(MmrHash),
+        mmrRoot(CDataDescriptor(std::vector<unsigned char>(MmrRoot.begin(), MmrRoot.end()))),
+        mmrHashes(MmrHashes),
+        dataDescriptors(DataDescriptors)
+    {}
+
+    CMMRDescriptor(CVDXF::EHashTypes ObjectHash,
+                   CVDXF::EHashTypes MmrHash,
+                   const CDataDescriptor &MmrRoot,
+                   const CDataDescriptor &MmrHashes,
+                   const std::vector<CDataDescriptor> &DataDescriptors,
+                   uint32_t Version=DEFAULT_VERSION) :
+        version(Version),
+        objectHashType(ObjectHash),
+        mmrHashType(MmrHash),
+        mmrRoot(MmrRoot),
+        mmrHashes(MmrHashes),
+        dataDescriptors(DataDescriptors)
+    {}
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(VARINT(version));
+        READWRITE(VARINT((int32_t)objectHashType));
+        READWRITE(VARINT((int32_t)mmrHashType));
+        READWRITE(mmrRoot);
+        READWRITE(mmrHashes);
+        READWRITE(dataDescriptors);
+    }
+
+    CMMRDescriptor Encrypt(const libzcash::SaplingPaymentAddress &saplingAddress, bool includeSSKs=false) const;
+    bool WrapEncrypted(const libzcash::SaplingPaymentAddress &saplingAddress, bool includeSSKs=false);
+
+    CMMRDescriptor Decrypt() const;
+    CMMRDescriptor Decrypt(const libzcash::SaplingIncomingViewingKey &ivk) const;
+    uint256 DecryptMMRRoot(const libzcash::SaplingIncomingViewingKey &ivk) const;
+    uint256 DecryptMMRRoot(const std::vector<unsigned char> &Ssk) const;
+    uint256 GetMMRRoot() const;
+    std::vector<uint256> DecryptMMRHashes(const libzcash::SaplingIncomingViewingKey &ivk) const;
+    std::vector<uint256> DecryptMMRHashes(const std::vector<unsigned char> &Ssk) const;
+    std::vector<uint256> GetMMRHashes() const;
+    std::vector<CDataDescriptor> DecryptDataDescriptors(const libzcash::SaplingIncomingViewingKey &ivk) const;
+    std::vector<CDataDescriptor> GetDataDescriptors() const;
+    CDataDescriptor DecryptDataDescriptor(int idx, const std::vector<unsigned char> &ssk) const;
+    CDataDescriptor DecryptDataDescriptor(int idx, const libzcash::SaplingIncomingViewingKey &ivk) const;
+    CDataDescriptor GetDataDescriptor(int idx) const;
+    CMMRDescriptor AddSymmetricKeys(const libzcash::SaplingIncomingViewingKey &ivk) const;
+    CMMRDescriptor AddSymmetricKeys(const std::vector<std::pair<int, std::vector<unsigned char>>> &ssks) const;
+    std::vector<std::pair<int, std::vector<unsigned char>>> GetSymmetricKeys(const libzcash::SaplingIncomingViewingKey &ivk) const;
+
+    bool HasData() const
+    {
+        return mmrHashes.objectData.size() && dataDescriptors.size();
+    }
+
+    bool IsValid() const
+    {
+        return version >= FIRST_VERSION && version <= LAST_VERSION;
+    }
+
+    UniValue ToUniValue() const;
+};
+
+class CVDXFMMRDescriptor : public CVDXF_Data
+{
+public:
+    CMMRDescriptor mmrDescriptor;
+
+    CVDXFMMRDescriptor(uint32_t Version=DEFAULT_VERSION) : CVDXF_Data(Version), mmrDescriptor(Version) {}
+
+    CVDXFMMRDescriptor(const UniValue &uni) : CVDXF_Data(uni), mmrDescriptor(find_value(uni, "mmr")) {}
+
+    CVDXFMMRDescriptor(const CVDXF_Data &vdxfData)
+    {
+        version = vdxfData.version;
+        key = vdxfData.key;
+        CDataStream readData(vdxfData.data, SER_DISK, PROTOCOL_VERSION);
+
+        readData >> mmrDescriptor;
+    }
+
+    CVDXFMMRDescriptor(CVDXF::EHashTypes ObjectHash,
+                   CVDXF::EHashTypes MmrHash,
+                   const uint256 &MmrRoot,
+                   const std::vector<uint256> &MmrHashes,
+                   const std::vector<CDataDescriptor> &DataDescriptors,
+                   uint32_t Version=DEFAULT_VERSION) :
+        CVDXF_Data(CVDXF_Data::MMRDescriptorKey(), std::vector<unsigned char>(), Version),
+        mmrDescriptor(ObjectHash, MmrHash, MmrRoot, MmrHashes, DataDescriptors, Version)
+    {}
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(*(CVDXF *)this);
+
+        if (ser_action.ForRead())
+        {
+            if (CVDXF_Data::IsValid())
+            {
+                READWRITE(data);
+                CDataStream readData(data, SER_DISK, PROTOCOL_VERSION);
+                data.clear();
+                readData >> mmrDescriptor;
+            }
+        }
+        else
+        {
+            if (CVDXF_Data::IsValid())
+            {
+                CDataStream writeData(SER_DISK, PROTOCOL_VERSION);
+                writeData << mmrDescriptor;
+                std::vector<unsigned char> vch(writeData.begin(), writeData.end());
+                READWRITE(vch);
+            }
+        }
+    }
+
+    UniValue ToUniValue() const;
 };
 
 class CVDXF_StructuredData : public CVDXF
@@ -531,16 +1394,19 @@ public:
         READWRITE(*(CVDXF *)this);
         READWRITE(data);
     }
+
     static std::string StructuredDataKeyName()
     {
         return "vrsc::system.structureddata";
     }
+
     static uint160 StructuredDataKey()
     {
         static uint160 nameSpace;
         static uint160 structuredDataKey = GetDataKey(StructuredDataKeyName(), nameSpace);
         return structuredDataKey;
     }
+
     bool IsValid()
     {
         // structured data must have at least enough space for 1 element

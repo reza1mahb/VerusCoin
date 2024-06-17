@@ -78,6 +78,7 @@ extern int32_t KOMODO_LOADINGBLOCKS;
 extern bool VERUS_MINTBLOCKS;
 extern CTxDestination VERUS_DEFAULT_ARBADDRESS;
 extern std::vector<uint160> VERUS_ARBITRAGE_CURRENCIES;
+extern int64_t STORAGE_FEE_FACTOR;
 extern std::string VERUS_DEFAULT_ZADDR;
 
 ZCJoinSplit* pzcashParams = NULL;
@@ -246,6 +247,8 @@ void Shutdown()
         pcoinsdbview = NULL;
         delete pblocktree;
         pblocktree = NULL;
+        delete pnotarisations;
+        pnotarisations = nullptr;
     }
 #ifdef ENABLE_WALLET
     if (pwalletMain)
@@ -429,10 +432,14 @@ std::string HelpMessage(HelpMessageMode mode)
 
 #ifdef ENABLE_WALLET
     strUsage += HelpMessageGroup(_("Wallet options:"));
+    strUsage += HelpMessageOpt("-arbitragecurrencies", _("Either a JSON array or a comma separated list of currency names."));
+    strUsage += HelpMessageOpt("-arbitrageaddress", _("A valid wallet address or identity controlled by this wallet that will hold the arbitrage currencies to use."));
+    strUsage += HelpMessageOpt("-storagefeefactor", _("Defaults to 6.0, which is used for 6K outputs to price storage in a currency's TransactionExportFee (ie. 6.0 = 1 TransactionExportFee per K)."));
     strUsage += HelpMessageOpt("-cheatcatcher=<sapling-address>", _("same as \"-defaultzaddr\""));
     strUsage += HelpMessageOpt("-defaultid=<i-address>", _("VerusID used for default change out and staking reward recipient"));
     strUsage += HelpMessageOpt("-defaultzaddr=<sapling-address>", _("sapling address to receive fraud proof rewards and if used with \"-privatechange=1\", z-change address for the sendcurrency command"));
     strUsage += HelpMessageOpt("-disablewallet", _("Do not load the wallet and disable wallet RPC calls"));
+    strUsage += HelpMessageOpt("-fastload", _("If fastload is true, the daemon will load much faster, potentially saving an hour off of load time, and it will also require up to 4GB more RAM for the same tasks"));
     strUsage += HelpMessageOpt("-keypool=<n>", strprintf(_("Set key pool size to <n> (default: %u)"), 100));
     strUsage += HelpMessageOpt("-maxtxfee=<amt>", strprintf(_("Maximum total fees (in %s) to use in a single wallet transaction; setting this too low may abort large transactions (default: %s)"),
         CURRENCY_UNIT, FormatMoney(maxTxFee)));
@@ -1319,19 +1326,37 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     VERUS_NODEID = nodeIDDest.which() == COptCCParams::ADDRTYPE_ID ? GetDestinationID(nodeIDDest) : uint160();
 
     UniValue arbitrageArr(UniValue::VARR);
-    if (arbitrageArr.read(GetArg("-arbitragecurrencies", "")) && arbitrageArr.isArray() && arbitrageArr.size())
+    std::vector<std::string> arbCurrencyNames;
+    std::string arbString = GetArg("-arbitragecurrencies", "");
+    if (arbitrageArr.read(arbString) && arbitrageArr.isArray() && arbitrageArr.size())
     {
         for (int i = 0; i < arbitrageArr.size(); i++)
         {
             uint160 oneCurID = ValidateCurrencyName(uni_get_str(arbitrageArr[i]), false);
             if (oneCurID.IsNull())
             {
-                return InitError(_("If arbitragecurrencies are specified, it must be as an array of currency names"));
+                return InitError(_("If arbitragecurrencies are specified, it must be as an array of currency names or a comma separated string of names"));
+            }
+            VERUS_ARBITRAGE_CURRENCIES.push_back(oneCurID);
+        }
+    }
+    else if (boost::split(arbCurrencyNames, arbString, boost::is_any_of(",")).size() && !arbCurrencyNames[0].empty())
+    {
+        for (int i = 0; i < arbCurrencyNames.size(); i++)
+        {
+            uint160 oneCurID = ValidateCurrencyName(uni_get_str(arbCurrencyNames[i]), false);
+            if (oneCurID.IsNull())
+            {
+                return InitError(_("If arbitragecurrencies are specified, it must be as an array or a comma separated string of valid currency names"));
             }
             VERUS_ARBITRAGE_CURRENCIES.push_back(oneCurID);
         }
     }
     VERUS_DEFAULT_ARBADDRESS = DecodeDestination(GetArg("-arbitrageaddress", ""));
+
+    STORAGE_FEE_FACTOR = GetArg("-storagefeefactor", STORAGE_FEE_FACTOR);
+
+    printf("\nCompression is: %s\n", CCompactSolutionVector::SetCompression(!GetBoolArg("-fastload", !CCompactSolutionVector::IsCompressionOn())) ? "on" : "off");
 
     // if we are supposed to catch stake cheaters, there must be a valid sapling parameter, we need it at
     // initialization, and this is the first time we can get it. store the Sapling address here
@@ -1650,7 +1675,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         useBootstrap = true;
     }
 
-    if (IsVerusMainnetActive() && useBootstrap) {
+    if (IsVerusActive() && useBootstrap) {
         fReindex = false;
         //wipe transactions from wallet to create a clean slate
         OverrideSetArg("-zappwallettxes","2");

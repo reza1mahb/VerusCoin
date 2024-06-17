@@ -44,7 +44,7 @@ class TransactionBuilder;
 
 static const uint32_t PBAAS_NODESPERNOTARIZATION = 2;       // number of nodes to reference in each notarization
 static const int64_t PBAAS_MINNOTARIZATIONOUTPUT = 10000;   // enough for one fee worth to finalization and notarization thread
-static const int32_t PBAAS_MINSTARTBLOCKDELTA = 50;         // minimum number of blocks to wait for starting a chain after definition
+static const int32_t PBAAS_MINSTARTBLOCKDELTA = 20;         // minimum number of blocks to wait for starting a chain after definition
 static const int32_t PBAAS_MAXPRIORBLOCKS = 16;             // maximum prior block commitments to include in prior blocks chain object
 
 class CUpgradeDescriptor
@@ -239,7 +239,7 @@ public:
         VERSION_CURRENT = 2,
         FINAL_CONFIRMATIONS = 9,
         DEFAULT_NOTARIZATION_FEE = 10000,               // default notarization fee when entering a signature for a notarization
-        DEFAULT_ACCEPTED_EVIDENCE_FEE = 100000,         // price of each evidence output when entering a notarization
+        DEFAULT_ACCEPTED_EVIDENCE_FEE = 100000,         // minimum price of each evidence output when entering a notarization
         MAX_NODES = 2,                                  // only provide 2 nodes per notarization
         MIN_NOTARIZATION_OUTPUT = 0,                    // minimum amount for notarization output
 
@@ -1218,7 +1218,17 @@ public:
     bool StrictCheckIDExport(uint32_t height) const;
     uint32_t DiscernBlockOneLaunchInfoHeight(bool getVerusHeight) const;
     bool DiscernBlockOneLaunchInfo(uint32_t height) const;
-
+    uint32_t AutoArbitrageEnabledHeight(bool getVerusHeight) const;
+    bool AutoArbitrageEnabled(uint32_t height) const;
+    uint32_t vARRRUpdateHeight(bool getVerusHeight) const;
+    bool vARRRUpdateEnabled(uint32_t height) const;
+    uint160 vARRRChainID() const;
+    bool ForceIdentityUpgrade(uint32_t height) const;
+    bool ForceIdentityUnlock(uint32_t height) const;
+    bool IdentityLockOverride(const CIdentity &identity, uint32_t height) const;
+    bool DoPreconvertReserveTransferPrecheck(uint32_t height) const;
+    bool DoImportPreconvertReserveTransferPrecheck(uint32_t height) const;
+    bool IsEnhancedDustCheck(uint32_t height) const;
 
     std::vector<CCurrencyDefinition> GetMergeMinedChains()
     {
@@ -1299,6 +1309,54 @@ public:
     {
         static uint160 nameSpace;
         static uint160 key = CVDXF_Data::GetDataKey(ResetNotarizationModuloKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string ForceIdentityUpgradeKeyName()
+    {
+        return "vrsc::system.upgradedata.forceidentityupgrade";
+    }
+
+    static uint160 ForceIdentityUpgradeKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(ForceIdentityUpgradeKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string ForceIdentityUnlockKeyName()
+    {
+        return "vrsc::system.upgradedata.forceidentityunlock";
+    }
+
+    static uint160 ForceIdentityUnlockKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(ForceIdentityUnlockKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string PreconvertReserveTransferPrecheckKeyName()
+    {
+        return "vrsc::system.upgradedata.preconvertreservetransferprecheck";
+    }
+
+    static uint160 PreconvertReserveTransferPrecheckKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(PreconvertReserveTransferPrecheckKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string ImportPreconvertReserveTransferPrecheckKeyName()
+    {
+        return "vrsc::system.upgradedata.importpreconvertreservetransferprecheck";
+    }
+
+    static uint160 ImportPreconvertReserveTransferPrecheckKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(ImportPreconvertReserveTransferPrecheckKeyName(), nameSpace);
         return key;
     }
 

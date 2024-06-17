@@ -958,9 +958,21 @@ CRating::CRating(const UniValue uni) :
     }
 }
 
-std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &obj)
+std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &_obj)
 {
     CDataStream ss(PROTOCOL_VERSION, SER_DISK);
+
+    UniValue obj = _obj;
+
+    if (!obj.isObject())
+    {
+        std::string objStr = uni_get_str(obj);
+        if (IsHex(objStr))
+        {
+            return ParseHex(objStr);
+        }
+        return std::vector<unsigned char>(objStr.begin(), objStr.end());
+    }
 
     std::string serializedHex = uni_get_str(find_value(obj, "serializedhex"));
     if (!serializedHex.empty())
@@ -978,6 +990,11 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &obj)
         bool isValid = false;
         auto retVec = DecodeBase64(serializedBase64.c_str(), &isValid);
         return isValid ? retVec : std::vector<unsigned char>();
+    }
+    std::string serializedMessage = uni_get_str(find_value(obj, "message"));
+    if (!serializedMessage.empty())
+    {
+        return std::vector<unsigned char>(serializedMessage.begin(), serializedMessage.end());
     }
 
     // this should be an object with "vdxfkey" as the key and {object} as the json object to serialize
@@ -1034,7 +1051,7 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &obj)
             ss << objTypeKey;
             ss << VARINT(1);
             std::string stringVal = uni_get_str(oneValValues[k]);
-            ss << VARINT(GetSerializeSize(ss, stringVal));
+            ss << COMPACTSIZE((uint64_t)GetSerializeSize(ss, stringVal));
             ss << stringVal;
         }
         else if (objTypeKey == CVDXF_Data::DataByteVectorKey())
@@ -1042,7 +1059,7 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &obj)
             ss << objTypeKey;
             ss << VARINT(1);
             std::vector<unsigned char> byteVec = ParseHex(uni_get_str(oneValValues[k]));
-            ss << VARINT(GetSerializeSize(ss, byteVec));
+            ss << COMPACTSIZE((uint64_t)GetSerializeSize(ss, byteVec));
             ss << byteVec;
         }
         else if (objTypeKey == CVDXF_Data::DataCurrencyMapKey())
@@ -1050,7 +1067,7 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &obj)
             CCurrencyValueMap oneCurMap(oneValValues[k]);
             ss << objTypeKey;
             ss << VARINT(1);
-            ss << VARINT(GetSerializeSize(ss, oneCurMap));
+            ss << COMPACTSIZE((uint64_t)GetSerializeSize(ss, oneCurMap));
             ss << oneCurMap;
         }
         else if (objTypeKey == CVDXF_Data::DataRatingsKey())
@@ -1058,7 +1075,7 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &obj)
             CRating oneRatingObj(oneValValues[k]);
             ss << objTypeKey;
             ss << VARINT(oneRatingObj.version);
-            ss << VARINT(GetSerializeSize(ss, oneRatingObj));
+            ss << COMPACTSIZE((uint64_t)GetSerializeSize(ss, oneRatingObj));
             ss << oneRatingObj;
         }
         else if (objTypeKey == CVDXF_Data::DataTransferDestinationKey())
@@ -1066,7 +1083,7 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &obj)
             CTransferDestination oneTransferDest(oneValValues[k]);
             ss << objTypeKey;
             ss << VARINT(oneTransferDest.TypeNoFlags());
-            ss << VARINT(GetSerializeSize(ss, oneTransferDest));
+            ss << COMPACTSIZE((uint64_t)GetSerializeSize(ss, oneTransferDest));
             ss << oneTransferDest;
         }
         else if (objTypeKey == CVDXF_Data::ContentMultiMapRemoveKey())
@@ -1074,8 +1091,40 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &obj)
             CContentMultiMapRemove contentRemove(oneValValues[k]);
             ss << objTypeKey;
             ss << VARINT(contentRemove.version);
-            ss << VARINT(GetSerializeSize(ss, contentRemove));
+            ss << COMPACTSIZE((uint64_t)GetSerializeSize(ss, contentRemove));
             ss << contentRemove;
+        }
+        else if (objTypeKey == CVDXF_Data::CrossChainDataRefKey())
+        {
+            CCrossChainDataRef dataRef(oneValValues[k]);
+            ss << objTypeKey;
+            ss << VARINT((int32_t)CVDXF_Data::DEFAULT_VERSION);
+            ss << COMPACTSIZE((uint64_t)GetSerializeSize(ss, dataRef));
+            ss << dataRef;
+        }
+        else if (objTypeKey == CVDXF_Data::DataDescriptorKey())
+        {
+            CDataDescriptor descr(oneValValues[k]);
+            ss << objTypeKey;
+            ss << VARINT(descr.version);
+            ss << COMPACTSIZE((uint64_t)GetSerializeSize(ss, descr));
+            ss << descr;
+        }
+        else if (objTypeKey == CVDXF_Data::MMRDescriptorKey())
+        {
+            CMMRDescriptor descr(oneValValues[k]);
+            ss << objTypeKey;
+            ss << VARINT(descr.version);
+            ss << COMPACTSIZE((uint64_t)GetSerializeSize(ss, descr));
+            ss << descr;
+        }
+        else if (objTypeKey == CVDXF_Data::SignatureDataKey())
+        {
+            CSignatureData sigData(oneValValues[k]);
+            ss << objTypeKey;
+            ss << VARINT(sigData.version);
+            ss << COMPACTSIZE((uint64_t)GetSerializeSize(ss, sigData));
+            ss << sigData;
         }
         else
         {
