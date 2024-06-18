@@ -4078,12 +4078,6 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         {
             const CTransaction &tx = block.vtx[i];
 
-            if (i != 0)
-            {
-                std::list<CTransaction> removedTxes;
-                mempool.removeConflicts(tx, removedTxes);
-            }
-
             const uint256 txhash = tx.GetHash();
             nInputs += tx.vin.size();
             nSigOps += GetLegacySigOpCount(tx);
@@ -4092,7 +4086,12 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                 REJECT_INVALID, "bad-blk-sigops");
 
             // ensure transaction can clear conflicts and get into mempool
-            std::list<CTransaction> removed;
+            if (i != 0)
+            {
+                std::list<CTransaction> removedTxes;
+                mempool.removeConflicts(tx, removedTxes);
+            }
+
             bool missingInputs = false;
             bool isPosTx = block.IsVerusPOSBlock() && (i + 1) == block.vtx.size();
             if (((tx.IsCoinBase() ||
@@ -5436,7 +5435,6 @@ bool static DisconnectTip(CValidationState &state, const CChainParams& chainpara
         {
             // ignore validation errors in resurrected transactions
             CTransaction &tx = block.vtx[i];
-            list<CTransaction> removed;
             CValidationState stateDummy;
 
             // don't keep coinbase, staking, invalid transactions, or arbitrage only transfers
