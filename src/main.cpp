@@ -3840,20 +3840,6 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     int32_t futureblock;
 
     {
-        {
-            LOCK(mempool.cs);
-            // remove any potential conflicts for inputs in the mempool from auto-created transactions,
-            // such as imports or exports to prevent us from accepting the block
-            for (auto &oneTx : block.vtx)
-            {
-                std::list<CTransaction> removedTxes;
-                if (!oneTx.IsCoinBase())
-                {
-                    mempool.removeConflicts(oneTx, removedTxes);
-                }
-            }
-        }
-
         // Check it again to verify JoinSplit proofs, and in case a previous version let a bad block in
         if (!CheckBlock(&futureblock, pindex->GetHeight(), pindex, block, state, chainparams, fExpensiveChecks ? verifier : disabledVerifier, fCheckPOW, !fJustCheck, !fJustCheck) || futureblock != 0 )
         {
@@ -4091,6 +4077,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         for (unsigned int i = 0; i < block.vtx.size(); i++)
         {
             const CTransaction &tx = block.vtx[i];
+
             const uint256 txhash = tx.GetHash();
             nInputs += tx.vin.size();
             nSigOps += GetLegacySigOpCount(tx);
@@ -4099,7 +4086,12 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                 REJECT_INVALID, "bad-blk-sigops");
 
             // ensure transaction can clear conflicts and get into mempool
-            std::list<CTransaction> removed;
+            if (i != 0)
+            {
+                std::list<CTransaction> removedTxes;
+                mempool.removeConflicts(tx, removedTxes);
+            }
+
             bool missingInputs = false;
             bool isPosTx = block.IsVerusPOSBlock() && (i + 1) == block.vtx.size();
             if (((tx.IsCoinBase() ||
@@ -5443,7 +5435,6 @@ bool static DisconnectTip(CValidationState &state, const CChainParams& chainpara
         {
             // ignore validation errors in resurrected transactions
             CTransaction &tx = block.vtx[i];
-            list<CTransaction> removed;
             CValidationState stateDummy;
 
             // don't keep coinbase, staking, invalid transactions, or arbitrage only transfers
