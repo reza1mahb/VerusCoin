@@ -1362,6 +1362,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     // initialization, and this is the first time we can get it. store the Sapling address here
     extern boost::optional<libzcash::SaplingPaymentAddress> defaultSaplingDest;
     VERUS_DEFAULT_ZADDR = GetArg("-cheatcatcher", "");
+    VERUS_DEFAULT_ZADDR = GetArg("-stakeguard", VERUS_DEFAULT_ZADDR); // TODO: should separate stakeguard/cheatcatcher from the default change address
     VERUS_DEFAULT_ZADDR = GetArg("-defaultzaddr", VERUS_DEFAULT_ZADDR);
     libzcash::PaymentAddress addr = DecodePaymentAddress(VERUS_DEFAULT_ZADDR);
     if (VERUS_DEFAULT_ZADDR.size() > 0 && IsValidPaymentAddress(addr))

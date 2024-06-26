@@ -4483,7 +4483,7 @@ void static BitcoinMiner_noeq()
 
                     bool tryAgain = true;
                     int retryCount = 0;
-                    while (tryAgain && retryCount++ < 2)
+                    while (tryAgain && retryCount++ < 5)
                     {
                         tryAgain = false;
                         params.push_back(EncodeHexBlk(*pblock));
@@ -4495,8 +4495,8 @@ void static BitcoinMiner_noeq()
                         {
                             ConnectedChains.lastSubmissionFailed = false;
                             params = RPCCallRoot("addmergedblock", params);
-                            params = find_value(params, "result");
                             error = find_value(params, "error");
+                            params = find_value(params, "result");
                         } catch (std::exception e)
                         {
                             LogPrintf("Failed to connect to %s chain\n", ConnectedChains.FirstNotaryChain().chainDefinition.name.c_str());

@@ -2789,7 +2789,6 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
                     {
                         if (p.evalCode == EVAL_IDENTITY_ADVANCEDRESERVATION && identity.name == anr.name && identity.parent == anr.parent)
                         {
-                            // TDOD: HARDENING potentially finish validating the fees according to the currency
                             flags |= IS_IDENTITY_DEFINITION + IS_HIGH_FEE;
                             reservationValid = advancedReservationValid = true;
                         }
