@@ -11877,7 +11877,7 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
             UniValue conversionData(UniValue::VOBJ);
             UniValue pairArray(UniValue::VARR);
 
-            conversionData.pushKV("pricingcurrency", ConnectedChains.GetFriendlyCurrencyName(volumePriceCurrencyID));
+            conversionData.pushKV("volumecurrency", ConnectedChains.GetFriendlyCurrencyName(volumePriceCurrencyID));
 
             // output conversions as source, destination, volume, open, high, low, close
             for (auto &oneVolPrice : pairVolumePrice)
