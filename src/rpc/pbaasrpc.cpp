@@ -11783,9 +11783,9 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
     {
         pairVolumePrice.clear();
 
-        int queryEnd = (i + step) > end ? end : i + step;
-        auto importIt = importMap.lower_bound({i, 0});
-        auto importNextIt = importIt == importMap.end() ? importMap.end() : importMap.upper_bound({queryEnd, 0});
+        int queryStart = i == start ? i : i - (step - 1);
+        auto importIt = importMap.lower_bound({queryStart, 0});
+        auto importNextIt = importIt == importMap.end() ? importMap.end() : importMap.upper_bound({i, 0});
         auto it = importIt;
         CCoinbaseCurrencyState currencyState;
         if (importIt != importMap.end() && it != importNextIt)
