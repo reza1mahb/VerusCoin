@@ -11778,10 +11778,12 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
     // currencySource, currencyDest, volume in volume/price currency, starting price, highest during period, lowest during period, final price (all prices in volume/price currency)
     std::map<std::pair<uint160,uint160>,std::tuple<CAmount, CAmount, CAmount, CAmount, CAmount>> pairVolumePrice;
     CAmount totalVolumeInVolumeCurrency = 0;
+    CAmount stepVolumeInVolumeCurrency = 0;
 
     for (int i = start; i <= end; i += step)
     {
         pairVolumePrice.clear();
+        stepVolumeInVolumeCurrency = 0;
 
         int queryStart = i == start ? i : i - (step - 1);
         auto importIt = importMap.lower_bound({queryStart, 0});
@@ -11811,9 +11813,10 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
                         CCurrencyValueMap currentRates(volumePriceCurrencyID == destCur ? conversionRates : currencyState.TargetConversionPrices(destCur, prices, viaPrices));
 
                         CCurrencyValueMap conversionFee = oneRT.ConversionFee();
-                        totalVolumeInVolumeCurrency += currencyState.ReserveToNativeRaw(oneRT.FirstValue() - conversionFee.valueMap[sourceCur], conversionRates.valueMap[sourceCur]);
-
-                        std::get<0>(pairVolumePrice[{sourceCur,destCur}]) += currencyState.ReserveToNativeRaw(oneRT.FirstValue() - conversionFee.valueMap[sourceCur], conversionRates.valueMap[sourceCur]);
+                        CAmount thisVolume = currencyState.ReserveToNativeRaw(oneRT.FirstValue() - conversionFee.valueMap[sourceCur], conversionRates.valueMap[sourceCur]);
+                        totalVolumeInVolumeCurrency += thisVolume;
+                        stepVolumeInVolumeCurrency += thisVolume;
+                        std::get<0>(pairVolumePrice[{sourceCur,destCur}]) += thisVolume;
 
                         // save open, high, low, close
                         if (std::get<1>(pairVolumePrice[{sourceCur,destCur}]) == 0)
@@ -11834,7 +11837,9 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
                         // conversion fee is converted to native currency, unless source is already native
                         if (sourceCur != ASSETCHAINS_CHAINID)
                         {
-                            totalVolumeInVolumeCurrency += currencyState.ReserveToNativeRaw(conversionFee.valueMap[sourceCur], conversionRates.valueMap[sourceCur]);
+                            CAmount feeVolume = currencyState.ReserveToNativeRaw(conversionFee.valueMap[sourceCur], conversionRates.valueMap[sourceCur]);
+                            totalVolumeInVolumeCurrency += feeVolume;
+                            stepVolumeInVolumeCurrency += feeVolume;
 
                             CCurrencyValueMap feeRates(volumePriceCurrencyID == ASSETCHAINS_CHAINID ? conversionRates : (destCur == ASSETCHAINS_CHAINID ? currentRates : currencyState.TargetConversionPrices(ASSETCHAINS_CHAINID, prices, viaPrices)));
 
@@ -11876,7 +11881,7 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
             UniValue pairArray(UniValue::VARR);
 
             conversionData.pushKV("volumecurrency", ConnectedChains.GetFriendlyCurrencyName(volumePriceCurrencyID));
-            conversionData.pushKV("totalvolume", ValueFromAmount(totalVolumeInVolumeCurrency));
+            conversionData.pushKV("volumethisinterval", ValueFromAmount(stepVolumeInVolumeCurrency));
 
             // output conversions as source, destination, volume, open, high, low, close
             for (auto &oneVolPrice : pairVolumePrice)
@@ -11895,6 +11900,12 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
             entry.pushKV("conversiondata",conversionData);
         }
 
+        ret.push_back(entry);
+    }
+    if (totalVolumeInVolumeCurrency)
+    {
+        UniValue entry(UniValue::VOBJ);
+        entry.pushKV("totalvolume", ValueFromAmount(totalVolumeInVolumeCurrency));
         ret.push_back(entry);
     }
     return ret;
