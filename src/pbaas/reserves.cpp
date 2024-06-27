@@ -863,7 +863,7 @@ CCurrencyValueMap CCoinbaseCurrencyState::TargetConversionPrices(const uint160 &
     }
     else
     {
-        retVal.valueMap[GetID()] = NativeToReserveRaw(SATOSHIDEN, prices.valueMap.find(targetCurrencyID)->second);
+        retVal.valueMap[GetID()] = ReserveToNativeRaw(SATOSHIDEN, prices.valueMap.find(targetCurrencyID)->second);
 
         for (auto &oneCur : currencies)
         {

@@ -11624,7 +11624,7 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
             "   \"currencynameorid\"                  (string)                  name or i-address of currency in question"
             "   \"n\" or \"m,n\" or \"m,n,o\"         (int or string, optional) height or inclusive range with optional step at which to get the currency state\n"
             "                                                                   If not specified, the latest currency state and height is returned\n"
-            "   \"conversiondatacurrency\"            (string)                  optional - if present, market data with prices expressed in given currency are returned\n"
+            "   \"conversiondatacurrency\"            (string)                  optional - if present, market data with volumes in given currency are returned\n"
 
             "\nResult:\n"
             "   [\n"
@@ -11799,8 +11799,6 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
                 // get volume and price conversion rates
                 CCurrencyValueMap prices(currencyState.currencies, currencyState.conversionPrice);
                 CCurrencyValueMap viaPrices(currencyState.currencies, currencyState.viaConversionPrice);
-                prices.valueMap[currencyID] = volumePriceCurrencyID == currencyID ? SATOSHIDEN : currencyState.ReserveToNativeRaw(SATOSHIDEN, prices.valueMap[volumePriceCurrencyID]);
-                viaPrices.valueMap[currencyID] = volumePriceCurrencyID == currencyID ? SATOSHIDEN : currencyState.ReserveToNativeRaw(SATOSHIDEN, viaPrices.valueMap[volumePriceCurrencyID]);
                 CCurrencyValueMap conversionRates(currencyState.TargetConversionPrices(volumePriceCurrencyID, prices, viaPrices));
 
                 for (auto &oneRT : std::get<4>(it->second))
