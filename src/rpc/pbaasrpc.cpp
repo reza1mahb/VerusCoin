@@ -2768,6 +2768,11 @@ UniValue getimports(const UniValue& params, bool fHelp)
         toHeight = proofHeight;
     }
 
+    if ((toHeight ? toHeight : nHeight) - fromHeight > GetArg("-maximumimportrange", chainActive.Height()))
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid range for currency state volume and rate information. Maximum range limited to " + std::to_string(GetArg("-maximportrange", chainActive.Height())));
+    }
+
     if (GetCurrencyDefinition(chainID, chainDef, &defHeight))
     {
         // which transaction are we in this block?
@@ -11782,6 +11787,7 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
 
     for (int i = start; i <= end; i += step)
     {
+        LOCK(cs_main);
         pairVolumePrice.clear();
         stepVolumeInVolumeCurrency = 0;
 
@@ -11792,6 +11798,11 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
         CCoinbaseCurrencyState currencyState;
         if (importIt != importMap.end() && it != importNextIt)
         {
+            if (end - start > GetArg("-maximumimportrange", chainActive.Height()))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid range for currency state volume and rate information. Maximum range limited to " + std::to_string(GetArg("-maximumimportrange", chainActive.Height())));
+            }
+
             // if we have imports, calculate aggregated volumes, pair volumes, and OHLC in specified currency
             // last import has final currency state for this interval
             for (; it != importNextIt; it++)
@@ -11867,7 +11878,6 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
         }
         else
         {
-            LOCK(cs_main);
             currencyState = ConnectedChains.GetCurrencyState(currencyID, i, (i + step) > end);
         }
         UniValue entry(UniValue::VOBJ);
