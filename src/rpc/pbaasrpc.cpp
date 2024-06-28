@@ -2764,9 +2764,9 @@ UniValue getimports(const UniValue& params, bool fHelp)
     if (params.size() > 2)
     {
         toHeight = uni_get_int64(params[2]);
-        proofHeight = toHeight < nHeight ? toHeight : nHeight;
-        toHeight = proofHeight;
     }
+    proofHeight = toHeight < nHeight ? toHeight : nHeight;
+    toHeight = proofHeight;
 
     if ((toHeight ? toHeight : nHeight) - fromHeight > GetArg("-maximumimportrange", chainActive.Height()))
     {
