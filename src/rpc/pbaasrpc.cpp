@@ -2756,6 +2756,7 @@ UniValue getimports(const UniValue& params, bool fHelp)
     uint32_t fromHeight = 0, toHeight = INT32_MAX;
     uint32_t proofHeight = 0;
     uint32_t nHeight = chainActive.Height();
+    uint32_t maximumImportRange = GetArg("-maximumimportrange", chainActive.Height());
 
     if (params.size() > 1)
     {
@@ -2765,10 +2766,14 @@ UniValue getimports(const UniValue& params, bool fHelp)
     {
         toHeight = uni_get_int64(params[2]);
     }
+    else if (fromHeight == 0 && maximumImportRange < nHeight)
+    {
+        fromHeight = nHeight - maximumImportRange;
+    }
     proofHeight = toHeight < nHeight ? toHeight : nHeight;
     toHeight = proofHeight;
 
-    if ((toHeight ? toHeight : nHeight) - fromHeight > GetArg("-maximumimportrange", chainActive.Height()))
+    if ((toHeight ? toHeight : nHeight) - fromHeight > maximumImportRange)
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid range for currency state volume and rate information. Maximum range limited to " + std::to_string(GetArg("-maximportrange", chainActive.Height())));
     }
@@ -11701,7 +11706,9 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid currency specified");
         }
 
-        lStart = startEnd[1] = startEnd[0] = chainActive.LastTip() ? chainActive.LastTip()->GetHeight() : 1;
+        uint32_t nHeight = chainActive.Height();
+
+        lStart = startEnd[1] = startEnd[0] = nHeight;
 
         if (params.size() > 1)
         {
@@ -11759,6 +11766,11 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
 
         if (params.size() > 2 && currencyToCheck.IsFractional())
         {
+            if (end - start > GetArg("-maximumimportrange", chainActive.Height()))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid range for currency state volume and rate information. Maximum range limited to " + std::to_string(GetArg("-maximumimportrange", chainActive.Height())));
+            }
+
             if (currencyToCheck.systemID != ASSETCHAINS_CHAINID)
             {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Can only return conversion data for currencies with a systemID of the current chain.");
@@ -11798,11 +11810,6 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
         CCoinbaseCurrencyState currencyState;
         if (importIt != importMap.end() && it != importNextIt)
         {
-            if (end - start > GetArg("-maximumimportrange", chainActive.Height()))
-            {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid range for currency state volume and rate information. Maximum range limited to " + std::to_string(GetArg("-maximumimportrange", chainActive.Height())));
-            }
-
             // if we have imports, calculate aggregated volumes, pair volumes, and OHLC in specified currency
             // last import has final currency state for this interval
             for (; it != importNextIt; it++)
