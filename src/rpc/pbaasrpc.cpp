@@ -11651,29 +11651,21 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
             "               \"currentratio\" : n,\n"
             "           }\n"
             "           \"conversiondata\": {\n"
-            "               \"reserve1_basketcurrency\" : {\n"
-            "                   \"volume\":n,\n"
-            "                   \"open\":n,\n"
-            "                   \"high\":n,\n"
-            "                   \"low\":n,\n"
-            "                   \"close\":n,\n"
-            "               },\n"
-            "               \"reserve1_reserve2\" : {\n"
-            "                   ...\n"
-            "               },\n"
-            "               \"reserve1_reserve3\" : {\n"
-            "                   ...\n"
-            "               },\n"
-            "               \"reserve2_basketcurrency\" : {\n"
-            "                   ...\n"
-            "               },\n"
-            "               \"reserve2_reserve3\" : {\n"
-            "                   ...\n"
-            "               },\n"
-            "               \"reserve3_basketcurrency\" : {\n"
-            "                   ...\n"
-            "               },\n"
-            "           }\n"
+            "               \"volumecurrency\": \"reserveorbasket\",\n"
+            "               \"volumethisinterval\": n,\n"
+            "               \"volumepairs\": [\n"
+            "                   {\n"
+            "                       \"currency\": \"sourcecurrency\",       // Currency converting from\n"
+            "                       \"convertto\": \"destinationcurrency\", // Currency converting to\n"
+            "                       \"volume\": n,                          // Volume denominated in \"volumecurrency\"\n"
+            "                       \"open\": n,                            // Conversion rates of source currency in destination\n"
+            "                       \"high\": n,\n"
+            "                       \"low\": n,\n"
+            "                       \"close\": n\n"
+            "                   },\n"
+            "                   ...,\n"
+            "               ]\n"
+            "           },\n"
             "       },\n"
             "   ]\n"
 
@@ -11796,14 +11788,17 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
     std::map<std::pair<uint160,uint160>,std::tuple<CAmount, CAmount, CAmount, CAmount, CAmount>> pairVolumePrice;
     CAmount totalVolumeInVolumeCurrency = 0;
     CAmount stepVolumeInVolumeCurrency = 0;
+    int lastEnd = start;
 
-    for (int i = start; i <= end; i += step)
+    for (int i = start; i <= end; i += ((i + step <= end || i == end) ? step : end - i))
     {
         LOCK(cs_main);
         pairVolumePrice.clear();
         stepVolumeInVolumeCurrency = 0;
 
-        int queryStart = i == start ? i : i - (step - 1);
+        int queryStart = lastEnd;
+        lastEnd = (i + 1);
+
         auto importIt = importMap.lower_bound({queryStart, 0});
         auto importNextIt = importIt == importMap.end() ? importMap.end() : importMap.upper_bound({i, 0});
         auto it = importIt;
