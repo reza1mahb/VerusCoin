@@ -2756,6 +2756,7 @@ UniValue getimports(const UniValue& params, bool fHelp)
     uint32_t fromHeight = 0, toHeight = INT32_MAX;
     uint32_t proofHeight = 0;
     uint32_t nHeight = chainActive.Height();
+    uint32_t maximumImportRange = GetArg("-maximumimportrange", chainActive.Height());
 
     if (params.size() > 1)
     {
@@ -2764,8 +2765,17 @@ UniValue getimports(const UniValue& params, bool fHelp)
     if (params.size() > 2)
     {
         toHeight = uni_get_int64(params[2]);
-        proofHeight = toHeight < nHeight ? toHeight : nHeight;
-        toHeight = proofHeight;
+    }
+    else if (fromHeight == 0 && maximumImportRange < nHeight)
+    {
+        fromHeight = nHeight - maximumImportRange;
+    }
+    proofHeight = toHeight < nHeight ? toHeight : nHeight;
+    toHeight = proofHeight;
+
+    if ((toHeight ? toHeight : nHeight) - fromHeight > maximumImportRange)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid range for currency state volume and rate information. Maximum range limited to " + std::to_string(GetArg("-maximportrange", chainActive.Height())));
     }
 
     if (GetCurrencyDefinition(chainID, chainDef, &defHeight))
@@ -11558,19 +11568,73 @@ UniValue getinitialcurrencystate(const UniValue& params, bool fHelp)
     return ConnectedChains.GetCurrencyState(chainDef.GetID(), chainDef.startBlock - 1, true).ToUniValue();
 }
 
+size_t GetImports(const uint160 &currencyID, uint32_t fromHeight, uint32_t toHeight, std::map<std::pair<uint32_t, uint32_t>, std::tuple<CTransaction, int, CCrossChainImport, CPBaaSNotarization, std::vector<CReserveTransfer>>> &importMap)
+{
+    // which transaction are we in this block?
+    std::vector<std::pair<CAddressIndexKey, CAmount>> addressIndex;
+    uint160 searchKey = CCrossChainRPCData::GetConditionID(currencyID, CCrossChainImport::CurrencyImportKey());
+    CBlockIndex *pIndex;
+    CChainNotarizationData cnd;
+
+    size_t initialSize = importMap.size();
+
+    // get all import transactions including and since this one up to the confirmed height
+    if (GetAddressIndex(searchKey, CScript::P2IDX, addressIndex, fromHeight, toHeight))
+    {
+        for (auto &idx : addressIndex)
+        {
+            uint256 blkHash;
+            CTransaction importTx;
+            if (!idx.first.spending && myGetTransaction(idx.first.txhash, importTx, blkHash))
+            {
+                CCrossChainExport ccx;
+                CCrossChainImport cci;
+                int32_t sysCCIOut;
+                CPBaaSNotarization importNotarization;
+                int32_t importNotOut;
+                int32_t evidenceOutStart, evidenceOutEnd;
+                std::vector<CReserveTransfer> reserveTransfers;
+                uint32_t importHeight = 0;
+
+                auto importBlockIdxIt = mapBlockIndex.find(blkHash);
+                if (importBlockIdxIt != mapBlockIndex.end() && chainActive.Contains(importBlockIdxIt->second))
+                {
+                    importHeight = importBlockIdxIt->second->GetHeight();
+                }
+                else
+                {
+                    continue;
+                }
+
+                /* UniValue scrOut(UniValue::VOBJ);
+                ScriptPubKeyToUniv(importTx.vout[idx.first.index].scriptPubKey, scrOut, false);
+                printf("%s: scriptOut: %s\n", __func__, scrOut.write(1,2).c_str()); */
+
+                CCrossChainImport sysCCI;
+                if ((cci = CCrossChainImport(importTx.vout[idx.first.index].scriptPubKey)).IsValid() &&
+                    cci.GetImportInfo(importTx, importHeight, idx.first.index, ccx, sysCCI, sysCCIOut, importNotarization, importNotOut, evidenceOutStart, evidenceOutEnd, reserveTransfers))
+                {
+                    importMap[{idx.first.blockHeight, importHeight}] = {importTx, (int)idx.first.index, cci, importNotarization, reserveTransfers};
+                }
+            }
+        }
+    }
+    return importMap.size() - initialSize;
+}
+
 UniValue getcurrencystate(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 3)
     {
         throw runtime_error(
-            "getcurrencystate \"currencynameorid\" (\"n\") (\"connectedsystemid\")\n"
+            "getcurrencystate \"currencynameorid\" (\"n\") (\"conversiondatacurrency\")\n"
             "\nReturns the currency state(s) on the blockchain for any specified currency, either with all changes on this chain or relative to another system.\n"
 
             "\nArguments\n"
             "   \"currencynameorid\"                  (string)                  name or i-address of currency in question"
             "   \"n\" or \"m,n\" or \"m,n,o\"         (int or string, optional) height or inclusive range with optional step at which to get the currency state\n"
             "                                                                   If not specified, the latest currency state and height is returned\n"
-            "   (\"connectedchainid\")                (string)                  optional\n"
+            "   \"conversiondatacurrency\"            (string)                  optional - if present, market data with volumes in given currency are returned\n"
 
             "\nResult:\n"
             "   [\n"
@@ -11585,7 +11649,23 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
             "               \"supply\" : n,\n"
             "               \"reserve\" : n,\n"
             "               \"currentratio\" : n,\n"
-            "           \"}\n"
+            "           }\n"
+            "           \"conversiondata\": {\n"
+            "               \"volumecurrency\": \"reserveorbasket\",\n"
+            "               \"volumethisinterval\": n,\n"
+            "               \"volumepairs\": [\n"
+            "                   {\n"
+            "                       \"currency\": \"sourcecurrency\",       // Currency converting from\n"
+            "                       \"convertto\": \"destinationcurrency\", // Currency converting to\n"
+            "                       \"volume\": n,                          // Volume denominated in \"volumecurrency\"\n"
+            "                       \"open\": n,                            // Conversion rates of source currency in destination\n"
+            "                       \"high\": n,\n"
+            "                       \"low\": n,\n"
+            "                       \"close\": n\n"
+            "                   },\n"
+            "                   ...,\n"
+            "               ]\n"
+            "           },\n"
             "       },\n"
             "   ]\n"
 
@@ -11599,82 +11679,245 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
     CCurrencyDefinition currencyToCheck;
 
     std::string currencyStr = uni_get_str(params[0]);
-    if (currencyStr.empty() || ValidateCurrencyName(currencyStr, true, &currencyToCheck).IsNull())
-    {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid currency specified");
-    }
-    uint160 currencyID = currencyToCheck.GetID();
-
-    LOCK(cs_main);
+    uint160 currencyID;
 
     uint64_t lStart;
     uint64_t startEnd[3] = {0};
+    uint32_t start = 0, end = 0, step = 0;
 
-    lStart = startEnd[1] = startEnd[0] = chainActive.LastTip() ? chainActive.LastTip()->GetHeight() : 1;
+    // if we're supposed to get market data
+    uint160 volumePriceCurrencyID;
+    CCurrencyDefinition volumePriceCurrency;
+    std::map<std::pair<uint32_t, uint32_t>, std::tuple<CTransaction, int, CCrossChainImport, CPBaaSNotarization, std::vector<CReserveTransfer>>> importMap;
 
-    if (params.size() > 1)
     {
-        if (params[1].isStr())
+        LOCK2(cs_main, mempool.cs);
+
+        if (currencyStr.empty() || (currencyID = ValidateCurrencyName(currencyStr, true, &currencyToCheck)).IsNull())
         {
-            std::vector<std::string> retNames;
-            boost::split(retNames, uni_get_str(params[1]), boost::is_any_of(","));
-            Split(params[1].get_str(), startEnd, startEnd[0], 3);
-            if (retNames.size() == 2)
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid currency specified");
+        }
+
+        uint32_t nHeight = chainActive.Height();
+
+        lStart = startEnd[1] = startEnd[0] = nHeight;
+
+        if (params.size() > 1)
+        {
+            if (params[1].isStr())
             {
-                int64_t step = 1;
-                int64_t delta = startEnd[1] - startEnd[0];
-                while ((delta / step) > 100)
+                std::vector<std::string> retNames;
+                boost::split(retNames, uni_get_str(params[1]), boost::is_any_of(","));
+                Split(params[1].get_str(), startEnd, startEnd[0], 3);
+                if (retNames.size() == 2)
                 {
-                    step *= 10;
+                    int64_t step = 1;
+                    int64_t delta = startEnd[1] - startEnd[0];
+                    while ((delta / step) > 100)
+                    {
+                        step *= 10;
+                    }
+                    // default to step 1
+                    startEnd[2] = step;
                 }
-                // default to step 1
-                startEnd[2] = step;
+            }
+            else if (uni_get_int(params[1], -1) != -1)
+            {
+                lStart = startEnd[1] = startEnd[0] = uni_get_int(params[1], lStart);
             }
         }
-        else if (uni_get_int(params[1], -1) != -1)
+
+        if (startEnd[0] > startEnd[1])
         {
-            lStart = startEnd[1] = startEnd[0] = uni_get_int(params[1], lStart);
+            startEnd[0] = startEnd[1];
+        }
+
+        if (startEnd[1] > lStart)
+        {
+            startEnd[1] = lStart;
+        }
+
+        if (startEnd[1] < startEnd[0])
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid block range for currency state");
+        }
+
+        if (startEnd[2] == 0)
+        {
+            startEnd[2] = 1;
+        }
+
+        if (startEnd[2] > INT_MAX)
+        {
+            startEnd[2] = INT_MAX;
+        }
+
+        start = startEnd[0];
+        end = startEnd[1];
+        step = startEnd[2];
+
+        if (params.size() > 2 && currencyToCheck.IsFractional())
+        {
+            if (end - start > GetArg("-maximumimportrange", chainActive.Height()))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid range for currency state volume and rate information. Maximum range limited to " + std::to_string(GetArg("-maximumimportrange", chainActive.Height())));
+            }
+
+            if (currencyToCheck.systemID != ASSETCHAINS_CHAINID)
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Can only return conversion data for currencies with a systemID of the current chain.");
+            }
+            // get currency parameter
+            volumePriceCurrencyID = ValidateCurrencyName(uni_get_str(params[2]), true, &volumePriceCurrency);
+
+            // ensure it is a reserve or the basket currency name
+            if (volumePriceCurrencyID != currencyID &&
+                !currencyToCheck.GetCurrenciesMap().count(volumePriceCurrencyID))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Volume and pricing must be calculated in a reserve or the basket currency itself. " + uni_get_str(params[2]) + " is neither.");
+            }
+
+            // get all imports
+            GetImports(currencyID, start, end, importMap);
         }
     }
-
-    if (startEnd[0] > startEnd[1])
-    {
-        startEnd[0] = startEnd[1];
-    }
-
-    if (startEnd[1] > lStart)
-    {
-        startEnd[1] = lStart;
-    }
-
-    if (startEnd[1] < startEnd[0])
-    {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid block range for currency state");
-    }
-
-    if (startEnd[2] == 0)
-    {
-        startEnd[2] = 1;
-    }
-
-    if (startEnd[2] > INT_MAX)
-    {
-        startEnd[2] = INT_MAX;
-    }
-
-    uint32_t start = startEnd[0], end = startEnd[1], step = startEnd[2];
 
     UniValue ret(UniValue::VARR);
 
-    for (int i = start; i <= end; i += step)
+    // currencySource, currencyDest, volume in volume/price currency, starting price, highest during period, lowest during period, final price (all prices in volume/price currency)
+    std::map<std::pair<uint160,uint160>,std::tuple<CAmount, CAmount, CAmount, CAmount, CAmount>> pairVolumePrice;
+    CAmount totalVolumeInVolumeCurrency = 0;
+    CAmount stepVolumeInVolumeCurrency = 0;
+    int lastEnd = start;
+
+    for (int i = start; i <= end; i += ((i + step <= end || i == end) ? step : end - i))
     {
         LOCK(cs_main);
-        CCoinbaseCurrencyState currencyState = ConnectedChains.GetCurrencyState(currencyID, i, (i + step) > end);
+        pairVolumePrice.clear();
+        stepVolumeInVolumeCurrency = 0;
+
+        int queryStart = lastEnd;
+        lastEnd = (i + 1);
+
+        auto importIt = importMap.lower_bound({queryStart, 0});
+        auto importNextIt = importIt == importMap.end() ? importMap.end() : importMap.upper_bound({i, 0});
+        auto it = importIt;
+        CCoinbaseCurrencyState currencyState;
+        if (importIt != importMap.end() && it != importNextIt)
+        {
+            // if we have imports, calculate aggregated volumes, pair volumes, and OHLC in specified currency
+            // last import has final currency state for this interval
+            for (; it != importNextIt; it++)
+            {
+                currencyState = std::get<3>(it->second).currencyState;
+
+                // get volume and price conversion rates
+                CCurrencyValueMap prices(currencyState.currencies, currencyState.conversionPrice);
+                CCurrencyValueMap viaPrices(currencyState.currencies, currencyState.viaConversionPrice);
+                CCurrencyValueMap conversionRates(currencyState.TargetConversionPrices(volumePriceCurrencyID, prices, viaPrices));
+
+                for (auto &oneRT : std::get<4>(it->second))
+                {
+                    if (oneRT.IsConversion())
+                    {
+                        uint160 sourceCur = oneRT.FirstCurrency();
+                        uint160 destCur = oneRT.IsReserveToReserve() ? oneRT.secondReserveID : oneRT.destCurrencyID;
+
+                        CCurrencyValueMap currentRates(volumePriceCurrencyID == destCur ? conversionRates : currencyState.TargetConversionPrices(destCur, prices, viaPrices));
+
+                        CCurrencyValueMap conversionFee = oneRT.ConversionFee();
+                        CAmount thisVolume = currencyState.ReserveToNativeRaw(oneRT.FirstValue() - conversionFee.valueMap[sourceCur], conversionRates.valueMap[sourceCur]);
+                        totalVolumeInVolumeCurrency += thisVolume;
+                        stepVolumeInVolumeCurrency += thisVolume;
+                        std::get<0>(pairVolumePrice[{sourceCur,destCur}]) += thisVolume;
+
+                        // save open, high, low, close
+                        if (std::get<1>(pairVolumePrice[{sourceCur,destCur}]) == 0)
+                        {
+                            std::get<1>(pairVolumePrice[{sourceCur,destCur}]) = currentRates.valueMap[sourceCur];
+                        }
+                        std::get<2>(pairVolumePrice[{sourceCur,destCur}]) = std::max(std::get<2>(pairVolumePrice[{sourceCur,destCur}]), currentRates.valueMap[sourceCur]);
+                        if (std::get<3>(pairVolumePrice[{sourceCur,destCur}]) == 0)
+                        {
+                            std::get<3>(pairVolumePrice[{sourceCur,destCur}]) = currentRates.valueMap[sourceCur];
+                        }
+                        else
+                        {
+                            std::get<3>(pairVolumePrice[{sourceCur,destCur}]) = std::min(std::get<3>(pairVolumePrice[{sourceCur,destCur}]), currentRates.valueMap[sourceCur]);
+                        }
+                        std::get<4>(pairVolumePrice[{sourceCur,destCur}]) = currentRates.valueMap[sourceCur];
+
+                        // conversion fee is converted to native currency, unless source is already native
+                        if (sourceCur != ASSETCHAINS_CHAINID)
+                        {
+                            CAmount feeVolume = currencyState.ReserveToNativeRaw(conversionFee.valueMap[sourceCur], conversionRates.valueMap[sourceCur]);
+                            totalVolumeInVolumeCurrency += feeVolume;
+                            stepVolumeInVolumeCurrency += feeVolume;
+
+                            CCurrencyValueMap feeRates(volumePriceCurrencyID == ASSETCHAINS_CHAINID ? conversionRates : (destCur == ASSETCHAINS_CHAINID ? currentRates : currencyState.TargetConversionPrices(ASSETCHAINS_CHAINID, prices, viaPrices)));
+
+                            std::get<0>(pairVolumePrice[{sourceCur,ASSETCHAINS_CHAINID}]) += currencyState.ReserveToNativeRaw(conversionFee.valueMap[sourceCur], conversionRates.valueMap[sourceCur]);
+
+                            // save open, high, low, close for fees, in case it isn't there
+                            if (std::get<1>(pairVolumePrice[{sourceCur,ASSETCHAINS_CHAINID}]) == 0)
+                            {
+                                std::get<1>(pairVolumePrice[{sourceCur,ASSETCHAINS_CHAINID}]) = feeRates.valueMap[sourceCur];
+                            }
+                            std::get<2>(pairVolumePrice[{sourceCur,ASSETCHAINS_CHAINID}]) = std::max(std::get<2>(pairVolumePrice[{sourceCur,ASSETCHAINS_CHAINID}]), feeRates.valueMap[sourceCur]);
+                            if (std::get<3>(pairVolumePrice[{sourceCur,ASSETCHAINS_CHAINID}]) == 0)
+                            {
+                                std::get<3>(pairVolumePrice[{sourceCur,ASSETCHAINS_CHAINID}]) = feeRates.valueMap[sourceCur];
+                            }
+                            else
+                            {
+                                std::get<3>(pairVolumePrice[{sourceCur,ASSETCHAINS_CHAINID}]) = std::min(std::get<3>(pairVolumePrice[{sourceCur,ASSETCHAINS_CHAINID}]), feeRates.valueMap[sourceCur]);
+                            }
+                            std::get<4>(pairVolumePrice[{sourceCur,ASSETCHAINS_CHAINID}]) = feeRates.valueMap[sourceCur];
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            currencyState = ConnectedChains.GetCurrencyState(currencyID, i, (i + step) > end);
+        }
         UniValue entry(UniValue::VOBJ);
         entry.push_back(Pair("height", i));
         entry.push_back(Pair("blocktime", (uint64_t)chainActive.LastTip()->nTime));
-        CAmount price;
         entry.push_back(Pair("currencystate", currencyState.ToUniValue()));
+
+        if (pairVolumePrice.size())
+        {
+            UniValue conversionData(UniValue::VOBJ);
+            UniValue pairArray(UniValue::VARR);
+
+            conversionData.pushKV("volumecurrency", ConnectedChains.GetFriendlyCurrencyName(volumePriceCurrencyID));
+            conversionData.pushKV("volumethisinterval", ValueFromAmount(stepVolumeInVolumeCurrency));
+
+            // output conversions as source, destination, volume, open, high, low, close
+            for (auto &oneVolPrice : pairVolumePrice)
+            {
+                UniValue onePairEntry(UniValue::VOBJ);
+                onePairEntry.pushKV("currency", ConnectedChains.GetFriendlyCurrencyName(oneVolPrice.first.first));
+                onePairEntry.pushKV("convertto", ConnectedChains.GetFriendlyCurrencyName(oneVolPrice.first.second));
+                onePairEntry.pushKV("volume", ValueFromAmount(std::get<0>(oneVolPrice.second)));
+                onePairEntry.pushKV("open", ValueFromAmount(std::get<1>(oneVolPrice.second)));
+                onePairEntry.pushKV("high", ValueFromAmount(std::get<2>(oneVolPrice.second)));
+                onePairEntry.pushKV("low", ValueFromAmount(std::get<3>(oneVolPrice.second)));
+                onePairEntry.pushKV("close", ValueFromAmount(std::get<4>(oneVolPrice.second)));
+                pairArray.push_back(onePairEntry);
+            }
+            conversionData.pushKV("volumepairs", pairArray);
+            entry.pushKV("conversiondata",conversionData);
+        }
+
+        ret.push_back(entry);
+    }
+    if (totalVolumeInVolumeCurrency)
+    {
+        UniValue entry(UniValue::VOBJ);
+        entry.pushKV("totalvolume", ValueFromAmount(totalVolumeInVolumeCurrency));
         ret.push_back(entry);
     }
     return ret;
