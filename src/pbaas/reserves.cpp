@@ -830,7 +830,7 @@ CCurrencyValueMap CCoinbaseCurrencyState::TargetConversionPrices(const uint160 &
     }
     else
     {
-        retVal.valueMap[GetID()] = NativeToReserveRaw(SATOSHIDEN, currencyMap.valueMap[targetCurrencyID]);
+        retVal.valueMap[GetID()] = ReserveToNativeRaw(SATOSHIDEN, currencyMap.valueMap[targetCurrencyID]);
 
         for (auto &oneCur : currencies)
         {
@@ -863,7 +863,7 @@ CCurrencyValueMap CCoinbaseCurrencyState::TargetConversionPrices(const uint160 &
     }
     else
     {
-        retVal.valueMap[GetID()] = NativeToReserveRaw(SATOSHIDEN, prices.valueMap.find(targetCurrencyID)->second);
+        retVal.valueMap[GetID()] = ReserveToNativeRaw(SATOSHIDEN, prices.valueMap.find(targetCurrencyID)->second);
 
         for (auto &oneCur : currencies)
         {
@@ -906,7 +906,7 @@ CCurrencyValueMap CCoinbaseCurrencyState::TargetLastConversionPrices(const uint1
                 SATOSHIDEN :
                 NativeToReserveRaw(ReserveToNativeRaw(SATOSHIDEN, viaCurrencyMap.valueMap[targetCurrencyID]), currencyMap.valueMap[oneCur]);
         }
-        retVal.valueMap[GetID()] = NativeToReserveRaw(SATOSHIDEN, currencyMap.valueMap[targetCurrencyID]);
+        retVal.valueMap[GetID()] = ReserveToNativeRaw(SATOSHIDEN, currencyMap.valueMap[targetCurrencyID]);
     }
     return retVal;
 }
@@ -2789,7 +2789,6 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
                     {
                         if (p.evalCode == EVAL_IDENTITY_ADVANCEDRESERVATION && identity.name == anr.name && identity.parent == anr.parent)
                         {
-                            // TDOD: HARDENING potentially finish validating the fees according to the currency
                             flags |= IS_IDENTITY_DEFINITION + IS_HIGH_FEE;
                             reservationValid = advancedReservationValid = true;
                         }

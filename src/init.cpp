@@ -405,6 +405,7 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-maxconnections=<n>", strprintf(_("Maintain at most <n> connections to peers (default: %u)"), DEFAULT_MAX_PEER_CONNECTIONS));
     strUsage += HelpMessageOpt("-maxreceivebuffer=<n>", strprintf(_("Maximum per-connection receive buffer, <n>*1000 bytes (default: %u)"), 5000));
     strUsage += HelpMessageOpt("-maxsendbuffer=<n>", strprintf(_("Maximum per-connection send buffer, <n>*1000 bytes (default: %u)"), 1000));
+    strUsage += HelpMessageOpt("-maximumimportrange=<n>", strprintf(_("Maximum number of blocks for an import range query or getcurrencystate with volume, (default: unlimited)")));
     strUsage += HelpMessageOpt("-onion=<ip:port>", strprintf(_("Use separate SOCKS5 proxy to reach peers via Tor hidden services (default: %s)"), "-proxy"));
     strUsage += HelpMessageOpt("-onlynet=<net>", _("Only connect to nodes in network <net> (ipv4, ipv6 or onion)"));
     strUsage += HelpMessageOpt("-permitbaremultisig", strprintf(_("Relay non-P2SH multisig (default: %u)"), 1));
@@ -1362,6 +1363,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     // initialization, and this is the first time we can get it. store the Sapling address here
     extern boost::optional<libzcash::SaplingPaymentAddress> defaultSaplingDest;
     VERUS_DEFAULT_ZADDR = GetArg("-cheatcatcher", "");
+    VERUS_DEFAULT_ZADDR = GetArg("-stakeguard", VERUS_DEFAULT_ZADDR); // TODO: should separate stakeguard/cheatcatcher from the default change address
     VERUS_DEFAULT_ZADDR = GetArg("-defaultzaddr", VERUS_DEFAULT_ZADDR);
     libzcash::PaymentAddress addr = DecodePaymentAddress(VERUS_DEFAULT_ZADDR);
     if (VERUS_DEFAULT_ZADDR.size() > 0 && IsValidPaymentAddress(addr))
