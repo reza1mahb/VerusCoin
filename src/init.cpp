@@ -1355,7 +1355,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     }
     VERUS_DEFAULT_ARBADDRESS = DecodeDestination(GetArg("-arbitrageaddress", ""));
 
-    STORAGE_FEE_FACTOR = GetArg("-storagefeefactor", STORAGE_FEE_FACTOR);
+    STORAGE_FEE_FACTOR = GetArg("-storagefeefactor", CCurrencyDefinition::DEFAULT_STORAGE_OUTPUT_FACTOR);
 
     printf("\nCompression is: %s\n", CCompactSolutionVector::SetCompression(!GetBoolArg("-fastload", !CCompactSolutionVector::IsCompressionOn())) ? "on" : "off");
 
