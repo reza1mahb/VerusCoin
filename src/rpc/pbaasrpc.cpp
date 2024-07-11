@@ -6201,10 +6201,10 @@ UniValue estimateconversion(const UniValue& params, bool fHelp)
     if (fHelp || params.size() != 1)
     {
         throw runtime_error(
-            "estimateconversion '{\"currency\":\"name\",\"convertto\":\"name\",\"amount\":n}'\n"
+            "estimateconversion '{\"currency\":\"name\",\"convertto\":\"name\",\"amount\":n} | [array of conversions using one basket]'\n"
             "\nThis estimates conversion from one currency to another, taking into account pending conversions, fees and slippage.\n"
 
-            "\nArguments\n"
+            "\nArguments (may be one object or an array of such objects):\n"
             "1. {\n"
             "      \"currency\": \"name\"       (string, required)  Name of the source currency to send in this output, defaults to\n"
             "                                                       native of chain\n"
@@ -6216,7 +6216,7 @@ UniValue estimateconversion(const UniValue& params, bool fHelp)
             "                                                       to convert through\n"
             "   }\n"
 
-            "\nResult:\n"
+            "\nResult (if parameters were an array, the first four return values are returned 1:1 for objects passed in an array named \"conversions\"):\n"
             "   {\n"
             "      \"inputcurrencyid\": iaddress                    i-address of source currency\n"
             "      \"netinputamount\": value                        net amount in, after conversion fees in source currency\n"
@@ -6233,235 +6233,343 @@ UniValue estimateconversion(const UniValue& params, bool fHelp)
 
     CheckPBaaSAPIsValid();
 
-    bool isVerusActive = IsVerusActive();
-    CCurrencyDefinition &thisChain = ConnectedChains.ThisChain();
-    uint160 thisChainID = thisChain.GetID();
-    bool toFractional = false;
-    bool reserveToReserve = false;
-
-    auto rawCurrencyStr = uni_get_str(find_value(params[0], "currency"));
-    auto currencyStr = TrimSpaces(rawCurrencyStr, true);
-    CAmount sourceAmount = AmountFromValue(find_value(params[0], "amount"));
-    auto rawConvertToStr = uni_get_str(find_value(params[0], "convertto"));
-    auto convertToStr = TrimSpaces(rawConvertToStr, true);
-    auto rawViaStr = uni_get_str(find_value(params[0], "via"));
-    auto viaStr = TrimSpaces(rawViaStr, true);
-    bool preConvert = uni_get_bool(find_value(params[0], "preconvert"));
-
-    if (rawCurrencyStr != currencyStr ||
-        rawConvertToStr != convertToStr ||
-        rawViaStr != viaStr)
+    if (!params[0].isArray() && !params[0].isObject())
     {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "all currency names used must be valid with no leading or trailing spaces");
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "First parameter must be either a JSON object or array of objects.");
     }
 
-    LOCK(cs_main);
+    std::map<uint160, std::vector<CReserveTransfer>> currencyConversions;
 
-    uint32_t nHeight = chainActive.Height();
-
-    CCurrencyDefinition sourceCurrencyDef;
-    uint160 sourceCurrencyID;
-    if (currencyStr != "")
+    UniValue uniTransfers = params[0];
+    if (uniTransfers.isObject())
     {
-        sourceCurrencyID = ValidateCurrencyName(currencyStr, true, &sourceCurrencyDef);
-        if (sourceCurrencyID.IsNull())
-        {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "If source currency is specified, it must be valid.");
-        }
-    }
-    else
-    {
-        sourceCurrencyDef = thisChain;
-        sourceCurrencyID = sourceCurrencyDef.GetID();
-        currencyStr = thisChain.name;
+        uniTransfers = UniValue(UniValue::VARR);
+        uniTransfers.push_back(params[0]);
     }
 
-    CCurrencyDefinition convertToCurrencyDef;
-    uint160 convertToCurrencyID;
+    CCurrencyDefinition fractionalCurrency;
+    bool preConvert = false;
 
-    if (convertToStr == "")
-    {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Must specify a \"convertto\" currency for conversion estimation");
-    }
-    else
-    {
-        convertToCurrencyID = ValidateCurrencyName(convertToStr, true, &convertToCurrencyDef);
-        if (convertToCurrencyID == sourceCurrencyID)
-        {
-            convertToCurrencyID.SetNull();
-            convertToCurrencyDef = CCurrencyDefinition();
-        }
-        else if (convertToCurrencyID.IsNull())
-        {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid \"convertto\" currency " + convertToStr + " specified");
-        }
-    }
+    UniValue retVal(UniValue::VOBJ);
+    CCoinbaseCurrencyState currencyState;
 
-    CCurrencyDefinition secondCurrencyDef;
-    uint160 secondCurrencyID;
-    if (viaStr != "")
     {
-        secondCurrencyID = ValidateCurrencyName(viaStr, true, &secondCurrencyDef);
-        std::map<uint160, int32_t> viaIdxMap = secondCurrencyDef.GetCurrenciesMap();
-        if (secondCurrencyID.IsNull() ||
-            sourceCurrencyID.IsNull() ||
-            convertToCurrencyID.IsNull() ||
-            secondCurrencyID == sourceCurrencyID ||
-            secondCurrencyID == convertToCurrencyID ||
-            sourceCurrencyID == convertToCurrencyID ||
-            !viaIdxMap.count(sourceCurrencyID) ||
-            !viaIdxMap.count(convertToCurrencyID))
-        {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "To specify a fractional currency converter, \"currency\" and \"convertto\" must both be reserves of \"via\"");
-        }
-        if (preConvert)
-        {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot combine reserve to reserve conversion with preconversion");
-        }
-        CCurrencyDefinition tempDef = convertToCurrencyDef;
-        convertToCurrencyDef = secondCurrencyDef;
-        secondCurrencyDef = tempDef;
-        convertToCurrencyID = convertToCurrencyDef.GetID();
-        secondCurrencyID = secondCurrencyDef.GetID();
-    }
+        LOCK(cs_main);
+        uint32_t nHeight = chainActive.Height();
 
-    // if this is reserve to reserve "via" another currency, ensure that both "from" and "to" are reserves of the "via" currency
-    CCurrencyDefinition *pFractionalCurrency;
-    if (secondCurrencyDef.IsValid())
-    {
-        std::map<uint160, int32_t> checkMap = convertToCurrencyDef.GetCurrenciesMap();
-        if (!checkMap.count(sourceCurrencyID) || !checkMap.count(secondCurrencyID))
+        for (int i = 0; i < uniTransfers.size(); i++)
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "If \"via\" is specified, it must be a fractional currency with reserves of both source and \"convertto\" currency");
-        }
-        reserveToReserve = true;
-        pFractionalCurrency = &convertToCurrencyDef;
-    }
-    else
-    {
-        // figure out if fractional to reserve, reserve to fractional, or error
-        toFractional = convertToCurrencyDef.GetCurrenciesMap().count(sourceCurrencyID);
+            bool isVerusActive = IsVerusActive();
+            CCurrencyDefinition &thisChain = ConnectedChains.ThisChain();
+            uint160 thisChainID = thisChain.GetID();
+            bool toFractional = false;
+            bool reserveToReserve = false;
 
-        if (toFractional)
-        {
-            pFractionalCurrency = &convertToCurrencyDef;
+            auto rawCurrencyStr = uni_get_str(find_value(uniTransfers[i], "currency"));
+            auto currencyStr = TrimSpaces(rawCurrencyStr, true);
+            CAmount sourceAmount = AmountFromValue(find_value(uniTransfers[i], "amount"));
+            auto rawConvertToStr = uni_get_str(find_value(uniTransfers[i], "convertto"));
+            auto convertToStr = TrimSpaces(rawConvertToStr, true);
+            auto rawViaStr = uni_get_str(find_value(uniTransfers[i], "via"));
+            auto viaStr = TrimSpaces(rawViaStr, true);
+
+            bool tmpPreConvert = uni_get_bool(find_value(uniTransfers[i], "preconvert"));
+            if (currencyConversions.size() && tmpPreConvert != preConvert)
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Estimated conversions cannot be a mixture of pre and normal conversions");
+            }
+
+            if (rawCurrencyStr != currencyStr ||
+                rawConvertToStr != convertToStr ||
+                rawViaStr != viaStr)
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "all currency names used must be valid with no leading or trailing spaces");
+            }
+
+
+            CCurrencyDefinition sourceCurrencyDef;
+            uint160 sourceCurrencyID;
+            if (currencyStr != "")
+            {
+                sourceCurrencyID = ValidateCurrencyName(currencyStr, true, &sourceCurrencyDef);
+                if (sourceCurrencyID.IsNull())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "If source currency is specified, it must be valid.");
+                }
+            }
+            else
+            {
+                sourceCurrencyDef = thisChain;
+                sourceCurrencyID = sourceCurrencyDef.GetID();
+                currencyStr = thisChain.name;
+            }
+
+            CCurrencyDefinition convertToCurrencyDef;
+            uint160 convertToCurrencyID;
+
+            if (convertToStr == "")
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Must specify a \"convertto\" currency for conversion estimation");
+            }
+            else
+            {
+                convertToCurrencyID = ValidateCurrencyName(convertToStr, true, &convertToCurrencyDef);
+                if (convertToCurrencyID == sourceCurrencyID)
+                {
+                    convertToCurrencyID.SetNull();
+                    convertToCurrencyDef = CCurrencyDefinition();
+                }
+                else if (convertToCurrencyID.IsNull())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid \"convertto\" currency " + convertToStr + " specified");
+                }
+            }
+
+            CCurrencyDefinition secondCurrencyDef;
+            uint160 secondCurrencyID;
+            if (viaStr != "")
+            {
+                secondCurrencyID = ValidateCurrencyName(viaStr, true, &secondCurrencyDef);
+                std::map<uint160, int32_t> viaIdxMap = secondCurrencyDef.GetCurrenciesMap();
+                if (secondCurrencyID.IsNull() ||
+                    sourceCurrencyID.IsNull() ||
+                    convertToCurrencyID.IsNull() ||
+                    secondCurrencyID == sourceCurrencyID ||
+                    secondCurrencyID == convertToCurrencyID ||
+                    sourceCurrencyID == convertToCurrencyID ||
+                    !viaIdxMap.count(sourceCurrencyID) ||
+                    !viaIdxMap.count(convertToCurrencyID))
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "To specify a fractional currency converter, \"currency\" and \"convertto\" must both be reserves of \"via\"");
+                }
+                if (preConvert)
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot combine reserve to reserve conversion with preconversion");
+                }
+                CCurrencyDefinition tempDef = convertToCurrencyDef;
+                convertToCurrencyDef = secondCurrencyDef;
+                secondCurrencyDef = tempDef;
+                convertToCurrencyID = convertToCurrencyDef.GetID();
+                secondCurrencyID = secondCurrencyDef.GetID();
+            }
+
+            // if this is reserve to reserve "via" another currency, ensure that both "from" and "to" are reserves of the "via" currency
+            if (secondCurrencyDef.IsValid())
+            {
+                std::map<uint160, int32_t> checkMap = convertToCurrencyDef.GetCurrenciesMap();
+                if (!checkMap.count(sourceCurrencyID) || !checkMap.count(secondCurrencyID))
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "If \"via\" is specified, it must be a fractional currency with reserves of both source and \"convertto\" currency");
+                }
+                reserveToReserve = true;
+                fractionalCurrency = convertToCurrencyDef;
+            }
+            else
+            {
+                // figure out if fractional to reserve, reserve to fractional, or error
+                toFractional = convertToCurrencyDef.GetCurrenciesMap().count(sourceCurrencyID);
+
+                if (toFractional)
+                {
+                    fractionalCurrency = convertToCurrencyDef;
+                }
+                else if (!sourceCurrencyDef.GetCurrenciesMap().count(convertToCurrencyID))
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Source currency cannot be converted to destination");
+                }
+                else
+                {
+                    fractionalCurrency = sourceCurrencyDef;
+                }
+            }
+
+            if (!fractionalCurrency.IsFractional() && (!preConvert || fractionalCurrency.startBlock <= nHeight))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, fractionalCurrency.name + " must be a fractional currency or prior to start block to estimate a conversion price");
+            }
+
+            uint32_t flags = CReserveTransfer::VALID;
+            if (!convertToStr.empty())
+            {
+                flags += CReserveTransfer::CONVERT;
+                if (preConvert)
+                {
+                    if (!secondCurrencyID.IsNull())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "cannot preconvert and also convert reserve to reserve");
+                    }
+                    flags += CReserveTransfer::PRECONVERT;
+                }
+                if (reserveToReserve)
+                {
+                    flags += CReserveTransfer::RESERVE_TO_RESERVE;
+                }
+                else if (!toFractional)
+                {
+                    flags += CReserveTransfer::IMPORT_TO_SOURCE;
+                }
+            }
+
+            CReserveTransfer checkTransfer(flags,
+                                        sourceCurrencyID,
+                                        sourceAmount,
+                                        ASSETCHAINS_CHAINID,
+                                        ConnectedChains.ThisChain().GetTransactionTransferFee(),
+                                        convertToCurrencyID,
+                                        DestinationToTransferDestination(CKeyID(convertToCurrencyID)),
+                                        secondCurrencyID);
+
+            uint160 importCurrencyID = checkTransfer.GetImportCurrency();
+            if (currencyConversions.size() && !currencyConversions.count(importCurrencyID))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "All conversions to estimate must be to, from, or via the same fractional currency");
+            }
+            currencyConversions[importCurrencyID].push_back(checkTransfer);
         }
-        else if (!sourceCurrencyDef.GetCurrenciesMap().count(convertToCurrencyID))
+
+        // now, get last notarization and all pending conversion transactions, calculate new conversions, including the new one to estimate and
+        // return results
+        CPBaaSNotarization notarization;
+        uint160 fractionalCurrencyID = fractionalCurrency.GetID();
+
+        CUTXORef lastUnspentUTXO;
+        CTransaction lastUnspentTx;
+
+        if (fractionalCurrency.systemID == ASSETCHAINS_CHAINID)
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Source currency cannot be converted to destination");
+            notarization.GetLastUnspentNotarization(fractionalCurrencyID,
+                                                    lastUnspentUTXO.hash,
+                                                    *((int32_t *)&lastUnspentUTXO.n),
+                                                    &lastUnspentTx);
         }
         else
         {
-            pFractionalCurrency = &sourceCurrencyDef;
-        }
-    }
-
-    if (!pFractionalCurrency->IsFractional() && (!preConvert || pFractionalCurrency->startBlock <= nHeight))
-    {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, pFractionalCurrency->name + " must be a fractional currency or prior to start block to estimate a conversion price");
-    }
-
-    uint32_t flags = CReserveTransfer::VALID;
-    if (!convertToStr.empty())
-    {
-        flags += CReserveTransfer::CONVERT;
-        if (preConvert)
-        {
-            if (!secondCurrencyID.IsNull())
+            if (preConvert && fractionalCurrency.launchSystemID != ASSETCHAINS_CHAINID)
             {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "cannot preconvert and also convert reserve to reserve");
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Can only preconvert to currencies launching on the current chain");
             }
-            flags += CReserveTransfer::PRECONVERT;
+            CChainNotarizationData cnd;
+            if (GetNotarizationData(fractionalCurrencyID, cnd))
+            {
+                notarization = cnd.vtx[cnd.forks[cnd.bestChain].back()].second;
+            }
         }
-        if (reserveToReserve)
+
+        if (!notarization.IsValid())
         {
-            flags += CReserveTransfer::RESERVE_TO_RESERVE;
+            throw JSONRPCError(RPC_TRANSACTION_ERROR, "Cannot find valid notarization for " + fractionalCurrency.name);
         }
-        else if (!toFractional)
-        {
-            flags += CReserveTransfer::IMPORT_TO_SOURCE;
-        }
+
+        currencyState = ConnectedChains.AddPendingConversions(fractionalCurrency,
+                                                                notarization,
+                                                                notarization.notarizationHeight,
+                                                                nHeight,
+                                                                0,
+                                                                currencyConversions.begin()->second);
     }
 
-    CReserveTransfer checkTransfer(flags,
-                                   sourceCurrencyID,
-                                   sourceAmount,
-                                   ASSETCHAINS_CHAINID,
-                                   ConnectedChains.ThisChain().GetTransactionTransferFee(),
-                                   convertToCurrencyID,
-                                   DestinationToTransferDestination(CKeyID(convertToCurrencyID)),
-                                   secondCurrencyID);
-
-    // now, get last notarization and all pending conversion transactions, calculate new conversions, including the new one to estimate and
-    // return results
-    CPBaaSNotarization notarization;
-    uint160 fractionalCurrencyID = pFractionalCurrency->GetID();
-
-    CUTXORef lastUnspentUTXO;
-    CTransaction lastUnspentTx;
-
-    if (pFractionalCurrency->systemID == ASSETCHAINS_CHAINID)
-    {
-        notarization.GetLastUnspentNotarization(fractionalCurrencyID,
-                                                lastUnspentUTXO.hash,
-                                                *((int32_t *)&lastUnspentUTXO.n),
-                                                &lastUnspentTx);
-    }
-    else
-    {
-        if (preConvert && pFractionalCurrency->launchSystemID != ASSETCHAINS_CHAINID)
-        {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Can only preconvert to currencies launching on the current chain");
-        }
-        CChainNotarizationData cnd;
-        if (GetNotarizationData(fractionalCurrencyID, cnd))
-        {
-            notarization = cnd.vtx[cnd.forks[cnd.bestChain].back()].second;
-        }
-    }
-
-    if (!notarization.IsValid())
-    {
-        throw JSONRPCError(RPC_TRANSACTION_ERROR, "Cannot find valid notarization for " + pFractionalCurrency->name);
-    }
-
-    UniValue retVal(UniValue::VOBJ);
-    CCoinbaseCurrencyState currencyState = ConnectedChains.AddPendingConversions(*pFractionalCurrency,
-                                                                                 notarization,
-                                                                                 notarization.notarizationHeight,
-                                                                                 nHeight,
-                                                                                 0,
-                                                                                 std::vector<CReserveTransfer>({checkTransfer}));
     if (!currencyState.IsValid())
     {
-        throw JSONRPCError(RPC_TRANSACTION_ERROR, "Cannot process conversion parameters for " + pFractionalCurrency->name);
+        throw JSONRPCError(RPC_TRANSACTION_ERROR, "Cannot process conversion parameters for " + fractionalCurrency.name);
     }
 
-    CAmount conversionFee = CReserveTransactionDescriptor::CalculateConversionFeeNoMin(sourceAmount);
-    if (reserveToReserve)
+    // if we have only an object parameter, return without an array
+    if (params[0].isObject())
     {
-        conversionFee = conversionFee << 1;
-    }
-    CAmount startingAmount = sourceAmount - conversionFee;
-    CAmount amountOut = 0;
+        CReserveTransfer oneTransfer(currencyConversions.begin()->second.back());
+        CAmount conversionFee = CReserveTransactionDescriptor::CalculateConversionFeeNoMin(oneTransfer.FirstValue());
+        if (oneTransfer.IsReserveToReserve())
+        {
+            conversionFee = conversionFee << 1;
+        }
+        CAmount startingAmount = oneTransfer.FirstValue() - conversionFee;
+        CAmount amountOut = 0;
 
-    if (checkTransfer.IsImportToSource())
+        if (oneTransfer.IsImportToSource())
+        {
+            amountOut = currencyState.NativeToReserveRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[oneTransfer.destCurrencyID]]);
+        }
+        else
+        {
+            amountOut = currencyState.ReserveToNativeRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[oneTransfer.FirstCurrency()]]);
+            if (oneTransfer.IsReserveToReserve())
+            {
+                amountOut = currencyState.NativeToReserveRaw(amountOut, currencyState.viaConversionPrice[currencyState.GetReserveMap()[oneTransfer.secondReserveID]]);
+            }
+        }
+
+        retVal.pushKV("inputcurrencyid", EncodeDestination(CIdentityID(oneTransfer.FirstCurrency())));
+        retVal.pushKV("netinputamount", ValueFromAmount(startingAmount));
+        retVal.pushKV("outputcurrencyid", EncodeDestination(CIdentityID(oneTransfer.IsReserveToReserve() ? oneTransfer.secondReserveID : oneTransfer.destCurrencyID)));
+        retVal.pushKV("estimatedcurrencyout", ValueFromAmount(amountOut));
+    }
+
+    // if we have only an object parameter, return without an array
+    if (params[0].isObject())
     {
-        amountOut = currencyState.NativeToReserveRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[convertToCurrencyID]]);
+        CReserveTransfer oneTransfer(currencyConversions.begin()->second.back());
+        CAmount conversionFee = CReserveTransactionDescriptor::CalculateConversionFeeNoMin(oneTransfer.FirstValue());
+        if (oneTransfer.IsReserveToReserve())
+        {
+            conversionFee = conversionFee << 1;
+        }
+        CAmount startingAmount = oneTransfer.FirstValue() - conversionFee;
+        CAmount amountOut = 0;
+
+        if (oneTransfer.IsImportToSource())
+        {
+            amountOut = currencyState.NativeToReserveRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[oneTransfer.destCurrencyID]]);
+        }
+        else
+        {
+            amountOut = currencyState.ReserveToNativeRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[oneTransfer.FirstCurrency()]]);
+            if (oneTransfer.IsReserveToReserve())
+            {
+                amountOut = currencyState.NativeToReserveRaw(amountOut, currencyState.viaConversionPrice[currencyState.GetReserveMap()[oneTransfer.secondReserveID]]);
+            }
+        }
+
+        retVal.pushKV("inputcurrencyid", EncodeDestination(CIdentityID(oneTransfer.FirstCurrency())));
+        retVal.pushKV("netinputamount", ValueFromAmount(startingAmount));
+        retVal.pushKV("outputcurrencyid", EncodeDestination(CIdentityID(oneTransfer.IsReserveToReserve() ? oneTransfer.secondReserveID : oneTransfer.destCurrencyID)));
+        retVal.pushKV("estimatedcurrencyout", ValueFromAmount(amountOut));
     }
     else
     {
-        amountOut = currencyState.ReserveToNativeRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[sourceCurrencyID]]);
-        if (reserveToReserve)
+        UniValue retArr(UniValue::VARR);
+        for (auto &oneTransfer : currencyConversions.begin()->second)
         {
-            amountOut = currencyState.NativeToReserveRaw(amountOut, currencyState.viaConversionPrice[currencyState.GetReserveMap()[secondCurrencyID]]);
+            UniValue retObj(UniValue::VOBJ);
+            CAmount conversionFee = CReserveTransactionDescriptor::CalculateConversionFeeNoMin(oneTransfer.FirstValue());
+            if (oneTransfer.IsReserveToReserve())
+            {
+                conversionFee = conversionFee << 1;
+            }
+            CAmount startingAmount = oneTransfer.FirstValue() - conversionFee;
+            CAmount amountOut = 0;
+
+            if (oneTransfer.IsImportToSource())
+            {
+                amountOut = currencyState.NativeToReserveRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[oneTransfer.destCurrencyID]]);
+            }
+            else
+            {
+                amountOut = currencyState.ReserveToNativeRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[oneTransfer.FirstCurrency()]]);
+                if (oneTransfer.IsReserveToReserve())
+                {
+                    amountOut = currencyState.NativeToReserveRaw(amountOut, currencyState.viaConversionPrice[currencyState.GetReserveMap()[oneTransfer.secondReserveID]]);
+                }
+            }
+
+            retObj.pushKV("inputcurrencyid", EncodeDestination(CIdentityID(oneTransfer.FirstCurrency())));
+            retObj.pushKV("netinputamount", ValueFromAmount(startingAmount));
+            retObj.pushKV("outputcurrencyid", EncodeDestination(CIdentityID(oneTransfer.IsReserveToReserve() ? oneTransfer.secondReserveID : oneTransfer.destCurrencyID)));
+            retObj.pushKV("estimatedcurrencyout", ValueFromAmount(amountOut));
+            retArr.push_back(retObj);
         }
+        retVal.pushKV("conversions", retArr);
     }
 
-    retVal.pushKV("inputcurrencyid", EncodeDestination(CIdentityID(sourceCurrencyID)));
-    retVal.pushKV("netinputamount", ValueFromAmount(startingAmount));
-    retVal.pushKV("outputcurrencyid", EncodeDestination(CIdentityID(reserveToReserve ? secondCurrencyID : convertToCurrencyID)));
-    retVal.pushKV("estimatedcurrencyout", ValueFromAmount(amountOut));
     retVal.pushKV("estimatedcurrencystate", currencyState.ToUniValue());
     return retVal;
 }

@@ -1786,6 +1786,7 @@ public:
     bool IsCurrencyDefinition() const { return flags & IS_CURRENCY_DEFINITION; }
     bool IsNotaryPrioritized() const { return flags & IS_CHAIN_NOTARIZATION; }
     bool IsEvidenceOrStorage() const { return flags & IS_EVIDENCE_STORAGE; }
+    bool IsStorage() const { return IsEvidenceOrStorage() && !(IsImport() || IsNotaryPrioritized()); }
     bool IsIdentityDefinition() const { return flags & IS_IDENTITY_DEFINITION; }
     bool IsHighFee() const { return flags & IS_HIGH_FEE; }
 

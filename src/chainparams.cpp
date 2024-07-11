@@ -195,8 +195,6 @@ public:
         bech32HRPs[SAPLING_EXTENDED_SPEND_KEY]   = "secret-extended-key-main";
         bech32HRPs[SAPLING_EXTENDED_FVK]         = "zxviews";
 
-        vFixedSeeds = std::vector<SeedSpec6>(pnSeed6_main, pnSeed6_main + ARRAYLEN(pnSeed6_main));
-
         fMiningRequiresPeers = true;
         fDefaultConsistencyChecks = false;
         fRequireStandard = true;
@@ -296,8 +294,8 @@ void *chainparams_commandline(void *ptr)
 
         if (_IsVerusMainnetActive())
         {
+            mainParams.vFixedSeeds = std::vector<SeedSpec6>(pnSeed6_main, pnSeed6_main + ARRAYLEN(pnSeed6_main));
             mainParams.vSeeds.push_back(CDNSSeedData("verus.io", "seeds.verus.io"));
-            mainParams.vSeeds.push_back(CDNSSeedData("komodoplatform.com", "seeds.komodoplatform.com")); // @kolo - old static dns seeds
 
             mainParams.consensus.vUpgrades[Consensus::UPGRADE_SAPLING].nActivationHeight = 227520;
             mainParams.consensus.vUpgrades[Consensus::UPGRADE_OVERWINTER].nActivationHeight = 227520;
@@ -327,6 +325,7 @@ void *chainparams_commandline(void *ptr)
         else
         {
             mainParams.vSeeds.clear();
+            mainParams.vFixedSeeds.clear();
             if (_IsVerusActive())
             {
                 mainParams.vFixedSeeds = std::vector<SeedSpec6>(pnSeed6_test, pnSeed6_test + ARRAYLEN(pnSeed6_test));
