@@ -1817,7 +1817,7 @@ CAmount GetMinRelayFeeByOutputs(const CReserveTransactionDescriptor &txDesc, con
     {
         int64_t extraOutputCostThreshold = CScript::MAX_SCRIPT_ELEMENT_SIZE / 3;
         int64_t extraStorageSpace = 0;
-        bool isStorageTx = txDesc.IsEvidenceOrStorage() && !(txDesc.IsImport() || txDesc.IsNotaryPrioritized());
+        bool isStorageTx = txDesc.IsStorage();
         for (int i = 0; i < tx.vout.size(); i++)
         {
             auto &oneOut = tx.vout[i];
@@ -2257,65 +2257,69 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
         int64_t maxFreeSizeLimit = GetArg("-limitfreerelay", 15)*1000;
         int64_t defaultLimitRate = maxFreeSizeLimit * 10;
 
-        CAmount minFee = GetMinRelayFeeByOutputs(txDesc, tx, state, identityFeeFactor);
-        if (state.IsError())
+        if (fLimitFree)
         {
-            return false;
-        }
-
-        if (GetBoolArg("-relaypriority", false) && nFees < minFee && !AllowFree(view.GetPriority(tx, chainActive.Height() + 1))) {
-            fprintf(stderr,"accept failure.6\n");
-            return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient priority for fee");
-        }
-
-        // Continuously rate-limit free or very-low-fee transactions
-        // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
-        // be annoying or make others' transactions take longer to confirm.
-        //
-        // protect against low fee spam via imports
-        // or notarizations before mainnet, use priority, flags, or ensure that there is always
-        // sufficient fee on txes that don't have it and remove these exemptions. right now,
-        // there are some beginning and end imports that don't have fees on a launch. We can
-        // recognize those imports, exempt block 1, or consider using fees from the initial
-        // currency definition. Exports pay delayed fees back, imports allow fees to keep flowing.
-        if (!(txDesc.IsValid() && (txDesc.IsImport() || txDesc.IsExport() || txDesc.IsNotaryPrioritized())) &&
-            fLimitFree &&
-            nFees < minFee)
-        {
-            static CCriticalSection csFreeLimiter;
-            static double dFreeCount;
-            static int64_t nLastTime;
-            int64_t nNow = GetTime();
-
-            LOCK(csFreeLimiter);
-
-            // Use an exponentially decaying ~10-minute window:
-            dFreeCount *= pow(1.0 - 1.0/600.0, (double)(nNow - nLastTime));
-            nLastTime = nNow;
-
-            // -limitfreerelay unit is thousand-bytes-per-minute
-            // At default rate it would take over a month to fill 1GB
-            if ((dFreeCount + nSize) >= defaultLimitRate || nSize > maxFreeSizeLimit)
+            CAmount minFee = GetMinRelayFeeByOutputs(txDesc, tx, state, identityFeeFactor);
+            if (state.IsError())
             {
-                fprintf(stderr,"AcceptToMemoryPool failure.7\n");
-                return state.DoS(0, error("AcceptToMemoryPool: free transaction rejected by rate limiter"), REJECT_INSUFFICIENTFEE, "rate limited free transaction");
+                return false;
             }
-            LogPrint("mempool", "Rate limit dFreeCount: %g => %g\n", dFreeCount, dFreeCount + nSize);
-            dFreeCount += nSize;
-        }
 
-        // make sure this will check any normal error case and not fail with exchanges, exports/imports, identities, etc.
-        if ((!txDesc.IsValid() || !txDesc.IsHighFee()) &&
-            fRejectAbsurdFee &&
-            nFees > minFee * 10000 &&
-            nFees > (GetMinRelayFee(tx, nSize, defaultLimitRate != 0) * 10000) &&
-            nFees > nValueOut/19)
-        {
-            string errmsg = strprintf("absurdly high fees %s, %d > %d",
-                                      hash.ToString(),
-                                      nFees, ::minRelayTxFee.GetFee(nSize) * 10000);
-            LogPrint("mempool", errmsg.c_str());
-            return state.Error("AcceptToMemoryPool: " + errmsg);
+            if (GetBoolArg("-relaypriority", false) &&
+                nFees < minFee &&
+                !AllowFree(view.GetPriority(tx, chainActive.Height() + 1)))
+            {
+                fprintf(stderr,"accept failure.6\n");
+                return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient priority for fee");
+            }
+
+            // Continuously rate-limit free or very-low-fee transactions
+            // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
+            // be annoying or make others' transactions take longer to confirm.
+            //
+            // protect against low fee spam via imports
+            // or notarizations before mainnet, use priority, flags, or ensure that there is always
+            // sufficient fee on txes that don't have it and remove these exemptions. right now,
+            // there are some beginning and end imports that don't have fees on a launch. We can
+            // recognize those imports, exempt block 1, or consider using fees from the initial
+            // currency definition. Exports pay delayed fees back, imports allow fees to keep flowing.
+            if (!(txDesc.IsValid() && (txDesc.IsImport() || txDesc.IsExport() || txDesc.IsNotaryPrioritized())) && nFees < minFee)
+            {
+                static CCriticalSection csFreeLimiter;
+                static double dFreeCount;
+                static int64_t nLastTime;
+                int64_t nNow = GetTime();
+
+                LOCK(csFreeLimiter);
+
+                // Use an exponentially decaying ~10-minute window:
+                dFreeCount *= pow(1.0 - 1.0/600.0, (double)(nNow - nLastTime));
+                nLastTime = nNow;
+
+                // -limitfreerelay unit is thousand-bytes-per-minute
+                // At default rate it would take over a month to fill 1GB
+                if ((dFreeCount + nSize) >= defaultLimitRate || nSize > maxFreeSizeLimit)
+                {
+                    fprintf(stderr,"AcceptToMemoryPool failure.7\n");
+                    return state.DoS(0, error("AcceptToMemoryPool: free transaction rejected by rate limiter"), REJECT_INSUFFICIENTFEE, "rate limited free transaction");
+                }
+                LogPrint("mempool", "Rate limit dFreeCount: %g => %g\n", dFreeCount, dFreeCount + nSize);
+                dFreeCount += nSize;
+            }
+
+            // make sure this will check any normal error case and not fail with exchanges, exports/imports, identities, etc.
+            if ((!txDesc.IsValid() || !txDesc.IsHighFee()) &&
+                fRejectAbsurdFee &&
+                nFees > minFee * 10000 &&
+                nFees > (GetMinRelayFee(tx, nSize, defaultLimitRate != 0) * 10000) &&
+                nFees > nValueOut/19)
+            {
+                string errmsg = strprintf("absurdly high fees %s, %d > %d",
+                                        hash.ToString(),
+                                        nFees, ::minRelayTxFee.GetFee(nSize) * 10000);
+                LogPrint("mempool", errmsg.c_str());
+                return state.Error("AcceptToMemoryPool: " + errmsg);
+            }
         }
 
         // Check against previous transactions
@@ -5458,7 +5462,7 @@ bool static DisconnectTip(CValidationState &state, const CChainParams& chainpara
                 {
                     continue;
                 }
-                AcceptToMemoryPool(mempool, stateDummy, tx, false, true, NULL);
+                AcceptToMemoryPool(mempool, stateDummy, tx, true, true, NULL);
             }
             // if this is a staking tx, and we are on Verus Sapling with nothing at stake solution,
             // save staking tx as a possible cheat
