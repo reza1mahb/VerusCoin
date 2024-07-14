@@ -1229,6 +1229,8 @@ public:
     bool DoPreconvertReserveTransferPrecheck(uint32_t height) const;
     bool DoImportPreconvertReserveTransferPrecheck(uint32_t height) const;
     bool IsEnhancedDustCheck(uint32_t height) const;
+    bool CrossChainPBaaSProofFix(const uint160 &sysID, uint32_t height) const;
+    uint32_t GetChainBranchId(const uint160 &sysID, int nHeight, const Consensus::Params& params) const;
 
     std::vector<CCurrencyDefinition> GetMergeMinedChains()
     {
@@ -1405,6 +1407,18 @@ public:
     {
         static uint160 nameSpace;
         static uint160 key = CVDXF_Data::GetDataKey(PBaaSUpgradeKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string PBaaSCrossChainProofUpgradeKeyName()
+    {
+        return "vrsc::system.upgradedata.pbaascrosschainproofupgrade";
+    }
+
+    static uint160 PBaaSCrossChainProofUpgradeKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(PBaaSCrossChainProofUpgradeKeyName(), nameSpace);
         return key;
     }
 };
