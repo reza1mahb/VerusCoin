@@ -4902,7 +4902,7 @@ UniValue getnotarizationproofs(const UniValue& params, bool fHelp)
                         int loopNum = std::min(std::max(rangeLen, (int)CPBaaSNotarization::EXPECT_MIN_HEADER_PROOFS),
                                               std::min((int)CPBaaSNotarization::MAX_HEADER_PROOFS_PER_PROOF, rangeLen / 10));
 
-                        printf("oldval: %d, newval: %d\n", std::min(std::max(rangeLen / CPBaaSNotarization::NUM_HEADER_PROOF_RANGE_DIVISOR,
+                        LogPrintf("oldval: %d, newval: %d\n", std::min(std::max(rangeLen / CPBaaSNotarization::NUM_HEADER_PROOF_RANGE_DIVISOR,
                                                                     (int)CPBaaSNotarization::EXPECT_MIN_HEADER_PROOFS),
                                                                     (int)CPBaaSNotarization::MAX_HEADER_PROOFS_PER_PROOF),
                                                            loopNum);

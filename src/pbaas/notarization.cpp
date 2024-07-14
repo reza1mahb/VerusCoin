@@ -3988,7 +3988,7 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
 
                             try
                             {
-                                posNewFormat = CConstVerusSolutionVector::GetVersionByHeight(posBlockHeaderAndProof.GetBlockHeight()) >= CActivationHeight::ACTIVATE_PBAAS;
+                                posNewFormat = ConnectedChains.CrossChainPBaaSProofFix(futureProofRoot.systemID, height);
 
                                 posSourceProof = CPartialTransactionProof();
                                 ds >> posSourceProof;
@@ -4314,7 +4314,7 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                         }
 
                         // now verify the stake tx signature, even if it spends an ID
-                        auto consensusBranchId = CurrentEpochBranchId(stakeParams.blkHeight, Params().GetConsensus());
+                        auto consensusBranchId = ConnectedChains.GetChainBranchId(futureProofRoot.systemID, height, Params().GetConsensus());
 
                         std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> idAddressMap;
                         for (auto &oneId : stakeSpendingIDs)
