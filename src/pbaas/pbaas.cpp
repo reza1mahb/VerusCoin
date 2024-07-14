@@ -17,6 +17,7 @@
 #include "transaction_builder.h"
 #include "deprecation.h"
 #include "cc/StakeGuard.h"
+#include "consensus/upgrades.h"
 #include <map>
 #include <random>
 
@@ -6630,6 +6631,30 @@ bool CConnectedChains::IsEnhancedDustCheck(uint32_t height) const
 {
     uint32_t triggerHeight = IsVerusMainnetActive() ? 3093850 : (vARRRChainID() == ASSETCHAINS_CHAINID ? 107590 : 0);
     return height >= triggerHeight;
+}
+
+#define PBAAS_CROSS_CHAIN_PROOF_FIX_HEIGHT 3143920
+
+bool CConnectedChains::CrossChainPBaaSProofFix(const uint160 &sysID, uint32_t height) const
+{
+    auto oracleProofFix = activeUpgradesByKey.find(CConnectedChains::PBaaSCrossChainProofUpgradeKey());
+    uint32_t fixHeight = oracleProofFix == activeUpgradesByKey.end() ? PBAAS_CROSS_CHAIN_PROOF_FIX_HEIGHT : oracleProofFix->second.upgradeBlockHeight;
+    if (sysID == VERUS_CHAINID && !PBAAS_TESTMODE)
+    {
+        return height > 2549420; // This was the Verus PBaaS activation height
+    }
+    return !IsVerusMainnetActive() || height > fixHeight;
+}
+
+uint32_t CConnectedChains::GetChainBranchId(const uint160 &sysID, int height, const Consensus::Params& params) const
+{
+    auto oracleProofFix = activeUpgradesByKey.find(CConnectedChains::PBaaSCrossChainProofUpgradeKey());
+    uint32_t fixHeight = oracleProofFix == activeUpgradesByKey.end() ? PBAAS_CROSS_CHAIN_PROOF_FIX_HEIGHT : oracleProofFix->second.upgradeBlockHeight;
+    if (sysID == VERUS_CHAINID && !PBAAS_TESTMODE)
+    {
+        return CurrentEpochBranchId(height, params);
+    }
+    return !IsVerusMainnetActive() || height > fixHeight ? NetworkUpgradeInfo[Consensus::UPGRADE_SAPLING].nBranchId : CurrentEpochBranchId(height, params);
 }
 
 bool CConnectedChains::ConfigureEthBridge(bool callToCheck)
