@@ -1649,6 +1649,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "listreceivedbyaccount", 2 },
     { "getbalance", 1 },
     { "getbalance", 2 },
+    { "getcurrencybalance", 0},
     { "getcurrencybalance", 1},
     { "getcurrencybalance", 2},
     //{ "getcurrencyconverters", 0},
