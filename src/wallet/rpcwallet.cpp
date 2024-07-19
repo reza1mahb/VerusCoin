@@ -6045,32 +6045,36 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
     std::string fromaddress;
     CCurrencyValueMap currencyFilter;
 
-    // Check that the from address is valid
-    if (params[0].isObject())
+    UniValue param0 = params[0];
+
+    if (param0.read(uni_get_str(params[0])))
     {
-        UniValue currenciesUni;
-        fromaddress = uni_get_str(find_value(params[0], "address"));
-        currenciesUni = find_value(params[0], "currency");
-        if (!currenciesUni.isNull())
+        if (param0.isObject())
         {
-            if (!currenciesUni.isArray())
+            UniValue currenciesUni;
+            fromaddress = uni_get_str(find_value(param0, "address"));
+            currenciesUni = find_value(param0, "currency");
+            if (!currenciesUni.isNull())
             {
-                if (!currenciesUni.isStr())
+                if (!currenciesUni.isArray())
                 {
-                    throw JSONRPCError(RPC_INVALID_PARAMETER, "If \"currency\" is specified, it must be a currency name or ID string or valid array of currency name or ID strings");
+                    if (!currenciesUni.isStr())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "If \"currency\" is specified, it must be a currency name or ID string or valid array of currency name or ID strings");
+                    }
+                    UniValue curArray(UniValue::VARR);
+                    curArray.push_back(currenciesUni);
+                    currenciesUni = curArray;
                 }
-                UniValue curArray(UniValue::VARR);
-                curArray.push_back(currenciesUni);
-                currenciesUni = curArray;
-            }
-            for (int i = 0; i < currenciesUni.size(); i++)
-            {
-                uint160 curID = ValidateCurrencyName(uni_get_str(currenciesUni[i]), true);
-                if (curID.IsNull())
+                for (int i = 0; i < currenciesUni.size(); i++)
                 {
-                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid currency name: " + uni_get_str(currenciesUni[i]));
+                    uint160 curID = ValidateCurrencyName(uni_get_str(currenciesUni[i]), true);
+                    if (curID.IsNull())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid currency name: " + uni_get_str(currenciesUni[i]));
+                    }
+                    currencyFilter.valueMap[curID] = 1;
                 }
-                currencyFilter.valueMap[curID] = 1;
             }
         }
     }
