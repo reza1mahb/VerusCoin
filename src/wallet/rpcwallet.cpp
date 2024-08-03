@@ -5657,7 +5657,7 @@ CAmount getBalanceTaddr(std::string transparentAddress, int minDepth=1, bool ign
     return balance;
 }
 
-CCurrencyValueMap getCurrencyBalanceTaddr(std::string transparentAddress, int minDepth=1, bool ignoreUnspendable=true, bool includeShared=false) {
+CCurrencyValueMap getCurrencyBalanceTaddr(std::string transparentAddress, int minDepth=1, bool ignoreUnspendable=true, bool includeShared=false, std::map<CTxDestination, CCurrencyValueMap> *pAddressBreakdown=nullptr, const CCurrencyValueMap &currencyFilter=CCurrencyValueMap()) {
     CTxDestination destination;
     vector<COutput> vecOutputs;
     CCurrencyValueMap balance;
@@ -5679,10 +5679,15 @@ CCurrencyValueMap getCurrencyBalanceTaddr(std::string transparentAddress, int mi
 
     LOCK2(cs_main, pwalletMain->cs_wallet);
 
-    pwalletMain->AvailableCoins(vecOutputs, false, NULL, true, true, true, false, true, includeShared);
+    pwalletMain->AvailableReserveCoins(vecOutputs, false, nullptr, true,
+                                       currencyFilter.valueMap.size() ? currencyFilter.valueMap.count(ASSETCHAINS_CHAINID) : true,
+                                       (wildCardRAddress || wildCardiAddress) ? nullptr : &destination,
+                                       currencyFilter.valueMap.size() ? &currencyFilter : nullptr,
+                                       true, includeShared);
 
     BOOST_FOREACH(const COutput& out, vecOutputs)
     {
+        CTxDestination outputDest;
         if (out.nDepth < minDepth)
         {
             continue;
@@ -5714,6 +5719,7 @@ CCurrencyValueMap getCurrencyBalanceTaddr(std::string transparentAddress, int mi
                         (oneAddr.which() == COptCCParams::ADDRTYPE_PKH || oneAddr.which() == COptCCParams::ADDRTYPE_PK) &&
                         pwalletMain->HaveKey(GetDestinationID(oneAddr)))
                     {
+                        outputDest = oneAddr;
                         keepCount++;
                     }
                     if (keepCount < nRequired &&
@@ -5722,6 +5728,7 @@ CCurrencyValueMap getCurrencyBalanceTaddr(std::string transparentAddress, int mi
                         pwalletMain->GetIdentity(CIdentityID(GetDestinationID(oneAddr)), keyAndIdentity) &&
                         keyAndIdentity.first.CanSign())
                     {
+                        outputDest = oneAddr;
                         keepCount++;
                     }
                     if (keepCount >= nRequired)
@@ -5729,7 +5736,7 @@ CCurrencyValueMap getCurrencyBalanceTaddr(std::string transparentAddress, int mi
                         break;
                     }
                 }
-                if (keepCount < nRequired)
+                if (!keepCount || (keepCount < nRequired && !includeShared))
                 {
                     continue;
                 }
@@ -5745,18 +5752,27 @@ CCurrencyValueMap getCurrencyBalanceTaddr(std::string transparentAddress, int mi
                     }
                 }
             }
-            if (keepCount < nRequired)
+            if (!keepCount || (keepCount < nRequired && !includeShared))
             {
                 continue;
             }
         }
 
         CAmount nValue = out.tx->vout[out.i].nValue; // komodo_interest
-        balance += out.tx->vout[out.i].ReserveOutValue();
+        CCurrencyValueMap balanceDelta = out.tx->vout[out.i].ReserveOutValue();
+        balance += balanceDelta;
+        if (pAddressBreakdown)
+        {
+            (*pAddressBreakdown)[outputDest] += balanceDelta;
+        }
         if (nValue)
         {
             //printf("%s: hash: %s, amount %ld\n", __func__, out.tx->GetHash().GetHex().c_str(), nValue);
             balance.valueMap[ASSETCHAINS_CHAINID] += nValue;
+            if (pAddressBreakdown)
+            {
+                (*pAddressBreakdown)[outputDest].valueMap[ASSETCHAINS_CHAINID] += nValue;
+            }
         }
     }
     return balance;
@@ -5995,7 +6011,8 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
             "\nCAUTION: If the wallet has only an incoming viewing key for this address, then spends cannot be"
             "\ndetected, and so the returned balance may be larger than the actual balance.\n"
             "\nArguments:\n"
-            "1. \"address\"      (string) The selected address. It may be a transparent or private address and include z*, R*, and i* wildcards.\n"
+            "1. \"address\"      (string || object) The selected address. It may be a transparent or private address and include z*, R*, and i* wildcards.\n"
+            "                                       If this is an object, it can have \"address\" and \"currency\" members, where currency limits currencies shown.\n"
             "2. minconf          (numeric, optional, default=1) Only include transactions confirmed at least this many times.\n"
             "3. friendlynames    (boolean, optional, default=true) use friendly names instead of i-addresses.\n"
             "4. includeshared    (bool, optional, default=false) Include outputs that can also be spent by others\n"
@@ -6026,9 +6043,51 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
 
     bool includeShared = params.size() > 3 ? uni_get_bool(params[3]) : false;
 
-    // Check that the from address is valid.
-    auto fromaddress = params[0].get_str();
+    std::string fromaddress;
+    CCurrencyValueMap currencyFilter;
+
+    UniValue param0 = params[0];
+    bool getBreakDown = false;
+
+    if (param0.read(uni_get_str(params[0])))
+    {
+        if (param0.isObject())
+        {
+            getBreakDown = true;
+            UniValue currenciesUni;
+            fromaddress = uni_get_str(find_value(param0, "address"));
+            currenciesUni = find_value(param0, "currency");
+            if (!currenciesUni.isNull())
+            {
+                if (!currenciesUni.isArray())
+                {
+                    if (!currenciesUni.isStr())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "If \"currency\" is specified, it must be a currency name or ID string or valid array of currency name or ID strings");
+                    }
+                    UniValue curArray(UniValue::VARR);
+                    curArray.push_back(currenciesUni);
+                    currenciesUni = curArray;
+                }
+                for (int i = 0; i < currenciesUni.size(); i++)
+                {
+                    uint160 curID = ValidateCurrencyName(uni_get_str(currenciesUni[i]), true);
+                    if (curID.IsNull())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid currency name: " + uni_get_str(currenciesUni[i]));
+                    }
+                    currencyFilter.valueMap[curID] = 1;
+                }
+            }
+        }
+    }
+    else
+    {
+        fromaddress = params[0].get_str();
+    }
+
     bool fromTaddr = false;
+    bool wildCard = false;
     CTxDestination taddr;
 
     if (fromaddress == "z*")
@@ -6037,7 +6096,7 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
     }
     else if (fromaddress == "*" || fromaddress == "R*" || fromaddress == "i*")
     {
-        fromTaddr = true;
+        fromTaddr = wildCard = true;
     }
     else
     {
@@ -6060,8 +6119,11 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
     }
 
     CCurrencyValueMap balance;
-    if (fromTaddr) {
-        balance = getCurrencyBalanceTaddr(fromaddress, nMinDepth, false);
+    std::map<CTxDestination, CCurrencyValueMap> addressBreakdown;
+
+    if (fromTaddr)
+    {
+        balance = getCurrencyBalanceTaddr(fromaddress, nMinDepth, false, includeShared, wildCard ? &addressBreakdown : nullptr, currencyFilter);
     } else {
         CAmount nBalance = getBalanceZaddr(fromaddress, nMinDepth, false);
         if (nBalance)
@@ -6071,20 +6133,51 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
     }
 
     UniValue currencyBal(UniValue::VOBJ);
+    UniValue retVal(UniValue::VOBJ);
+
+    std::map<uint160,std::string> nameMap;
+    // if we have an address breakdown, list it first
+    if (addressBreakdown.size())
+    {
+        UniValue addressBreakdownUni(UniValue::VOBJ);
+        for (auto &oneAddress : addressBreakdown)
+        {
+            UniValue curMapUni(UniValue::VOBJ);
+            for (auto &oneBalance : oneAddress.second.valueMap)
+            {
+                std::string name = friendlyNames ? (nameMap.count(oneBalance.first) ? nameMap[oneBalance.first] : (nameMap[oneBalance.first] = ConnectedChains.GetFriendlyCurrencyName(oneBalance.first))) :
+                                                EncodeDestination(CIdentityID(oneBalance.first));
+                curMapUni.push_back(make_pair(name, ValueFromAmount(oneBalance.second)));
+            }
+            addressBreakdownUni.pushKV(EncodeDestination(oneAddress.first), curMapUni);
+        }
+        retVal.pushKV("addressbreakdown", addressBreakdownUni);
+    }
+
     if (balance.valueMap.count(ASSETCHAINS_CHAINID))
     {
-        std::string name = friendlyNames ? ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID) : EncodeDestination(CIdentityID(ConnectedChains.ThisChain().GetID()));
+        std::string name = friendlyNames ? (nameMap.count(ASSETCHAINS_CHAINID) ? nameMap[ASSETCHAINS_CHAINID] : ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID)) : EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID));
         currencyBal.push_back(make_pair(name, ValueFromAmount(balance.valueMap[ASSETCHAINS_CHAINID])));
         balance.valueMap.erase(ASSETCHAINS_CHAINID);
     }
+
     for (auto &oneBalance : balance.valueMap)
     {
-        std::string name = friendlyNames ? ConnectedChains.GetFriendlyCurrencyName(oneBalance.first) :
+        std::string name = friendlyNames ? (nameMap.count(oneBalance.first) ? nameMap[oneBalance.first] : ConnectedChains.GetFriendlyCurrencyName(oneBalance.first)) :
                                            EncodeDestination(CIdentityID(oneBalance.first));
         currencyBal.push_back(make_pair(name, ValueFromAmount(oneBalance.second)));
     }
 
-    return currencyBal;
+    if (getBreakDown)
+    {
+        retVal.pushKV("balances", currencyBal);
+    }
+    else
+    {
+        retVal = currencyBal;
+    }
+
+    return retVal;
 }
 
 UniValue z_gettotalbalance(const UniValue& params, bool fHelp)
