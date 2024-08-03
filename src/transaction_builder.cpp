@@ -608,7 +608,7 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
             UniValue jsonTx(UniValue::VOBJ);
             extern void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry);
             TxToUniv(txNewConst, uint256(), jsonTx);
-            printf("Failed to sign for script:\n%s\n", jsonTx.write(1,2).c_str());
+            printf("Failed to sign for script, input %d:\n%s\n", nIn, jsonTx.write(1,2).c_str());
             if (throwTxWithPartialSig)
             {
                 throwPartialSig = true;

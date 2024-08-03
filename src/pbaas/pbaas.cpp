@@ -6287,7 +6287,7 @@ void CConnectedChains::CheckOracleUpgrades()
     CIdentityID oracleToUse = (!PBAAS_TESTMODE && IsVerusActive() && height < 2620500) ?
                                     CIdentityID(ASSETCHAINS_CHAINID) :
                                     PBAAS_NOTIFICATION_ORACLE;
-    
+
     // check for a specific oracle
     if (oracleToUse.IsNull())
     {
@@ -6343,11 +6343,20 @@ void CConnectedChains::CheckOracleUpgrades()
 
     // compatible with vARRR update notarization modulo reset, even if no
     // or different oracle used
-    if (IsVerusMainnetActive() &&
-        height >= vARRRUpdateHeight(false) &&
-        (height - vARRRUpdateHeight(false)) < 800)
+    if (IsVerusMainnetActive())
     {
-        activeUpgradesByKey[ResetNotarizationModuloKey()] = CUpgradeDescriptor(ResetNotarizationModuloKey(), 16908802, 3000000, 0);
+        if (height >= vARRRUpdateHeight(false) && (height - vARRRUpdateHeight(false)) < 800)
+        {
+            activeUpgradesByKey[ResetNotarizationModuloKey()] = CUpgradeDescriptor(ResetNotarizationModuloKey(), 16908802, 3000000, 0);
+        }
+        else if (height >= PBAAS_CROSS_CHAIN_PROOF_FIX_HEIGHT && (height - PBAAS_CROSS_CHAIN_PROOF_FIX_HEIGHT) < 800)
+        {
+            activeUpgradesByKey[ResetNotarizationModuloKey()] = CUpgradeDescriptor(ResetNotarizationModuloKey(), 16909061, PBAAS_CROSS_CHAIN_PROOF_FIX_HEIGHT, 0);
+        }
+        else if (height >= PBAAS_BLOCK_ONE_ID_UPGRADE_FIX_HEIGHT && (height - PBAAS_BLOCK_ONE_ID_UPGRADE_FIX_HEIGHT) < 800)
+        {
+            activeUpgradesByKey[ResetNotarizationModuloKey()] = CUpgradeDescriptor(ResetNotarizationModuloKey(), 16909062, PBAAS_BLOCK_ONE_ID_UPGRADE_FIX_HEIGHT, 0);
+        }
     }
 
     if (upgradeData.size())
@@ -6633,8 +6642,6 @@ bool CConnectedChains::IsEnhancedDustCheck(uint32_t height) const
     return height >= triggerHeight;
 }
 
-#define PBAAS_CROSS_CHAIN_PROOF_FIX_HEIGHT 3143920
-
 bool CConnectedChains::CrossChainPBaaSProofFix(const uint160 &sysID, uint32_t height) const
 {
     auto oracleProofFix = activeUpgradesByKey.find(CConnectedChains::PBaaSCrossChainProofUpgradeKey());
@@ -6644,6 +6651,15 @@ bool CConnectedChains::CrossChainPBaaSProofFix(const uint160 &sysID, uint32_t he
         return height > 2549420; // This was the Verus PBaaS activation height
     }
     return !IsVerusMainnetActive() || height > fixHeight;
+}
+
+bool CConnectedChains::BlockOneIDUpgrade() const
+{
+    if (IsVerusMainnetActive() && chainActive.Height() < PBAAS_BLOCK_ONE_ID_UPGRADE_FIX_HEIGHT)
+    {
+        return false;
+    }
+    return true;
 }
 
 uint32_t CConnectedChains::GetChainBranchId(const uint160 &sysID, int height, const Consensus::Params& params) const
