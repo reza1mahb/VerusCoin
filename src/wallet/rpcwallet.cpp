@@ -6011,7 +6011,8 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
             "\nCAUTION: If the wallet has only an incoming viewing key for this address, then spends cannot be"
             "\ndetected, and so the returned balance may be larger than the actual balance.\n"
             "\nArguments:\n"
-            "1. \"address\"      (string) The selected address. It may be a transparent or private address and include z*, R*, and i* wildcards.\n"
+            "1. \"address\"      (string || object) The selected address. It may be a transparent or private address and include z*, R*, and i* wildcards.\n"
+            "                                       If this is an object, it can have \"address\" and \"currency\" members, where currency limits currencies shown.\n"
             "2. minconf          (numeric, optional, default=1) Only include transactions confirmed at least this many times.\n"
             "3. friendlynames    (boolean, optional, default=true) use friendly names instead of i-addresses.\n"
             "4. includeshared    (bool, optional, default=false) Include outputs that can also be spent by others\n"
@@ -6046,11 +6047,13 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
     CCurrencyValueMap currencyFilter;
 
     UniValue param0 = params[0];
+    bool getBreakDown = false;
 
     if (param0.read(uni_get_str(params[0])))
     {
         if (param0.isObject())
         {
+            getBreakDown = true;
             UniValue currenciesUni;
             fromaddress = uni_get_str(find_value(param0, "address"));
             currenciesUni = find_value(param0, "currency");
@@ -6130,6 +6133,8 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
     }
 
     UniValue currencyBal(UniValue::VOBJ);
+    UniValue retVal(UniValue::VOBJ);
+
     std::map<uint160,std::string> nameMap;
     // if we have an address breakdown, list it first
     if (addressBreakdown.size())
@@ -6146,14 +6151,16 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
             }
             addressBreakdownUni.pushKV(EncodeDestination(oneAddress.first), curMapUni);
         }
-        currencyBal.pushKV("addressbreakdown", addressBreakdownUni);
+        retVal.pushKV("addressbreakdown", addressBreakdownUni);
     }
+
     if (balance.valueMap.count(ASSETCHAINS_CHAINID))
     {
         std::string name = friendlyNames ? (nameMap.count(ASSETCHAINS_CHAINID) ? nameMap[ASSETCHAINS_CHAINID] : ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID)) : EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID));
         currencyBal.push_back(make_pair(name, ValueFromAmount(balance.valueMap[ASSETCHAINS_CHAINID])));
         balance.valueMap.erase(ASSETCHAINS_CHAINID);
     }
+
     for (auto &oneBalance : balance.valueMap)
     {
         std::string name = friendlyNames ? (nameMap.count(oneBalance.first) ? nameMap[oneBalance.first] : ConnectedChains.GetFriendlyCurrencyName(oneBalance.first)) :
@@ -6161,7 +6168,16 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
         currencyBal.push_back(make_pair(name, ValueFromAmount(oneBalance.second)));
     }
 
-    return currencyBal;
+    if (getBreakDown)
+    {
+        retVal.pushKV("balances", currencyBal);
+    }
+    else
+    {
+        retVal = currencyBal;
+    }
+
+    return retVal;
 }
 
 UniValue z_gettotalbalance(const UniValue& params, bool fHelp)
