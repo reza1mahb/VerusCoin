@@ -12904,9 +12904,9 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "A gateway currency must be a fractional token that includes both the launch coin and PBaaS native coin at 10% or greater ratio each");
             }
         }
-        else if (params.size() > 1)
+        else
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Too many parameters. Please see help.");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Blockchain and gateway launches currently require a gateway converter basket for fee conversion");
         }
     }
     else if (!newChain.gatewayConverterName.empty() || params.size() > 1)
@@ -15986,8 +15986,11 @@ bool CConnectedChains::GetNotaryIDs(const CRPCChainData notaryChain,
             oneDef.contentMultiMap.clear();
         }
 
-        oneDef.UpgradeVersion(1);
-
+        if (ConnectedChains.BlockOneIDUpgrade())
+        {
+            oneDef.UpgradeVersion(ASSETCHAINS_CHAINID == notaryChain.GetID() ? pbaasChain.startBlock : 1);
+        }
+            
         {
             identities[oneDef.GetID()] = oneDef;
         }

@@ -6353,6 +6353,10 @@ void CConnectedChains::CheckOracleUpgrades()
         {
             activeUpgradesByKey[ResetNotarizationModuloKey()] = CUpgradeDescriptor(ResetNotarizationModuloKey(), 16909061, PBAAS_CROSS_CHAIN_PROOF_FIX_HEIGHT, 0);
         }
+        else if (height >= PBAAS_BLOCK_ONE_ID_UPGRADE_FIX_HEIGHT && (height - PBAAS_BLOCK_ONE_ID_UPGRADE_FIX_HEIGHT) < 800)
+        {
+            activeUpgradesByKey[ResetNotarizationModuloKey()] = CUpgradeDescriptor(ResetNotarizationModuloKey(), 16909062, PBAAS_BLOCK_ONE_ID_UPGRADE_FIX_HEIGHT, 0);
+        }
     }
 
     if (upgradeData.size())
@@ -6647,6 +6651,15 @@ bool CConnectedChains::CrossChainPBaaSProofFix(const uint160 &sysID, uint32_t he
         return height > 2549420; // This was the Verus PBaaS activation height
     }
     return !IsVerusMainnetActive() || height > fixHeight;
+}
+
+bool CConnectedChains::BlockOneIDUpgrade() const
+{
+    if (IsVerusMainnetActive() && chainActive.Height() < PBAAS_BLOCK_ONE_ID_UPGRADE_FIX_HEIGHT)
+    {
+        return false;
+    }
+    return true;
 }
 
 uint32_t CConnectedChains::GetChainBranchId(const uint160 &sysID, int height, const Consensus::Params& params) const
