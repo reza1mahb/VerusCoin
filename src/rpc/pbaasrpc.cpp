@@ -15990,6 +15990,10 @@ bool CConnectedChains::GetNotaryIDs(const CRPCChainData notaryChain,
         {
             oneDef.UpgradeVersion(ASSETCHAINS_CHAINID == notaryChain.GetID() ? pbaasChain.startBlock : 1);
         }
+        else if (oneDef.nVersion < oneDef.VERSION_PBAAS)
+        {
+            return false;
+        }
             
         {
             identities[oneDef.GetID()] = oneDef;
