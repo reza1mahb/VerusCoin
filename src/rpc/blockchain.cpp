@@ -404,8 +404,7 @@ UniValue getblockcount(const UniValue& params, bool fHelp)
             + HelpExampleRpc("getblockcount", "")
         );
 
-    LOCK(cs_main);
-    return chainActive.Height();
+    return chainActive.LastTip() ? chainActive.LastTip()->GetHeight() : 0;
 }
 
 UniValue getbestblockhash(const UniValue& params, bool fHelp)
