@@ -6664,9 +6664,16 @@ bool CConnectedChains::BlockOneIDUpgrade() const
 
 bool CConnectedChains::IsPromoteExchangeRate(uint32_t height) const
 {
-    if (IsVerusMainnetActive() && height < PBAAS_PROMOTE_EXCHANGE_RATE_HEIGHT)
+    if (IsVerusActive())
     {
-        return false;
+        if (PBAAS_TESTMODE && height < PBAAS_PROMOTE_EXCHANGE_RATE_TEST_HEIGHT)
+        {
+            return false;
+        }
+        else if (!PBAAS_TESTMODE && height < PBAAS_PROMOTE_EXCHANGE_RATE_HEIGHT)
+        {
+            return false;
+        }
     }
     return true;
 }

@@ -49,6 +49,7 @@ static const int32_t PBAAS_MAXPRIORBLOCKS = 16;             // maximum prior blo
 static const uint32_t PBAAS_CROSS_CHAIN_PROOF_FIX_HEIGHT = 3143920;
 static const uint32_t PBAAS_BLOCK_ONE_ID_UPGRADE_FIX_HEIGHT = 3173198;
 static const uint32_t PBAAS_PROMOTE_EXCHANGE_RATE_HEIGHT = 3173568;
+static const uint32_t PBAAS_PROMOTE_EXCHANGE_RATE_TEST_HEIGHT = 171274;
 
 class CUpgradeDescriptor
 {
