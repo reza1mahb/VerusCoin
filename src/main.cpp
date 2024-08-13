@@ -88,7 +88,8 @@ bool fImporting = false;
 bool fReindex = false;
 bool fTxIndex = true;
 bool fIdIndex = false;
-bool fInsightExplorer = false;       // this ensures that the primary address and spent indexes are active, enabling advanced CCs
+bool fConversionIndex = false;      // index conversions by final destination
+bool fInsightExplorer = false;      // this ensures that the primary address and spent indexes are active, enabling advanced CCs
 bool fAddressIndex = true;
 bool fSpentIndex = true;
 bool fTimestampIndex = false;
@@ -7358,6 +7359,9 @@ bool static LoadBlockIndexDB()
     pblocktree->ReadFlag("idindex", fIdIndex);
     LogPrintf("%s: identity index %s\n", __func__, fIdIndex ? "enabled" : "disabled");
 
+    pblocktree->ReadFlag("conversionindex", fConversionIndex);
+    LogPrintf("%s: conversion index %s\n", __func__, fConversionIndex ? "enabled" : "disabled");
+
     // Check whether we have an address index
     pblocktree->ReadFlag("addressindex", fAddressIndex);
     LogPrintf("%s: address index %s\n", __func__, fAddressIndex ? "enabled" : "disabled");
@@ -7780,9 +7784,15 @@ bool InitBlockIndex(const CChainParams& chainparams)
     fTxIndex = GetBoolArg("-txindex", true);
     pblocktree->WriteFlag("txindex", fTxIndex);
 
-    // Use the provided setting for -txindex in the new database
+    // Use the provided setting for -idindex in the new database
     fIdIndex = GetBoolArg("-idindex", false);
     pblocktree->WriteFlag("idindex", fIdIndex);
+
+    // Use the provided setting for -conversionindex in the new database
+    /*
+    fConversionIndex = GetBoolArg("-conversionindex", false);
+    pblocktree->WriteFlag("conversionindex", fConversionIndex);
+    */
 
     // Use the provided setting for -addressindex in the new database
     fAddressIndex = true;

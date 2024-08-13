@@ -1346,30 +1346,30 @@ public:
     // convert amounts for multi-reserve fractional reserve currencies
     // one entry in the vector for each currency in and one fractional input for each
     // currency expected as output
-    std::vector<CAmount> ConvertAmounts(const std::vector<CAmount> &inputReserve,    // reserves to convert to fractional
+    std::vector<CAmount> ConvertAmounts(const std::vector<CAmount> &inputReserve,       // reserves to convert to fractional
                                         const std::vector<CAmount> &inputFractional,    // fractional to convert to each reserve
                                         CCurrencyState &newState,
+                                        bool promoteExchangeRate,                       // true to compensate for library issue & false to remain compatible with on-chain data
                                         CValidationState &validationState,
                                         const std::vector<std::vector<CAmount>> *pCrossConversions=nullptr,
                                         std::vector<CAmount> *pViaPrices=nullptr) const;
 
-    CAmount CalculateConversionFee(CAmount inputAmount, bool convertToNative = false, int32_t reserveIndex=0) const;
-    CAmount ReserveFeeToNative(CAmount inputAmount, CAmount outputAmount, int32_t reserveIndex=0) const;
+    CAmount CalculateConversionFee(CAmount inputAmount, bool convertToNative=false, int32_t reserveIndex=0) const;
 
-    CAmount ReserveToNative(CAmount reserveAmount, int32_t reserveIndex) const;
+    CAmount ReserveToNative(CAmount reserveAmount, int32_t reserveIndex, bool promoteExchangeRate=true) const;
     CAmount ReserveToNative(const CCurrencyValueMap &reserveAmounts) const;
 
     static CAmount ReserveToNativeRaw(CAmount reserveAmount, const cpp_dec_float_50 &exchangeRate);
-    static CAmount ReserveToNativeRaw(CAmount reserveAmount, CAmount exchangeRate);
+    static CAmount ReserveToNativeRaw(CAmount reserveAmount, CAmount exchangeRate, bool promoteExchangeRate=true);
     static CAmount ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts, const std::vector<uint160> &currencies, const std::vector<CAmount> &exchangeRates);
     static CAmount ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts, const std::vector<uint160> &currencies, const std::vector<cpp_dec_float_50> &exchangeRates);
     CAmount ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts, const std::vector<CAmount> &exchangeRates) const;
 
     const CCurrencyValueMap &NativeToReserve(std::vector<CAmount> nativeAmount, int32_t reserveIndex=0) const;
-    CAmount NativeToReserve(CAmount nativeAmount, int32_t reserveIndex=0) const;
+    CAmount NativeToReserve(CAmount nativeAmount, int32_t reserveIndex=0, bool promoteExchangeRate=true) const;
     static CAmount NativeToReserveRaw(CAmount nativeAmount, const cpp_dec_float_50 &exchangeRate);
-    static CAmount NativeToReserveRaw(CAmount nativeAmount, CAmount exchangeRate);
-    static CAmount NativeGasToReserveRaw(CAmount nativeAmount, CAmount exchangeRate);
+    static CAmount NativeToReserveRaw(CAmount nativeAmount, CAmount exchangeRate, bool promoteExchangeRate=true);
+    static CAmount NativeGasToReserveRaw(CAmount nativeAmount, CAmount exchangeRate, bool promoteExchangeRate=true);
     CCurrencyValueMap NativeToReserveRaw(const std::vector<CAmount> &, const std::vector<CAmount> &exchangeRates) const;
     CCurrencyValueMap NativeToReserveRaw(const std::vector<CAmount> &, const std::vector<cpp_dec_float_50> &exchangeRates) const;
 

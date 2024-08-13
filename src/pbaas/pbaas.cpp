@@ -6662,6 +6662,15 @@ bool CConnectedChains::BlockOneIDUpgrade() const
     return true;
 }
 
+bool CConnectedChains::IsPromoteExchangeRate(uint32_t height) const
+{
+    if (IsVerusMainnetActive() && height < PBAAS_PROMOTE_EXCHANGE_RATE_HEIGHT)
+    {
+        return false;
+    }
+    return true;
+}
+
 uint32_t CConnectedChains::GetChainBranchId(const uint160 &sysID, int height, const Consensus::Params& params) const
 {
     auto oracleProofFix = activeUpgradesByKey.find(CConnectedChains::PBaaSCrossChainProofUpgradeKey());
