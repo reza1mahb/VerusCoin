@@ -522,15 +522,25 @@ CAmount CCurrencyState::ReserveToNativeRaw(CAmount reserveAmount, const cpp_dec_
     return -1;
 }
 
-CAmount CCurrencyState::ReserveToNativeRaw(CAmount reserveAmount, CAmount exchangeRate)
+CAmount CCurrencyState::ReserveToNativeRaw(CAmount reserveAmount, CAmount exchangeRate, bool promoteExchangeRate)
 {
     //return ReserveToNativeRaw(reserveAmount, cpp_dec_float_50(std::to_string(exchangeRate)));
 
     static arith_uint256 bigSatoshi(SATOSHIDEN);
     static arith_uint256 bigZero(0);
     arith_uint256 bigAmount(reserveAmount);
+    arith_uint256 bigRetVal;
 
-    arith_uint256 bigRetVal = (exchangeRate != bigZero ? (bigAmount * bigSatoshi) / exchangeRate : bigZero);
+    if (promoteExchangeRate)
+    {
+        arith_uint256 bigExchangeRate(exchangeRate);
+        bigRetVal = (bigExchangeRate != bigZero ? (bigAmount * bigSatoshi) / bigExchangeRate : bigZero);
+    }
+    else
+    {
+        bigRetVal = (exchangeRate != bigZero ? (bigAmount * bigSatoshi) / exchangeRate : bigZero);
+    }
+
     int64_t retVal = bigRetVal.GetLow64();
     if ((bigRetVal - retVal) == 0)
     {
@@ -589,9 +599,9 @@ CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmoun
     return nativeOut;
 }
 
-CAmount CCurrencyState::ReserveToNative(CAmount reserveAmount, int32_t reserveIndex) const
+CAmount CCurrencyState::ReserveToNative(CAmount reserveAmount, int32_t reserveIndex, bool promoteExchangeRate) const
 {
-    return ReserveToNativeRaw(reserveAmount, PriceInReserve(reserveIndex));
+    return ReserveToNativeRaw(reserveAmount, PriceInReserve(reserveIndex), promoteExchangeRate);
 }
 
 CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, const cpp_dec_float_50 &price)
@@ -607,13 +617,22 @@ CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, const cpp_dec_f
     return -1;
 }
 
-CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, CAmount exchangeRate)
+CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, CAmount exchangeRate, bool promoteExchangeRate)
 {
-    //return NativeToReserveRaw(nativeAmount, cpp_dec_float_50(std::to_string(exchangeRate)));
-
     static arith_uint256 bigSatoshi(SATOSHIDEN);
     arith_uint256 bigAmount(nativeAmount);
-    arith_uint256 bigReserves = (bigAmount * exchangeRate) / bigSatoshi;
+    arith_uint256 bigReserves;
+
+    if (promoteExchangeRate)
+    {
+        arith_uint256 bigExchangeRate(exchangeRate);
+        bigReserves = (bigAmount * bigExchangeRate) / bigSatoshi;
+    }
+    else
+    {
+        bigReserves = (bigAmount * exchangeRate) / bigSatoshi;
+    }
+
     int64_t retVal = bigReserves.GetLow64();
     if ((bigReserves - retVal) == 0)
     {
@@ -626,7 +645,7 @@ CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, CAmount exchang
     }
 }
 
-CAmount CCurrencyState::NativeGasToReserveRaw(CAmount nativeAmount, CAmount exchangeRate)
+CAmount CCurrencyState::NativeGasToReserveRaw(CAmount nativeAmount, CAmount exchangeRate, bool promoteExchangeRate)
 {
     if (!exchangeRate)
     {
@@ -635,7 +654,19 @@ CAmount CCurrencyState::NativeGasToReserveRaw(CAmount nativeAmount, CAmount exch
     exchangeRate = exchangeRate / (SATOSHIDEN / 100);
     static arith_uint256 bigSatoshiX1000(SATOSHIDEN * 1000);
     arith_uint256 bigAmount(nativeAmount);
-    arith_uint256 bigReserves = (bigAmount * exchangeRate) / bigSatoshiX1000;
+
+    arith_uint256 bigReserves;
+
+    if (promoteExchangeRate)
+    {
+        arith_uint256 bigExchangeRate(exchangeRate);
+        bigReserves = (bigAmount * bigExchangeRate) / bigSatoshiX1000;
+    }
+    else
+    {
+        bigReserves = (bigAmount * exchangeRate) / bigSatoshiX1000;
+    }
+
     int64_t retVal = bigReserves.GetLow64();
     if ((bigReserves - retVal) == 0)
     {
@@ -648,9 +679,9 @@ CAmount CCurrencyState::NativeGasToReserveRaw(CAmount nativeAmount, CAmount exch
     }
 }
 
-CAmount CCurrencyState::NativeToReserve(CAmount nativeAmount, int32_t reserveIndex) const
+CAmount CCurrencyState::NativeToReserve(CAmount nativeAmount, int32_t reserveIndex, bool promoteExchangeRate) const
 {
-    return NativeToReserveRaw(nativeAmount, PriceInReserve(reserveIndex));
+    return NativeToReserveRaw(nativeAmount, PriceInReserve(reserveIndex), promoteExchangeRate);
 }
 
 CCurrencyValueMap CCurrencyState::NativeToReserveRaw(const std::vector<CAmount> &nativeAmount, const std::vector<CAmount> &exchangeRates) const

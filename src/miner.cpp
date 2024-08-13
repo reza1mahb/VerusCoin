@@ -1041,7 +1041,7 @@ bool AddOneCurrencyImport(const CCurrencyDefinition &newCurrency,
             debugTxOut.vout.insert(debugTxOut.vout.end(), importOutputs.begin(), importOutputs.end());
             UniValue jsonTxOut(UniValue::VOBJ);
             TxToUniv(debugTxOut, uint256(), jsonTxOut);
-            printf("%s: launch outputs: %s\nlast notarization: %s\nnew notarization: %s\n", __func__,
+            LogPrint("notarization", "%s: launch outputs: %s\nlast notarization: %s\nnew notarization: %s\n", __func__,
                                                                                             jsonTxOut.write(1,2).c_str(),
                                                                                             lastNotarization.ToUniValue().write(1,2).c_str(),
                                                                                             newNotarization.ToUniValue().write(1,2).c_str());
