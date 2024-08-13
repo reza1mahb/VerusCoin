@@ -6137,7 +6137,7 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
 
     std::map<uint160,std::string> nameMap;
     // if we have an address breakdown, list it first
-    if (addressBreakdown.size())
+    if (getBreakDown && addressBreakdown.size())
     {
         UniValue addressBreakdownUni(UniValue::VOBJ);
         for (auto &oneAddress : addressBreakdown)

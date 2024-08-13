@@ -1785,6 +1785,17 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             fReindex = true;
         }
 
+        /* 
+        pblocktree->ReadFlag("conversionindex", checkval);
+        fConversionIndex = GetBoolArg("-conversionindex", checkval);
+        if ( checkval != fConversionIndex )
+        {
+            pblocktree->WriteFlag("conversionindex", fConversionIndex);
+            fprintf(stderr,"set convrsionindex, will reindex. sorry will take a while.\n");
+            fReindex = true;
+        }
+        */
+
         pblocktree->ReadFlag("insightexplorer", checkval);
         fInsightExplorer = GetBoolArg("-insightexplorer", checkval);
         if ( checkval != fInsightExplorer )
@@ -1865,6 +1876,14 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                     strLoadError = _("You need to rebuild the database using -reindex to change -idindex");
                     break;
                 }
+
+                /*
+                pblocktree->ReadFlag("conversionindex", fConversionIndex);
+                if (!fReindex && fConversionIndex != GetBoolArg("-conversionindex", fConversionIndex) ) {
+                    strLoadError = _("You need to rebuild the database using -reindex to change -conversionindex");
+                    break;
+                }
+                */
 
                 // Check for changed -insightexplorer state
                 pblocktree->ReadFlag("insightexplorer", fInsightExplorer);

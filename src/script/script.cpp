@@ -19,6 +19,9 @@
 
 using namespace std;
 
+extern bool fIdIndex;
+extern bool fConversionIndex;
+
 namespace {
     inline std::string ValueString(const std::vector<unsigned char>& vch)
     {
@@ -1488,7 +1491,6 @@ std::set<CIndexID> COptCCParams::GetIndexKeys() const
                 }
 
                 // if we are maintaining an ID index, add keys for primary addresses, revocation, and recovery
-                extern bool fIdIndex;
                 if (fIdIndex)
                 {
                     for (auto &oneDest : identity.primaryAddresses)

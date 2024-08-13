@@ -48,6 +48,8 @@ static const int32_t PBAAS_MINSTARTBLOCKDELTA = 20;         // minimum number of
 static const int32_t PBAAS_MAXPRIORBLOCKS = 16;             // maximum prior block commitments to include in prior blocks chain object
 static const uint32_t PBAAS_CROSS_CHAIN_PROOF_FIX_HEIGHT = 3143920;
 static const uint32_t PBAAS_BLOCK_ONE_ID_UPGRADE_FIX_HEIGHT = 3173198;
+static const uint32_t PBAAS_PROMOTE_EXCHANGE_RATE_HEIGHT = 3173568;
+static const uint32_t PBAAS_PROMOTE_EXCHANGE_RATE_TEST_HEIGHT = 171274;
 
 class CUpgradeDescriptor
 {
@@ -1233,6 +1235,7 @@ public:
     bool IsEnhancedDustCheck(uint32_t height) const;
     bool CrossChainPBaaSProofFix(const uint160 &sysID, uint32_t height) const;
     bool BlockOneIDUpgrade() const;
+    bool IsPromoteExchangeRate(uint32_t height) const;
     uint32_t GetChainBranchId(const uint160 &sysID, int nHeight, const Consensus::Params& params) const;
 
     std::vector<CCurrencyDefinition> GetMergeMinedChains()

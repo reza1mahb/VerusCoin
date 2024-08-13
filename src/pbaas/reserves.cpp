@@ -1965,6 +1965,7 @@ void DumpConvertData(const std::vector<CAmount> &_inputReserves,
 std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &_inputReserves,
                                                     const std::vector<CAmount> &_inputFractional,
                                                     CCurrencyState &_newState,
+                                                    bool promoteExchangeRate,
                                                     CValidationState &state,
                                                     std::vector<std::vector<CAmount>> const *pCrossConversions,
                                                     std::vector<CAmount> *pViaPrices) const
@@ -2135,7 +2136,7 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
     {
         arith_uint256 weight(weights[i]);
         //printf("%s: %ld\n", __func__, ReserveToNative(inputReserves[i], i));
-        CAmount asNative = ReserveToNative(inputReserves[i], i);
+        CAmount asNative = ReserveToNative(inputReserves[i], i, promoteExchangeRate);
         // if overflow
         if (asNative < 0)
         {
@@ -2454,12 +2455,12 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
             newState.supply = newState.AddToSupply(fractionDelta);
 
             // all reserves have been calculated using a substituted value, which was 1:1 for native initially
-            newState.reserves[i] += inputFractional[i] ? NativeToReserveRaw(fractionDelta, rates[i]) : inputReserves[i];
+            newState.reserves[i] += inputFractional[i] ? NativeToReserveRaw(fractionDelta, rates[i], promoteExchangeRate) : inputReserves[i];
         }
         else if (fractionalInIT != fractionalInMap.end())
         {
             arith_uint256 bigReserveDelta(fractionalInIT->second.first);
-            CAmount adjustedReserveDelta = NativeToReserve(((bigReserveDelta + arith_uint256(fractionalInIT->second.second)) >> 1).GetLow64(), i);
+            CAmount adjustedReserveDelta = NativeToReserve(((bigReserveDelta + arith_uint256(fractionalInIT->second.second)) >> 1).GetLow64(), i, promoteExchangeRate);
             reserveSizes[i] += adjustedReserveDelta;
 
             if (inputFraction <= 0)
@@ -2526,7 +2527,7 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
             std::vector<CAmount> _viaPrices;
             std::vector<CAmount> &viaPrices(pViaPrices ? *pViaPrices : _viaPrices);
             CCurrencyState intermediateState = newState;
-            viaPrices = intermediateState.ConvertAmounts(scratchValues, fractionsToConvert, newState, state);
+            viaPrices = intermediateState.ConvertAmounts(scratchValues, fractionsToConvert, newState, promoteExchangeRate, state);
         }
     }
 
@@ -5738,6 +5739,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                 scratchCurrencyState.ConvertAmounts(adjustedReserveConverted.AsCurrencyVector(importCurrencyState.currencies),
                                                     fractionalConverted.AsCurrencyVector(importCurrencyState.currencies),
                                                     dummyCurState,
+                                                    ConnectedChains.IsPromoteExchangeRate(height),
                                                     state,
                                                     &crossConversions,
                                                     &newCurrencyState.viaConversionPrice);
