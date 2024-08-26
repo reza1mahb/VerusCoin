@@ -1524,6 +1524,8 @@ UniValue signdata(const UniValue& params, bool fHelp)
     string strHex;
     string strBase64;
     string strDataHash;
+    string strMimeType;
+    string strLabel;
     string strSignature;
     string hashTypeStr = "sha256";
     bool createMMR = false;
@@ -1557,6 +1559,8 @@ UniValue signdata(const UniValue& params, bool fHelp)
         vdxfKeys = find_value(params[0], "vdxfkeys");
         vdxfKeyNames = find_value(params[0], "vdxfkeynames");
         boundHashes = find_value(params[0], "boundhashes");
+        strMimeType = uni_get_str(find_value(params[0], "mimetype"));
+        strLabel = uni_get_str(find_value(params[0], "label"));
         strSignature = uni_get_str(find_value(params[0], "signature"));
 
         std::string encryptZAddress = uni_get_str(find_value(params[0], "encrypttoaddress"));;
@@ -1621,6 +1625,16 @@ UniValue signdata(const UniValue& params, bool fHelp)
             }
 
             UniValue mmrDataUniObj = UniValue(UniValue::VOBJ);
+
+            if (!strLabel.empty())
+            {
+                mmrDataUniObj.pushKV("label", strLabel);
+            }
+            if (!strMimeType.empty())
+            {
+                mmrDataUniObj.pushKV("mimetype", strMimeType);
+            }
+
             if (!strFileName.empty())
             {
                 mmrDataUniObj.pushKV("filename", strFileName);
@@ -1805,7 +1819,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
                 // salt is not used if we already have the object hash, but retain it anyhow
                 if (mmrSaltUni.size() || createMMR)
                 {
-                    mmrSalt.push_back(mmrSaltUni.size() > i ? uint256S(uni_get_str(mmrSaltUni[i])) : uint256());
+                    mmrSalt.push_back(mmrSaltUni.size() > i ? uint256(ParseHex(uni_get_str(mmrSaltUni[i]))) : uint256());
                 }
                 msgHash = uint256(dataVec);
                 UniValue oneItemObj = find_value(oneItem, "vdxfdata");
@@ -1832,7 +1846,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
                     CSaltedData saltedObject(dataVec);
                     if (mmrSaltUni.size() > i)
                     {
-                        saltedObject.salt = uint256S(uni_get_str(mmrSaltUni[i]));
+                        saltedObject.salt = uint256(ParseHex(uni_get_str(mmrSaltUni[i])));
                     }
                     mmrSalt.push_back(saltedObject.salt);
                     msgHash = saltedObject.GetHash(hw);
@@ -2202,10 +2216,18 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
     }
     else
     {
-        std::vector<unsigned char> ivkVec(ParseHex(uni_get_str(find_value(params[0], "ivk"))));
-        if (ivkVec.size() == 32)
+        std::string ivkStr = uni_get_str(find_value(params[0], "ivk"));
+        if (ivkStr.empty() && encryptedDescriptor.ivk.size() == 32)
         {
-            wIvk = uint256(ivkVec);
+            wIvk = uint256(encryptedDescriptor.ivk);
+        }
+        else
+        {
+            std::vector<unsigned char> ivkVec(ParseHex(ivkStr));
+            if (ivkVec.size() == 32)
+            {
+                wIvk = uint256(ivkVec);
+            }
         }
     }
 
@@ -2247,23 +2269,81 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
                 CCrossChainDataRef dataRef(foundObj);
                 std::vector<unsigned char> newObject;
                 bool haveNewObject = dataRef.GetOutputData(newObject, true, txid);
-                if (haveNewObject &&
-                    (encryptedDescriptor.epk.size() || encryptedDescriptor.ssk.size()))
+
+                if (LogAcceptCategory("dataencryption"))
                 {
-                    encryptedDescriptor.objectData = newObject;
-                    encryptedDescriptor.flags |= encryptedDescriptor.FLAG_ENCRYPTED_DATA;
-                    if (wIvk.IsNull())
+                    printf("%s: Retrieved evidence data %s\n", __func__, HexBytes(newObject.data(), newObject.size()).c_str());
+                    LogPrintf("%s: Retrieved evidence data %s\n", __func__, HexBytes(newObject.data(), newObject.size()).c_str());
+                }
+
+                if (haveNewObject)
+                {
+                    CVDXFDataDescriptor evidenceData;
+                    CDataDescriptor dataDescr(CDataDescriptor::VERSION_INVALID);
+                    CMMRDescriptor mmrDescr(CMMRDescriptor::VERSION_INVALID);
+                    bool success = false;
+                    ::FromVector(newObject, evidenceData, &success);
+                    if (success)
                     {
-                        encryptedDescriptor.UnwrapEncryption();
+                        success = false;
+                        if (evidenceData.key == CVDXF_Data::DataDescriptorKey())
+                        {
+                            success = true;
+                            dataDescr = evidenceData.dataDescriptor;
+                        }
+                        else if ((evidenceData.key == CVDXF_Data::MMRDescriptorKey()))
+                        {
+                            ::FromVector(evidenceData.data, mmrDescr, &success);
+                            if (success &&
+                                mmrDescr.IsValid())
+                            {
+                                if (boost::get<CPBaaSEvidenceRef>(dataRef.ref).subObject != -1 &&
+                                    mmrDescr.dataDescriptors.size() > boost::get<CPBaaSEvidenceRef>(dataRef.ref).subObject)
+                                {
+                                    dataDescr = mmrDescr.dataDescriptors[boost::get<CPBaaSEvidenceRef>(dataRef.ref).subObject];
+                                }
+                                if (boost::get<CPBaaSEvidenceRef>(dataRef.ref).subObject != -1)
+                                {
+                                    mmrDescr = CMMRDescriptor(CMMRDescriptor::VERSION_INVALID);
+                                }
+                            }
+                        }
                     }
                     else
                     {
-                        encryptedDescriptor.UnwrapEncryption(wIvk);
+                        success = false;
                     }
-                }
-                if (haveNewObject)
-                {
-                    newVDXFData.push_back(CIdentity::VDXFDataToUniValue(encryptedDescriptor.objectData));
+
+                    if (success)
+                    {
+                        if (dataDescr.IsValid())
+                        {
+                            if (dataDescr.epk.size())
+                            {
+                                if (wIvk.IsNull())
+                                {
+                                    dataDescr.UnwrapEncryption();
+                                }
+                                else
+                                {
+                                    dataDescr.UnwrapEncryption(wIvk);
+                                }
+                            }
+                            newVDXFData.push_back(dataDescr.ToUniValue());
+                        }
+                        else if (mmrDescr.IsValid())
+                        {
+                            if (wIvk.IsNull())
+                            {
+                                mmrDescr.Decrypt();
+                            }
+                            else
+                            {
+                                mmrDescr.Decrypt(wIvk);
+                            }
+                            newVDXFData.push_back(mmrDescr.ToUniValue());
+                        }
+                    }
                 }
                 else
                 {
@@ -2284,50 +2364,7 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
         vdxfData = newVDXFData;
     }
 
-    UniValue objectOut = encryptedDescriptor.ToUniValue();
-
-    if (vdxfData.isArray())
-    {
-        for (int i = 0; i < vdxfData.size(); i++)
-        {
-            // first stage, retrieve and decrypt any data from a first level link
-            if (vdxfData[i].isObject())
-            {
-                UniValue foundObj = find_value(vdxfData[i], EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey())));
-                if (foundObj.isObject())
-                {
-                    objectOut.pushKV(CVDXF_Data::CrossChainDataRefKeyName(), foundObj);
-                }
-                else
-                {
-                    foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::DataDescriptorKey())));
-                    if (foundObj.isObject())
-                    {
-                        objectOut.pushKV(CVDXF_Data::DataDescriptorKeyName(), foundObj);
-                    }
-                    else
-                    {
-                        foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::MMRDescriptorKey())));
-                        if (foundObj.isObject())
-                        {
-                            objectOut.pushKV(CVDXF_Data::MMRDescriptorKeyName(), foundObj);
-                        }
-                        else
-                        {
-                            foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::SignatureDataKey())));
-                            if (foundObj.isObject())
-                            {
-                                objectOut.pushKV(CVDXF_Data::SignatureDataKeyName(), foundObj);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    ret.pushKV("datadescriptor", objectOut);
-    return ret;
+    return vdxfData;
 }
 
 UniValue getreceivedbyaddress(const UniValue& params, bool fHelp)

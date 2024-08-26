@@ -6666,7 +6666,7 @@ bool CConnectedChains::IsPromoteExchangeRate(uint32_t height) const
 {
     if (IsVerusActive())
     {
-        if (PBAAS_TESTMODE && height < PBAAS_PROMOTE_EXCHANGE_RATE_TEST_HEIGHT)
+        if (PBAAS_TESTMODE && height < PBAAS_PROMOTE_EXCHANGE_RATE_TEST_HEIGHT) // TODO: TESTNET - remove this check after testnet reset and only check mainnet
         {
             return false;
         }

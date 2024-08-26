@@ -3007,7 +3007,7 @@ UniValue listcurrencies(const UniValue& params, bool fHelp)
         }
         if (numKeys)
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid query object parameter, use \"listidentities help\"");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid query object parameter, use \"listcurrencies help\"");
         }
         if (params.size() > 1)
         {
@@ -6471,37 +6471,6 @@ UniValue estimateconversion(const UniValue& params, bool fHelp)
     if (!currencyState.IsValid())
     {
         throw JSONRPCError(RPC_TRANSACTION_ERROR, "Cannot process conversion parameters for " + fractionalCurrency.name);
-    }
-
-    // if we have only an object parameter, return without an array
-    if (params[0].isObject())
-    {
-        CReserveTransfer oneTransfer(currencyConversions.begin()->second.back());
-        CAmount conversionFee = CReserveTransactionDescriptor::CalculateConversionFeeNoMin(oneTransfer.FirstValue());
-        if (oneTransfer.IsReserveToReserve())
-        {
-            conversionFee = conversionFee << 1;
-        }
-        CAmount startingAmount = oneTransfer.FirstValue() - conversionFee;
-        CAmount amountOut = 0;
-
-        if (oneTransfer.IsImportToSource())
-        {
-            amountOut = currencyState.NativeToReserveRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[oneTransfer.destCurrencyID]]);
-        }
-        else
-        {
-            amountOut = currencyState.ReserveToNativeRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[oneTransfer.FirstCurrency()]]);
-            if (oneTransfer.IsReserveToReserve())
-            {
-                amountOut = currencyState.NativeToReserveRaw(amountOut, currencyState.viaConversionPrice[currencyState.GetReserveMap()[oneTransfer.secondReserveID]]);
-            }
-        }
-
-        retVal.pushKV("inputcurrencyid", EncodeDestination(CIdentityID(oneTransfer.FirstCurrency())));
-        retVal.pushKV("netinputamount", ValueFromAmount(startingAmount));
-        retVal.pushKV("outputcurrencyid", EncodeDestination(CIdentityID(oneTransfer.IsReserveToReserve() ? oneTransfer.secondReserveID : oneTransfer.destCurrencyID)));
-        retVal.pushKV("estimatedcurrencyout", ValueFromAmount(amountOut));
     }
 
     // if we have only an object parameter, return without an array
@@ -14892,7 +14861,18 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
 
                         UniValue signParams(UniValue::VARR);
                         signParams.push_back(chainData);
+
+                        if (LogAcceptCategory("dataencryption"))
+                        {
+                            printf("%s: params to signdata %s\n", __func__, signParams.write(1,2).c_str());
+                            LogPrintf("%s: params to signdata %s\n", __func__, signParams.write(1,2).c_str());
+                        }
                         UniValue signResult = signdata(signParams, false);
+                        if (LogAcceptCategory("dataencryption"))
+                        {
+                            printf("%s: return from signdata %s\n", __func__, signResult.write(1,2).c_str());
+                            LogPrintf("%s: return from signdata %s\n", __func__, signResult.write(1,2).c_str());
+                        }
 
                         // now, we have both a CMMRDescriptor as well as a CSignatureData if we signed, all encrypted to the specified Z-address
                         CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdescriptor_encrypted"));
@@ -14936,6 +14916,13 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
 
                         libzcash::SaplingPaymentAddress *pEncryptTo = boost::get<libzcash::SaplingPaymentAddress>(&encryptToAddress);
                         libzcash::SaplingPaymentAddress encryptTo = pEncryptTo ? *pEncryptTo : libzcash::SaplingPaymentAddress();
+
+                        if (LogAcceptCategory("dataencryption"))
+                        {
+                            printf("%s: Setting evidence data %s\n", __func__, evidenceData.ToUniValue().write(1,2).c_str());
+                            LogPrintf("%s: Setting evidence data %s\n", __func__, evidenceData.ToUniValue().write(1,2).c_str());
+                        }
+
                         extraData.insert(std::make_pair(key, std::make_tuple(dataLabel, MMRDesc.dataDescriptors.size() > 1 ? "application/json" : mimeType, evidenceData, encryptTo, ivk)));
                         toRemoveValues.push_back(j);
                         continue;
@@ -15111,9 +15098,16 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         std::vector<CTxDestination> dests({CPubKey(ParseHex(CC.CChexstr))});
 
         COptCCParams chkP;
-        if (!MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &std::get<2>(oneExtraData.second))).IsPayToCryptoCondition(chkP, false))
+        CScript simpleScript = MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &std::get<2>(oneExtraData.second)));
+        if (!simpleScript.IsPayToCryptoCondition(chkP, false))
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence script in ID data output #" + std::to_string(tb.mtx.vout.size()));
+        }
+
+        if (LogAcceptCategory("dataencryption"))
+        {
+            printf("%s: Output evidence %s\n", __func__, std::get<2>(oneExtraData.second).ToUniValue().write(1,2).c_str());
+            LogPrintf("%s: Output evidence %s\n", __func__, std::get<2>(oneExtraData.second).ToUniValue().write(1,2).c_str());
         }
 
         CVDXFDataRef idLink(uint256(), tb.mtx.vout.size(), 0);
@@ -15143,6 +15137,12 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
             memoData.insert(memoData.end(), memoSig.begin(), memoSig.end());
         }
 
+        if (LogAcceptCategory("dataencryption"))
+        {
+            printf("%s: Encrypted output evidence %s\n", __func__, dd.ToUniValue().write(1,2).c_str());
+            LogPrintf("%s: Encrypted output evidence %s\n", __func__, dd.ToUniValue().write(1,2).c_str());
+        }
+
         newID.contentMultiMap.insert(std::make_pair(oneExtraData.first, memoData));
 
         // the value should be considered for reduction
@@ -15163,7 +15163,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         }
         else
         {
-            tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &std::get<2>(oneExtraData.second))), 0);
+            tb.AddTransparentOutput(simpleScript, 0);
         }
     }
 

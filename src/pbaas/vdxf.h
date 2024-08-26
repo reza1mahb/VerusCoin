@@ -586,6 +586,19 @@ public:
         return profileMediaKey;
     }
 
+    // for any ID, this key indexes content that applies to representing the profile of
+    // that ID. there may be many mime-type instances of a particular piece of profile media
+    static std::string ProfilePostKeyName()
+    {
+        return "vrsc::identity.post";
+    }
+    static uint160 ProfilePostKey()
+    {
+        static uint160 nameSpace;
+        static uint160 profileMediaKey = GetDataKey(ProfilePostKeyName(), nameSpace);
+        return profileMediaKey;
+    }
+
     static std::string ZMemoMessageKeyName()
     {
         return "vrsc::system.zmemo.message";
