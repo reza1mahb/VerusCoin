@@ -12880,7 +12880,7 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "A gateway currency must be a fractional token that includes both the launch coin and PBaaS native coin at 10% or greater ratio each");
             }
         }
-        else
+        else if (!IsVerusActive() || !PBAAS_TESTMODE)
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Blockchain and gateway launches currently require a gateway converter basket for fee conversion");
         }
