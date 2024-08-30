@@ -3787,7 +3787,9 @@ bool GetNotarizationData(const uint160 &currencyID,
             CAddressIndexDBEntryCompare indexComparer;
             std::make_heap(pendingFinalizations.begin(), pendingFinalizations.end(), indexComparer);
 
-            std::multimap<CUTXORef, std::pair<CUTXORef, CPBaaSNotarization>> notarizationReferences;
+            std::multimap<std::pair<CUTXORef, uint32_t>, std::pair<CUTXORef, CPBaaSNotarization>> notarizationReferences;
+            bool notarizationOrder = ConnectedChains.IsEnhancedNotarizationOrder(height);
+
             std::set<CUTXORef> consideredNotarizations;
             std::map<CUTXORef, std::pair<CTransaction, uint256>> referencedTxes;
 
@@ -3848,7 +3850,7 @@ bool GetNotarizationData(const uint160 &currencyID,
                 }
                 consideredNotarizations.insert(f.output);
 
-                notarizationReferences.insert(std::make_pair(std::get<2>(priorNotarization), std::make_pair(f.output, n)));
+                notarizationReferences.insert({{std::get<2>(priorNotarization), notarizationOrder ? blockIt->second->GetHeight() : 0},{f.output, n}});
                 if (optionalTxOut)
                 {
                     referencedTxes.insert(std::make_pair(f.output, std::make_pair(nTx, blkHash)));
@@ -3868,14 +3870,16 @@ bool GetNotarizationData(const uint160 &currencyID,
                 {
                     CUTXORef searchRef = notarizationData.vtx[notarizationData.forks[forkNum].back()].first;
 
-                    std::multimap<CUTXORef, std::pair<CUTXORef, CPBaaSNotarization>>::iterator pendingIt;
+                    std::multimap<std::pair<CUTXORef, uint32_t>, std::pair<CUTXORef, CPBaaSNotarization>>::iterator pendingIt;
+                    std::vector<std::pair<CUTXORef, uint32_t>> toRemove;
 
                     bool newFork = false;
 
-                    for (pendingIt = notarizationReferences.lower_bound(searchRef);
-                        pendingIt != notarizationReferences.end() && pendingIt->first == searchRef;
-                        pendingIt++)
+                    for (pendingIt = notarizationReferences.lower_bound({searchRef, 0});
+                         pendingIt != notarizationReferences.end() && pendingIt->first.first == searchRef;
+                         pendingIt++)
                     {
+                        toRemove.push_back(pendingIt->first);
                         notarizationData.vtx.push_back(pendingIt->second);
                         if (optionalTxOut)
                         {
@@ -3893,7 +3897,10 @@ bool GetNotarizationData(const uint160 &currencyID,
                             somethingAdded = true;
                         }
                     }
-                    notarizationReferences.erase(searchRef);
+                    for (auto oneKey : toRemove)
+                    {
+                        notarizationReferences.erase(oneKey);
+                    }
                 }
             }
 

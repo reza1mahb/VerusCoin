@@ -6552,7 +6552,13 @@ bool CConnectedChains::vARRRUpdateEnabled(uint32_t height) const
 
 uint160 CConnectedChains::vARRRChainID() const
 {
-    static uint160 vARRRID = GetDestinationID(DecodeDestination("iExBJfZYK7KREDpuhj6PzZBzqMAKaFg7d2"));
+    static uint160 vARRRID = GetDestinationID(DecodeDestination("vARRR@"));
+    return vARRRID;
+}
+
+uint160 CConnectedChains::vDEXChainID() const
+{
+    static uint160 vARRRID = GetDestinationID(DecodeDestination("vARRR@"));
     return vARRRID;
 }
 
@@ -6639,6 +6645,12 @@ bool CConnectedChains::DoImportPreconvertReserveTransferPrecheck(uint32_t height
 bool CConnectedChains::IsEnhancedDustCheck(uint32_t height) const
 {
     uint32_t triggerHeight = IsVerusMainnetActive() ? 3093850 : (vARRRChainID() == ASSETCHAINS_CHAINID ? 107590 : 0);
+    return height >= triggerHeight;
+}
+
+bool CConnectedChains::IsEnhancedNotarizationOrder(uint32_t height) const
+{
+    uint32_t triggerHeight = IsVerusMainnetActive() ? PBAAS_NOTARIZATION_ORDER_HEIGHT : (vARRRChainID() == ASSETCHAINS_CHAINID ? PBAAS_NOTARIZATION_ORDER_VARRR_HEIGHT : (vDEXChainID() == ASSETCHAINS_CHAINID ? PBAAS_NOTARIZATION_ORDER_VDEX_HEIGHT : 0));
     return height >= triggerHeight;
 }
 

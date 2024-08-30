@@ -2768,6 +2768,10 @@ CProofRoot IsValidChallengeEvidence(const CCurrencyDefinition &externalSystem,
 
     std::set<int> evidenceTypes;
     evidenceTypes.insert(CHAINOBJ_PROOF_ROOT);
+    if (ConnectedChains.IsEnhancedNotarizationOrder(height))
+    {
+        evidenceTypes.insert(CHAINOBJ_EVIDENCEDATA);
+    }
     evidenceTypes.insert(CHAINOBJ_TRANSACTION_PROOF);
     evidenceTypes.insert(CHAINOBJ_COMMITMENTDATA);
     evidenceTypes.insert(CHAINOBJ_HEADER);
@@ -2868,11 +2872,12 @@ CProofRoot IsValidChallengeEvidence(const CCurrencyDefinition &externalSystem,
                     !skippedBlkHash.IsNull() &&
                     (skippedIdx = mapBlockIndex.find(skippedBlkHash)) != mapBlockIndex.end() &&
                     chainActive.Contains(skippedIdx->second) &&
-                    skippedTx.vout.size() > notarizationTxRef.n &&
-                    (skippedNotarization = CPBaaSNotarization(priorTx.vout[notarizationTxRef.n].scriptPubKey)).IsValid() &&
-                    e.output.GetOutputTransaction(priorTx, priorBlkHash) &&
                     notarizationTxRef.n > 0 &&
-                    priorTx.vout.size() > notarizationTxRef.n &&
+                    skippedTx.vout.size() > notarizationTxRef.n &&
+                    (skippedNotarization = CPBaaSNotarization(skippedTx.vout[notarizationTxRef.n].scriptPubKey)).IsValid() &&
+                    e.output.GetOutputTransaction(priorTx, priorBlkHash) &&
+                    e.output.n > 0 &&
+                    priorTx.vout.size() > e.output.n &&
                     (challengedNotarization = CPBaaSNotarization(priorTx.vout[e.output.n].scriptPubKey)).IsValid() &&
                     challengedNotarization.currencyID == defaultProofRoot.systemID &&
                     !priorBlkHash.IsNull() &&
@@ -6310,7 +6315,7 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
                                     continue;
                                 }
 
-                                // if it's valid, then it skipped a valid notarization and can be proven false
+                                // if it's valid and not behind the prior valid one, then it skipped a valid notarization and can be proven false
                                 if (validIndexSet.count(unchallengedForks[forkToChallenge][k]))
                                 {
                                     // prove the root on the j fork with this root and submit the proof along with a rejection
@@ -6326,23 +6331,25 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
                                     // EXPECT_SKIPPED_NOTARIZATION_REF - this is the notarization it should not have skipped
                                     fraudProof.evidence << CEvidenceData(CVDXF_Data::UTXORefKey(), ::AsVector(cnd.vtx[unchallengedForks[j][k]].first));
 
-                                    int64_t proveHeight = std::min(cnd.vtx[unchallengedForks[j][k]].second.proofRoots[SystemID].rootHeight,
-                                                                    cnd.vtx[unchallengedForks[forkToChallenge][k]].second.proofRoots[SystemID].rootHeight);
+                                    int64_t proveHeight = cnd.vtx[unchallengedForks[j][k]].second.proofRoots[SystemID].rootHeight;
+                                    int64_t atHeight = cnd.vtx[unchallengedForks[forkToChallenge][k]].second.proofRoots[SystemID].rootHeight;
 
-                                    int64_t atHeight = std::max(cnd.vtx[unchallengedForks[j][k]].second.proofRoots[SystemID].rootHeight,
-                                                                    cnd.vtx[unchallengedForks[forkToChallenge][k]].second.proofRoots[SystemID].rootHeight);
+                                    // if the one to prove is greater than the one to prove from, the one to prove from may have been made by
+                                    // one out of sync or it may just not agree with the other's fork
+                                    if (proveHeight <= atHeight)
+                                    {
+                                        UniValue challengeRequest(UniValue::VOBJ);
+                                        challengeRequest.pushKV("type", EncodeDestination(CIdentityID(CNotaryEvidence::SkipChallengeKey())));
+                                        challengeRequest.pushKV("evidence", fraudProof.ToUniValue());
+                                        challengeRequest.pushKV("proveheight", proveHeight);
+                                        challengeRequest.pushKV("atheight", atHeight);
+                                        challengeRequest.pushKV("entropyhash", txes[unchallengedForks[forkToChallenge][k]].second.GetHex());
+                                        challengeRequests.push_back(challengeRequest);
 
-                                    UniValue challengeRequest(UniValue::VOBJ);
-                                    challengeRequest.pushKV("type", EncodeDestination(CIdentityID(CNotaryEvidence::SkipChallengeKey())));
-                                    challengeRequest.pushKV("evidence", fraudProof.ToUniValue());
-                                    challengeRequest.pushKV("proveheight", proveHeight);
-                                    challengeRequest.pushKV("atheight", atHeight);
-                                    challengeRequest.pushKV("entropyhash", txes[unchallengedForks[forkToChallenge][k]].second.GetHex());
-                                    challengeRequests.push_back(challengeRequest);
-
-                                    // once we've created an invalidation proof, which a skipped proof is,
-                                    // the entire fork will be automatically invalidated
-                                    unchallengedForks[forkToChallenge].erase(unchallengedForks[forkToChallenge].begin() + challengeNum, unchallengedForks[forkToChallenge].end());
+                                        // once we've created an invalidation proof, which a skipped proof is,
+                                        // the entire fork will be automatically invalidated
+                                        unchallengedForks[forkToChallenge].erase(unchallengedForks[forkToChallenge].begin() + challengeNum, unchallengedForks[forkToChallenge].end());
+                                    }
                                 }
                                 else
                                 {

@@ -5879,9 +5879,16 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
     }
 
     // Check that the from address is valid.
-    auto fromaddress = params[0].get_str();
+    std::string fromaddress = uni_get_str(params[0]);
 
     auto zaddr = DecodePaymentAddress(fromaddress);
+
+    libzcash::PaymentAddress zaddress;
+    if (pwalletMain->GetAndValidateSaplingZAddress(fromaddress, zaddress))
+    {
+        zaddr = zaddress;
+    }
+
     if (!IsValidPaymentAddress(zaddr)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid zaddr.");
     }
