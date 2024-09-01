@@ -590,6 +590,8 @@ CMutableTransaction CreateNewContextualCMutableTransaction(const Consensus::Para
  */
 bool IsBlockBoundTransaction(const CTransaction &tx, const uint256 &cbHash);
 
+extern LRUCache<std::pair<uint256, uint32_t>, std::tuple<uint256, CInputDescriptor, CReserveTransfer>> reserveTransferCache;
+
 /**
  * Sets the premine from chain definition
  */

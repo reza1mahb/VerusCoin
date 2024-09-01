@@ -3250,27 +3250,39 @@ bool GetChainTransfersUnspentBy(std::multimap<std::pair<uint32_t, uint160>, std:
                 continue;
             }
 
-            if (myGetTransaction(it->first.txhash, ntx, blkHash))
+            std::tuple<uint256, CInputDescriptor, CReserveTransfer> cacheValue;
+            bool inCache = false;
+            if ((inCache = (reserveTransferCache.Get({it->first.txhash, (uint32_t)it->first.index}, cacheValue)) && mapBlockIndex.count(std::get<0>(cacheValue)) && chainActive.Contains(mapBlockIndex[std::get<0>(cacheValue)])) &&
+                ((chainFilter.IsNull() || chainFilter == std::get<2>(cacheValue).GetImportCurrency()) && (flags == CReserveTransfer::VALID)))
             {
-                COptCCParams p, m;
-                CReserveTransfer rt;
-                if (ntx.vout[it->first.index].scriptPubKey.IsPayToCryptoCondition(p) &&
-                    p.evalCode == EVAL_RESERVE_TRANSFER &&
-                    p.vData.size() > 1 && (rt = CReserveTransfer(p.vData[0])).IsValid() &&
-                    (m = COptCCParams(p.vData[1])).IsValid() &&
-                    (nofilter || ((rt.flags & rt.IMPORT_TO_SOURCE) ? rt.FirstCurrency() : rt.destCurrencyID) == chainFilter) &&
-                    (rt.flags & flags) == flags)
-                {
-                    inputDescriptors.insert(std::make_pair(std::make_pair(it->first.blockHeight, (rt.flags & rt.IMPORT_TO_SOURCE) ? rt.FirstCurrency() : rt.destCurrencyID),
-                                                std::make_pair(CInputDescriptor(ntx.vout[it->first.index].scriptPubKey, ntx.vout[it->first.index].nValue, CTxIn(COutPoint(it->first.txhash, it->first.index))),
-                                                               rt)));
-                }
+                inputDescriptors.insert(std::make_pair(std::make_pair(it->first.blockHeight, (std::get<2>(cacheValue).flags & std::get<2>(cacheValue).IMPORT_TO_SOURCE) ? std::get<2>(cacheValue).FirstCurrency() : std::get<2>(cacheValue).destCurrencyID), std::make_pair(std::get<1>(cacheValue), std::get<2>(cacheValue))));
             }
-            else
+            else if (!inCache)
             {
-                LogPrintf("%s: cannot retrieve transaction %s\n", __func__, it->first.txhash.GetHex().c_str());
-                printf("%s: cannot retrieve transaction %s\n", __func__, it->first.txhash.GetHex().c_str());
-                return false;
+                if (myGetTransaction(it->first.txhash, ntx, blkHash))
+                {
+                    COptCCParams p, m;
+                    CReserveTransfer rt;
+                    if (ntx.vout[it->first.index].scriptPubKey.IsPayToCryptoCondition(p) &&
+                        p.evalCode == EVAL_RESERVE_TRANSFER &&
+                        p.vData.size() > 1 && (rt = CReserveTransfer(p.vData[0])).IsValid() &&
+                        (m = COptCCParams(p.vData[1])).IsValid() &&
+                        (nofilter || ((rt.flags & rt.IMPORT_TO_SOURCE) ? rt.FirstCurrency() : rt.destCurrencyID) == chainFilter) &&
+                        (rt.flags & flags) == flags)
+                    {
+                        inputDescriptors.insert(std::make_pair(std::make_pair(it->first.blockHeight, (rt.flags & rt.IMPORT_TO_SOURCE) ? rt.FirstCurrency() : rt.destCurrencyID),
+                                                    std::make_pair(CInputDescriptor(ntx.vout[it->first.index].scriptPubKey, ntx.vout[it->first.index].nValue, CTxIn(COutPoint(it->first.txhash, it->first.index))),
+                                                                rt)));
+
+                        reserveTransferCache.Put({it->first.txhash, (uint32_t)it->first.index}, {blkHash, CInputDescriptor(ntx.vout[it->first.index].scriptPubKey, ntx.vout[it->first.index].nValue, CTxIn(COutPoint(it->first.txhash, it->first.index))), rt});
+                    }
+                }
+                else
+                {
+                    LogPrintf("%s: cannot retrieve transaction %s\n", __func__, it->first.txhash.GetHex().c_str());
+                    printf("%s: cannot retrieve transaction %s\n", __func__, it->first.txhash.GetHex().c_str());
+                    return false;
+                }
             }
         }
         if (!chainFilter.IsNull() && (flags == CReserveTransfer::VALID))

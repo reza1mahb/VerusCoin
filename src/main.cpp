@@ -113,6 +113,8 @@ CFeeRate minRelayTxFee = CFeeRate(DEFAULT_MIN_RELAY_TX_FEE);
 
 CTxMemPool mempool(::minRelayTxFee);
 
+LRUCache<std::pair<uint256, uint32_t>, std::tuple<uint256, CInputDescriptor, CReserveTransfer>> reserveTransferCache(6000); // reserve transfers are entered here as processed, <<txid, outnum>, <blockHash, CInputDescriptor, CReserveTransfer>>
+
 struct COrphanTx {
     CTransaction tx;
     NodeId fromPeer;
@@ -4385,6 +4387,9 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                             }
                                         }
                                     }
+
+                                    // add this to the reserve transfer cache
+                                    reserveTransferCache.Put({tx.GetHash(), (uint32_t)j}, {block.GetHash(), CInputDescriptor(oneOut.scriptPubKey, oneOut.nValue, CTxIn(tx.GetHash(), (uint32_t)j)), rt});
                                 }
                                 break;
                             }

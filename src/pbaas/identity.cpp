@@ -148,7 +148,7 @@ bool CIdentity::IsInvalidMutation(const CIdentity &newIdentity, uint32_t height,
     return false;
 }
 
-LRUCache<std::pair<uint256, CIdentityID>, std::tuple<CIdentity, uint32_t, CTxIn>> CIdentity::IdentityLookupCache(2000);
+LRUCache<std::pair<uint256, CIdentityID>, std::tuple<CIdentity, uint32_t, CTxIn>> CIdentity::IdentityLookupCache(6000);
 
 CIdentity CIdentity::LookupIdentity(const CIdentityID &nameID, uint32_t height, uint32_t *pHeightOut, CTxIn *pIdTxIn, bool checkMempool)
 {
