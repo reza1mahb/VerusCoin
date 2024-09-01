@@ -179,24 +179,37 @@ bool CCrossChainExport::GetExportInfo(const CTransaction &exportTx,
         {
             for (int i = firstInput; i < (firstInput + numInputs); i++)
             {
-                CTransaction rtTx;
-                COptCCParams rtP;
                 CReserveTransfer rt;
-                uint256 hashBlk;
-                if (!(myGetTransaction(exportTx.vin[i].prevout.hash, rtTx, hashBlk) &&
-                        exportTx.vin[i].prevout.n < rtTx.vout.size() &&
-                        rtTx.vout[exportTx.vin[i].prevout.n].scriptPubKey.IsPayToCryptoCondition(rtP) &&
-                        rtP.IsValid() &&
-                        rtP.evalCode == EVAL_RESERVE_TRANSFER &&
-                        rtP.vData.size() &&
-                        (rt = CReserveTransfer(rtP.vData[0])).IsValid()))
+                std::tuple<uint256, CInputDescriptor, CReserveTransfer> cacheValue;
+                if (reserveTransferCache.Get({exportTx.vin[i].prevout.hash, exportTx.vin[i].prevout.n}, cacheValue))
                 {
-                    return state.Error(strprintf("%s: invalid reserve transfer for export",__func__));
+                    rt = std::get<2>(cacheValue);
                 }
+                else
+                {
+                    CTransaction rtTx;
+                    COptCCParams rtP;
+                    uint256 hashBlk;
+                    if (!(myGetTransaction(exportTx.vin[i].prevout.hash, rtTx, hashBlk) &&
+                            exportTx.vin[i].prevout.n < rtTx.vout.size() &&
+                            rtTx.vout[exportTx.vin[i].prevout.n].scriptPubKey.IsPayToCryptoCondition(rtP) &&
+                            rtP.IsValid() &&
+                            rtP.evalCode == EVAL_RESERVE_TRANSFER &&
+                            rtP.vData.size() &&
+                            (rt = CReserveTransfer(rtP.vData[0])).IsValid()))
+                    {
+                        return state.Error(strprintf("%s: invalid reserve transfer for export",__func__));
+                    }
+
+                    reserveTransferCache.Put({exportTx.vin[i].prevout.hash, exportTx.vin[i].prevout.n},
+                                             {hashBlk, CInputDescriptor(rtTx.vout[exportTx.vin[i].prevout.n].scriptPubKey, rtTx.vout[exportTx.vin[i].prevout.n].nValue, CTxIn(exportTx.vin[i].prevout.hash, exportTx.vin[i].prevout.n)), rt});
+                }
+
                 if (rt.IsArbitrageOnly())
                 {
                     return state.Error(strprintf("%s:1 invalid arbitrage reserve transfer in export",__func__));
                 }
+
                 hw << rt;
                 reserveTransfers.push_back(rt);
             }
