@@ -432,6 +432,7 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
         if (CCrossChainExport::exportInfoCache.Get(CUTXORef(pBaseImport->exportTxId, pBaseImport->exportTxOutNum), cachedExport))
         {
             reserveTransfers = std::get<3>(cachedExport);
+            ccx = std::get<1>(cachedExport);
         }
         else
         {
