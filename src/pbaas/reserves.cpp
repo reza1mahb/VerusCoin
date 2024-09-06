@@ -17,7 +17,7 @@
 #include "key_io.h"
 #include <random>
 
-LRUCache<CUTXORef, std::tuple<int, CPBaaSNotarization, std::vector<CReserveTransfer>, CCurrencyDefinition::EProofProtocol>>
+LRUCache<CUTXORef, std::tuple<int, CCrossChainExport, CPBaaSNotarization, std::vector<CReserveTransfer>, CCurrencyDefinition::EProofProtocol>>
     CCrossChainExport::exportInfoCache(200, 0.1F, false);
 
 // calculate fees required in one currency to pay in another
@@ -151,14 +151,34 @@ bool CCrossChainExport::GetExportInfo(const CTransaction &exportTx,
     }
     primaryExportOutNumOut = numOutput;
 
-    std::tuple<int, CPBaaSNotarization, std::vector<CReserveTransfer>, CCurrencyDefinition::EProofProtocol> exportInfoCached;
+    std::tuple<int, CCrossChainExport, CPBaaSNotarization, std::vector<CReserveTransfer>, CCurrencyDefinition::EProofProtocol> exportInfoCached;
     if (exportInfoCache.Get(CUTXORef(exportTx.GetHash(), numOutput), exportInfoCached))
     {
         nextOutput = std::get<0>(exportInfoCached);
-        exportNotarization = std::get<1>(exportInfoCached);
-        reserveTransfers = std::get<2>(exportInfoCached);
-        hashType = std::get<3>(exportInfoCached);
+        exportNotarization = std::get<2>(exportInfoCached);
+        reserveTransfers = std::get<3>(exportInfoCached);
+        hashType = std::get<4>(exportInfoCached);
         return true;
+    }
+
+    COptCCParams expP;
+    CCrossChainExport primaryExportOut;
+    if (primaryExportOutNumOut == numExportOut)
+    {
+        primaryExportOut = *this;
+    }
+    else if (primaryExportOutNumOut < exportTx.vout.size() &&
+        exportTx.vout[numOutput].scriptPubKey.IsPayToCryptoCondition(expP) &&
+        expP.IsValid() &&
+        expP.evalCode == EVAL_CROSSCHAIN_EXPORT &&
+        expP.vData.size())
+    {
+        primaryExportOut = CCrossChainExport(expP.vData[0]);
+    }
+
+    if (!primaryExportOut.IsValid() || primaryExportOut.IsSupplemental())
+    {
+        return state.Error(strprintf("%s: Invalid export or cannot get export directly from supplemental data output. must be in context",__func__));
     }
 
     CNativeHashWriter hw(hashType);
@@ -312,7 +332,7 @@ bool CCrossChainExport::GetExportInfo(const CTransaction &exportTx,
     }
     nextOutput = numOutput + 1;
 
-    exportInfoCache.Put(CUTXORef(exportTx.GetHash(), primaryExportOutNumOut), {nextOutput, exportNotarization, reserveTransfers, hashType});
+    exportInfoCache.Put(CUTXORef(exportTx.GetHash(), primaryExportOutNumOut), {nextOutput, primaryExportOut, exportNotarization, reserveTransfers, hashType});
     return true;
 }
 
@@ -408,22 +428,41 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
 
     if (pBaseImport->IsSameChain())
     {
-        // reserve transfers are available via the inputs to the matching export
-        CTransaction exportTx = pBaseImport->exportTxId.IsNull() ? importTx : CTransaction();
-        uint256 hashBlk;
-        COptCCParams p;
-
-        if (!((pBaseImport->exportTxId.IsNull() ? true : myGetTransaction(pBaseImport->exportTxId, exportTx, hashBlk)) &&
-              pBaseImport->IsDefinitionImport() ||
-              (pBaseImport->exportTxOutNum >= 0 &&
-              exportTx.vout.size() > pBaseImport->exportTxOutNum &&
-              exportTx.vout[pBaseImport->exportTxOutNum].scriptPubKey.IsPayToCryptoCondition(p) &&
-              p.IsValid() &&
-              p.evalCode == EVAL_CROSSCHAIN_EXPORT &&
-              p.vData.size() &&
-              (ccx = CCrossChainExport(p.vData[0])).IsValid())))
+        std::tuple<int, CCrossChainExport, CPBaaSNotarization, std::vector<CReserveTransfer>, CCurrencyDefinition::EProofProtocol> cachedExport;
+        if (CCrossChainExport::exportInfoCache.Get(CUTXORef(pBaseImport->exportTxId, pBaseImport->exportTxOutNum), cachedExport))
         {
-            return state.Error(strprintf("%s: cannot retrieve export transaction for import",__func__));
+            reserveTransfers = std::get<3>(cachedExport);
+        }
+        else
+        {
+            // reserve transfers are available via the inputs to the matching export
+            CTransaction exportTx = pBaseImport->exportTxId.IsNull() ? importTx : CTransaction();
+            uint256 hashBlk;
+            COptCCParams p;
+
+            if (!((pBaseImport->exportTxId.IsNull() ? true : myGetTransaction(pBaseImport->exportTxId, exportTx, hashBlk)) &&
+                pBaseImport->IsDefinitionImport() ||
+                (pBaseImport->exportTxOutNum >= 0 &&
+                exportTx.vout.size() > pBaseImport->exportTxOutNum &&
+                exportTx.vout[pBaseImport->exportTxOutNum].scriptPubKey.IsPayToCryptoCondition(p) &&
+                p.IsValid() &&
+                p.evalCode == EVAL_CROSSCHAIN_EXPORT &&
+                p.vData.size() &&
+                (ccx = CCrossChainExport(p.vData[0])).IsValid())))
+            {
+                return state.Error(strprintf("%s: cannot retrieve export transaction for import",__func__));
+            }
+
+            if (!pBaseImport->IsDefinitionImport())
+            {
+                int32_t nextOutput;
+                CPBaaSNotarization xNotarization;
+                int primaryOutNumOut;
+                if (!ccx.GetExportInfo(exportTx, pBaseImport->exportTxOutNum, primaryOutNumOut, nextOutput, xNotarization, reserveTransfers, state))
+                {
+                    return false;
+                }
+            }
         }
 
         // next output after import out is notarization
@@ -431,17 +470,6 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
         {
             // if error, state will be set
             return false;
-        }
-
-        if (!pBaseImport->IsDefinitionImport())
-        {
-            int32_t nextOutput;
-            CPBaaSNotarization xNotarization;
-            int primaryOutNumOut;
-            if (!ccx.GetExportInfo(exportTx, pBaseImport->exportTxOutNum, primaryOutNumOut, nextOutput, xNotarization, reserveTransfers, state))
-            {
-                return false;
-            }
         }
     }
     else
@@ -1247,6 +1275,8 @@ CCrossChainImport CCrossChainImport::GetPriorImportFromSystem(const CTransaction
     return cci;
 }
 
+LRUCache<std::tuple<uint256, uint32_t, uint32_t, CUTXORef, uint160, uint160>, CCurrencyValueMap> priorConversionCache;
+
 // returns the best conversion prices for all currencies in a currency converter over a period of time to go from any currency in
 // the converter to the fee currency.
 //
@@ -1254,9 +1284,18 @@ CCrossChainImport CCrossChainImport::GetPriorImportFromSystem(const CTransaction
 // it is a straight or via conversion.
 CCurrencyValueMap CCrossChainImport::GetBestPriorConversions(const CTransaction &tx, int32_t outNum, const uint160 &converterCurrencyID, const uint160 &targetCurrencyID, const CCoinbaseCurrencyState &converterState, CValidationState &state, uint32_t height, uint32_t minHeight, uint32_t maxHeight) const
 {
+    CCurrencyValueMap retVal;
+
+    // first check cache
+    if (height > 0 &&
+        chainActive.Height() >= height - 1 &&
+        priorConversionCache.Get({chainActive[height - 1]->GetBlockHash(), minHeight, maxHeight, CUTXORef(tx.GetHash(), outNum), converterCurrencyID, targetCurrencyID}, retVal))
+    {
+        return retVal;
+    }
+
     // get the prior import
     CCrossChainImport cci;
-    CCurrencyValueMap retVal;
     CPBaaSNotarization importNot;
 
     CCrossChainImport priorImport, sysCCI;
@@ -1408,6 +1447,13 @@ CCurrencyValueMap CCrossChainImport::GetBestPriorConversions(const CTransaction 
             break;
         }
     }
+
+    if (height > 0 &&
+        chainActive.Height() >= height - 1)
+    {
+        priorConversionCache.Put({chainActive[height - 1]->GetBlockHash(), minHeight, maxHeight, CUTXORef(tx.GetHash(), outNum), converterCurrencyID, targetCurrencyID}, retVal);
+    }
+
     return retVal;
 }
 

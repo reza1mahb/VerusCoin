@@ -950,7 +950,7 @@ public:
     std::vector<CReserveTransfer> &reserveTransfers,
     CCurrencyDefinition::EProofProtocol hashType
     */
-    static LRUCache<CUTXORef, std::tuple<int, CPBaaSNotarization, std::vector<CReserveTransfer>, CCurrencyDefinition::EProofProtocol>>
+    static LRUCache<CUTXORef, std::tuple<int, CCrossChainExport, CPBaaSNotarization, std::vector<CReserveTransfer>, CCurrencyDefinition::EProofProtocol>>
         exportInfoCache;
 
     uint16_t nVersion;                          // current version
