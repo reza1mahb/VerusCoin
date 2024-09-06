@@ -10796,7 +10796,7 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
     return true;
 }
 
-LRUCache<CUTXORef, std::tuple<CTransaction, std::vector<std::pair<CObjectFinalization, CNotaryEvidence>>>> finalizationEvidenceCache(100, 0.3);
+LRUCache<CUTXORef, std::tuple<uint256, CTransaction, std::vector<std::pair<CObjectFinalization, CNotaryEvidence>>>> finalizationEvidenceCache(100, 0.3);
 
 // get and aggregate all evidence from a finalization
 std::vector<std::pair<CObjectFinalization, CNotaryEvidence>>
@@ -10806,11 +10806,17 @@ CObjectFinalization::GetFinalizationEvidence(const CTransaction &thisTx, int32_t
     {
         printf("%s: BAD PARAMETER\n", __func__);
     }
-    std::tuple<CTransaction, std::vector<std::pair<CObjectFinalization, CNotaryEvidence>>> cachedReturn;
+    std::tuple<uint256, CTransaction, std::vector<std::pair<CObjectFinalization, CNotaryEvidence>>> cachedReturn;
     CUTXORef cacheKey = CUTXORef(thisTx.GetHash(), outNum);
+
+    // don't look it up by block hash, but make sure the block that was tip when it was entered is still on the chain
     if (finalizationEvidenceCache.Get(cacheKey, cachedReturn))
     {
-        return std::get<1>(cachedReturn);
+        if (mapBlockIndex.count(std::get<0>(cachedReturn)) &&
+            chainActive.Contains(mapBlockIndex[std::get<0>(cachedReturn)]))
+        {
+            return std::get<2>(cachedReturn);
+        }
     }
 
     CTransaction _outputTx;
@@ -10992,7 +10998,7 @@ CObjectFinalization::GetFinalizationEvidence(const CTransaction &thisTx, int32_t
     }
     if (evidenceVec.size())
     {
-        finalizationEvidenceCache.Put(cacheKey, {finalizedTx, evidenceVec});
+        finalizationEvidenceCache.Put(cacheKey, {chainActive.LastTip()->GetBlockHash(), finalizedTx, evidenceVec});
     }
     return evidenceVec;
 }

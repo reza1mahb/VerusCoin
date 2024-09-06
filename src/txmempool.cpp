@@ -430,7 +430,7 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
 {
     // remove:
     // 1) transactions spending a coinbase which are now immature
-    // 2) exports, notarizations, and imports that reference heights that are no longer valid
+    // 2) exports, notarizations, and imports that that are no longer valid at the current height
     extern char ASSETCHAINS_SYMBOL[KOMODO_ASSETCHAIN_MAXLEN];
 
     if ( ASSETCHAINS_SYMBOL[0] == 0 )
