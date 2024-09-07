@@ -7959,6 +7959,19 @@ UniValue takeoffer(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Identity or currency to accept must be a valid json object");
     }
 
+    std::string revocationStr = uni_get_str(find_value(accept, "revocationauthority"));
+    std::string recoveryStr = uni_get_str(find_value(accept, "recoveryauthority"));
+    std::string idNameStr = uni_get_str(find_value(accept, "name"));
+
+    CTxDestination revocationDest = DecodeDestination(revocationStr);
+    CTxDestination recoveryDest = DecodeDestination(recoveryStr);
+    if (idNameStr != "" &&
+        ((revocationStr != "" && revocationDest.which() != COptCCParams::ADDRTYPE_ID) ||
+         (recoveryStr != "" && recoveryDest.which() != COptCCParams::ADDRTYPE_ID)))
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Revocation and recovery identities must be empty or valid identities when accepting an offer for an ID");
+    }
+
     if ((acceptedIdentity = CIdentity(accept)).IsValid())
     {
         uint160 parentID = uint160(GetDestinationID(DecodeDestination(uni_get_str(find_value(accept, "parent")))));
