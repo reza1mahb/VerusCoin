@@ -177,24 +177,22 @@ std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> Serve
                             }
                             idAddresses[destId] = make_pair(id.minSigs, idAddrBytes);
                         }
-                        else if (!id.IsValid())
+                        else
                         {
                             uint32_t idHeightDef;
-                            if ((id = CIdentity::LookupFirstIdentity(destId, &idHeightDef)).IsValid())
+                            if (!id.IsValid() && (id = CIdentity::LookupFirstIdentity(destId, &idHeightDef)).IsValid())
                             {
                                 LogPrintf("%s: ERROR - ACTION REQUIRED: Corrupt Index, should not move forward as a node. Please bootstrap, sync from scratch, or reindex to continue\n", __func__);
                                 printf("%s: ERROR - ACTION REQUIRED: Corrupt Index, should not move forward as a node. Please bootstrap, sync from scratch, or reindex to continue\n", __func__);
                                 KOMODO_STOPAT = chainActive.Height();
                             }
-                        }
-                        else if ((!_IsVerusMainnetActive() || _IsEnhancedNotarizationOrder(spendHeight)) &&
-                                 id.IsValid() &&
-                                 (id.IsRevoked() || id.IsLocked(spendHeight)))
-                        {
-                            std::vector<unsigned char> randAddr(20);
-                            std::vector<std::vector<unsigned char>> idAddrBytes;
-                            GetRandBytes(&(randAddr[0]), 20);
-                            idAddresses[destId] = make_pair(1, std::vector<std::vector<unsigned char>>({randAddr}));
+                            if (!_IsVerusMainnetActive() || _IsEnhancedNotarizationOrder(spendHeight))
+                            {
+                                std::vector<unsigned char> randAddr(20);
+                                std::vector<std::vector<unsigned char>> idAddrBytes;
+                                GetRandBytes(&(randAddr[0]), 20);
+                                idAddresses[destId] = make_pair(1, std::vector<std::vector<unsigned char>>({randAddr}));
+                            }
                         }
                     }
                 }
