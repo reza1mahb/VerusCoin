@@ -24,6 +24,8 @@ extern uint32_t KOMODO_STOPAT;
 extern int32_t VERUS_MIN_STAKEAGE;
 extern CChain chainActive;
 
+extern const uint32_t PBAAS_NOTARIZATION_ORDER_HEIGHT;
+
 namespace {
 
 /**
@@ -164,6 +166,15 @@ std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> Serve
                                 printf("%s: ERROR - ACTION REQUIRED: Corrupt Index, should not move forward as a node. Please bootstrap, sync from scratch, or reindex to continue\n", __func__);
                                 KOMODO_STOPAT = chainActive.Height();
                             }
+                        }
+                        else if ((!_IsVerusMainnetActive() || spendHeight >= PBAAS_NOTARIZATION_ORDER_HEIGHT) &&
+                                 id.IsValid() &&
+                                 (id.IsRevoked() || id.IsLocked(spendHeight)))
+                        {
+                            std::vector<unsigned char> randAddr(20);
+                            std::vector<std::vector<unsigned char>> idAddrBytes;
+                            GetRandBytes(&(randAddr[0]), 20);
+                            idAddresses[destId] = make_pair(1, std::vector<std::vector<unsigned char>>({randAddr}));
                         }
                     }
                 }
