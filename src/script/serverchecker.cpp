@@ -190,7 +190,14 @@ std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> Serve
                             {
                                 std::vector<unsigned char> randAddr(20);
                                 std::vector<std::vector<unsigned char>> idAddrBytes;
-                                GetRandBytes(&(randAddr[0]), 20);
+                                if (!id.IsValid())
+                                {
+                                    randAddr = GetDestinationBytes(dest);
+                                }
+                                else
+                                {
+                                    GetRandBytes(&(randAddr[0]), 20);
+                                }
                                 idAddresses[destId] = make_pair(1, std::vector<std::vector<unsigned char>>({randAddr}));
                             }
                         }
