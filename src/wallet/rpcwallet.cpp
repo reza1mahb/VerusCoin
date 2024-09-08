@@ -22,7 +22,7 @@
 #include "primitives/transaction.h"
 #include "zcbenchmarks.h"
 #include "script/interpreter.h"
-#include <zcash/address/zip32.h>
+#include "zcash/Address.hpp"
 
 #include "utiltime.h"
 #include "asyncrpcoperation.h"
@@ -1524,6 +1524,8 @@ UniValue signdata(const UniValue& params, bool fHelp)
     string strHex;
     string strBase64;
     string strDataHash;
+    string strMimeType;
+    string strLabel;
     string strSignature;
     string hashTypeStr = "sha256";
     bool createMMR = false;
@@ -1557,6 +1559,8 @@ UniValue signdata(const UniValue& params, bool fHelp)
         vdxfKeys = find_value(params[0], "vdxfkeys");
         vdxfKeyNames = find_value(params[0], "vdxfkeynames");
         boundHashes = find_value(params[0], "boundhashes");
+        strMimeType = uni_get_str(find_value(params[0], "mimetype"));
+        strLabel = uni_get_str(find_value(params[0], "label"));
         strSignature = uni_get_str(find_value(params[0], "signature"));
 
         std::string encryptZAddress = uni_get_str(find_value(params[0], "encrypttoaddress"));;
@@ -1621,6 +1625,16 @@ UniValue signdata(const UniValue& params, bool fHelp)
             }
 
             UniValue mmrDataUniObj = UniValue(UniValue::VOBJ);
+
+            if (!strLabel.empty())
+            {
+                mmrDataUniObj.pushKV("label", strLabel);
+            }
+            if (!strMimeType.empty())
+            {
+                mmrDataUniObj.pushKV("mimetype", strMimeType);
+            }
+
             if (!strFileName.empty())
             {
                 mmrDataUniObj.pushKV("filename", strFileName);
@@ -1805,7 +1819,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
                 // salt is not used if we already have the object hash, but retain it anyhow
                 if (mmrSaltUni.size() || createMMR)
                 {
-                    mmrSalt.push_back(mmrSaltUni.size() > i ? uint256S(uni_get_str(mmrSaltUni[i])) : uint256());
+                    mmrSalt.push_back(mmrSaltUni.size() > i ? uint256(ParseHex(uni_get_str(mmrSaltUni[i]))) : uint256());
                 }
                 msgHash = uint256(dataVec);
                 UniValue oneItemObj = find_value(oneItem, "vdxfdata");
@@ -1832,7 +1846,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
                     CSaltedData saltedObject(dataVec);
                     if (mmrSaltUni.size() > i)
                     {
-                        saltedObject.salt = uint256S(uni_get_str(mmrSaltUni[i]));
+                        saltedObject.salt = uint256(ParseHex(uni_get_str(mmrSaltUni[i])));
                     }
                     mmrSalt.push_back(saltedObject.salt);
                     msgHash = saltedObject.GetHash(hw);
@@ -2202,10 +2216,18 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
     }
     else
     {
-        std::vector<unsigned char> ivkVec(ParseHex(uni_get_str(find_value(params[0], "ivk"))));
-        if (ivkVec.size() == 32)
+        std::string ivkStr = uni_get_str(find_value(params[0], "ivk"));
+        if (ivkStr.empty() && encryptedDescriptor.ivk.size() == 32)
         {
-            wIvk = uint256(ivkVec);
+            wIvk = uint256(encryptedDescriptor.ivk);
+        }
+        else
+        {
+            std::vector<unsigned char> ivkVec(ParseHex(ivkStr));
+            if (ivkVec.size() == 32)
+            {
+                wIvk = uint256(ivkVec);
+            }
         }
     }
 
@@ -2247,23 +2269,81 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
                 CCrossChainDataRef dataRef(foundObj);
                 std::vector<unsigned char> newObject;
                 bool haveNewObject = dataRef.GetOutputData(newObject, true, txid);
-                if (haveNewObject &&
-                    (encryptedDescriptor.epk.size() || encryptedDescriptor.ssk.size()))
+
+                if (LogAcceptCategory("dataencryption"))
                 {
-                    encryptedDescriptor.objectData = newObject;
-                    encryptedDescriptor.flags |= encryptedDescriptor.FLAG_ENCRYPTED_DATA;
-                    if (wIvk.IsNull())
+                    printf("%s: Retrieved evidence data %s\n", __func__, HexBytes(newObject.data(), newObject.size()).c_str());
+                    LogPrintf("%s: Retrieved evidence data %s\n", __func__, HexBytes(newObject.data(), newObject.size()).c_str());
+                }
+
+                if (haveNewObject)
+                {
+                    CVDXFDataDescriptor evidenceData;
+                    CDataDescriptor dataDescr(CDataDescriptor::VERSION_INVALID);
+                    CMMRDescriptor mmrDescr(CMMRDescriptor::VERSION_INVALID);
+                    bool success = false;
+                    ::FromVector(newObject, evidenceData, &success);
+                    if (success)
                     {
-                        encryptedDescriptor.UnwrapEncryption();
+                        success = false;
+                        if (evidenceData.key == CVDXF_Data::DataDescriptorKey())
+                        {
+                            success = true;
+                            dataDescr = evidenceData.dataDescriptor;
+                        }
+                        else if ((evidenceData.key == CVDXF_Data::MMRDescriptorKey()))
+                        {
+                            ::FromVector(evidenceData.data, mmrDescr, &success);
+                            if (success &&
+                                mmrDescr.IsValid())
+                            {
+                                if (boost::get<CPBaaSEvidenceRef>(dataRef.ref).subObject != -1 &&
+                                    mmrDescr.dataDescriptors.size() > boost::get<CPBaaSEvidenceRef>(dataRef.ref).subObject)
+                                {
+                                    dataDescr = mmrDescr.dataDescriptors[boost::get<CPBaaSEvidenceRef>(dataRef.ref).subObject];
+                                }
+                                if (boost::get<CPBaaSEvidenceRef>(dataRef.ref).subObject != -1)
+                                {
+                                    mmrDescr = CMMRDescriptor(CMMRDescriptor::VERSION_INVALID);
+                                }
+                            }
+                        }
                     }
                     else
                     {
-                        encryptedDescriptor.UnwrapEncryption(wIvk);
+                        success = false;
                     }
-                }
-                if (haveNewObject)
-                {
-                    newVDXFData.push_back(CIdentity::VDXFDataToUniValue(encryptedDescriptor.objectData));
+
+                    if (success)
+                    {
+                        if (dataDescr.IsValid())
+                        {
+                            if (dataDescr.epk.size())
+                            {
+                                if (wIvk.IsNull())
+                                {
+                                    dataDescr.UnwrapEncryption();
+                                }
+                                else
+                                {
+                                    dataDescr.UnwrapEncryption(wIvk);
+                                }
+                            }
+                            newVDXFData.push_back(dataDescr.ToUniValue());
+                        }
+                        else if (mmrDescr.IsValid())
+                        {
+                            if (wIvk.IsNull())
+                            {
+                                mmrDescr.Decrypt();
+                            }
+                            else
+                            {
+                                mmrDescr.Decrypt(wIvk);
+                            }
+                            newVDXFData.push_back(mmrDescr.ToUniValue());
+                        }
+                    }
                 }
                 else
                 {
@@ -2284,50 +2364,7 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
         vdxfData = newVDXFData;
     }
 
-    UniValue objectOut = encryptedDescriptor.ToUniValue();
-
-    if (vdxfData.isArray())
-    {
-        for (int i = 0; i < vdxfData.size(); i++)
-        {
-            // first stage, retrieve and decrypt any data from a first level link
-            if (vdxfData[i].isObject())
-            {
-                UniValue foundObj = find_value(vdxfData[i], EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey())));
-                if (foundObj.isObject())
-                {
-                    objectOut.pushKV(CVDXF_Data::CrossChainDataRefKeyName(), foundObj);
-                }
-                else
-                {
-                    foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::DataDescriptorKey())));
-                    if (foundObj.isObject())
-                    {
-                        objectOut.pushKV(CVDXF_Data::DataDescriptorKeyName(), foundObj);
-                    }
-                    else
-                    {
-                        foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::MMRDescriptorKey())));
-                        if (foundObj.isObject())
-                        {
-                            objectOut.pushKV(CVDXF_Data::MMRDescriptorKeyName(), foundObj);
-                        }
-                        else
-                        {
-                            foundObj = find_value(vdxfData, EncodeDestination(CIdentityID(CVDXF_Data::SignatureDataKey())));
-                            if (foundObj.isObject())
-                            {
-                                objectOut.pushKV(CVDXF_Data::SignatureDataKeyName(), foundObj);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    ret.pushKV("datadescriptor", objectOut);
-    return ret;
+    return vdxfData;
 }
 
 UniValue getreceivedbyaddress(const UniValue& params, bool fHelp)
@@ -4749,7 +4786,7 @@ UniValue z_listunspent(const UniValue& params, bool fHelp)
             obj.push_back(Pair("jsindex", (int)entry.jsop.js ));
             obj.push_back(Pair("jsoutindex", (int)entry.jsop.n));
             obj.push_back(Pair("confirmations", entry.confirmations));
-            bool hasSproutSpendingKey = pwalletMain->HaveSproutSpendingKey(boost::get<libzcash::SproutPaymentAddress>(entry.address));
+            bool hasSproutSpendingKey = HaveSpendingKeyForPaymentAddress(pwalletMain)(entry.address);
             obj.push_back(Pair("spendable", hasSproutSpendingKey));
             obj.push_back(Pair("address", EncodePaymentAddress(entry.address)));
             obj.push_back(Pair("amount", ValueFromAmount(CAmount(entry.note.value()))));
@@ -4766,11 +4803,7 @@ UniValue z_listunspent(const UniValue& params, bool fHelp)
             obj.push_back(Pair("txid", entry.op.hash.ToString()));
             obj.push_back(Pair("outindex", (int)entry.op.n));
             obj.push_back(Pair("confirmations", entry.confirmations));
-            libzcash::SaplingIncomingViewingKey ivk;
-            libzcash::SaplingExtendedFullViewingKey extfvk;
-            pwalletMain->GetSaplingIncomingViewingKey(boost::get<libzcash::SaplingPaymentAddress>(entry.address), ivk);
-            pwalletMain->GetSaplingFullViewingKey(ivk, extfvk);
-            bool hasSaplingSpendingKey = pwalletMain->HaveSaplingSpendingKey(extfvk);
+            bool hasSaplingSpendingKey = HaveSpendingKeyForPaymentAddress(pwalletMain)(entry.address);
             obj.push_back(Pair("spendable", hasSaplingSpendingKey));
             obj.push_back(Pair("address", EncodePaymentAddress(entry.address)));
             obj.push_back(Pair("amount", ValueFromAmount(CAmount(entry.note.value())))); // note.value() is equivalent to plaintext.value()
@@ -5537,7 +5570,7 @@ UniValue z_listaddresses(const UniValue& params, bool fHelp)
         std::set<libzcash::SproutPaymentAddress> addresses;
         pwalletMain->GetSproutPaymentAddresses(addresses);
         for (auto addr : addresses) {
-            if (fIncludeWatchonly || pwalletMain->HaveSproutSpendingKey(addr)) {
+            if (fIncludeWatchonly || HaveSpendingKeyForPaymentAddress(pwalletMain)(addr)) {
                 ret.push_back(EncodePaymentAddress(addr));
             }
         }
@@ -5545,8 +5578,6 @@ UniValue z_listaddresses(const UniValue& params, bool fHelp)
     {
         std::set<libzcash::SaplingPaymentAddress> addresses;
         pwalletMain->GetSaplingPaymentAddresses(addresses);
-        libzcash::SaplingIncomingViewingKey ivk;
-        libzcash::SaplingFullViewingKey fvk;
         for (auto addr : addresses) {
             if (fIncludeWatchonly || HaveSpendingKeyForPaymentAddress(pwalletMain)(addr)) {
                 ret.push_back(EncodePaymentAddress(addr));
@@ -5842,9 +5873,16 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
     }
 
     // Check that the from address is valid.
-    auto fromaddress = params[0].get_str();
+    std::string fromaddress = uni_get_str(params[0]);
 
     auto zaddr = DecodePaymentAddress(fromaddress);
+
+    libzcash::PaymentAddress zaddress;
+    if (pwalletMain->GetAndValidateSaplingZAddress(fromaddress, zaddress))
+    {
+        zaddr = zaddress;
+    }
+
     if (!IsValidPaymentAddress(zaddr)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid zaddr.");
     }
@@ -6865,6 +6903,131 @@ UniValue z_sendmany(const UniValue& params, bool fHelp)
     return operationId;
 }
 
+UniValue z_setmigration(const UniValue& params, bool fHelp) {
+    if (!EnsureWalletIsAvailable(fHelp))
+        return NullUniValue;
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "z_setmigration enabled\n"
+            "When enabled the Sprout to Sapling migration will attempt to migrate all funds from this wallet’s\n"
+            "Sprout addresses to either the address for Sapling account 0 or the address specified by the parameter\n"
+            "'-migrationdestaddress'.\n"
+            "\n"
+            "This migration is designed to minimize information leakage. As a result for wallets with a significant\n"
+            "Sprout balance, this process may take several weeks. The migration works by sending, up to 5, as many\n"
+            "transactions as possible whenever the blockchain reaches a height equal to 499 modulo 500. The transaction\n"
+            "amounts are picked according to the random distribution specified in ZIP 308. The migration will end once\n"
+            "the wallet’s Sprout balance is below " + strprintf("%s %s", FormatMoney(CENT), CURRENCY_UNIT) + ".\n"
+            "\nArguments:\n"
+            "1. enabled  (boolean, required) 'true' or 'false' to enable or disable respectively.\n"
+        );
+    LOCK(pwalletMain->cs_wallet);
+    pwalletMain->fSaplingMigrationEnabled = params[0].get_bool();
+    return NullUniValue;
+}
+
+UniValue z_getmigrationstatus(const UniValue& params, bool fHelp) {
+    if (!EnsureWalletIsAvailable(fHelp))
+        return NullUniValue;
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "z_getmigrationstatus\n"
+            "Returns information about the status of the Sprout to Sapling migration.\n"
+            "Note: A transaction is defined as finalized if it has at least ten confirmations.\n"
+            "Also, it is possible that manually created transactions involving this wallet\n"
+            "will be included in the result.\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"enabled\": true|false,                    (boolean) Whether or not migration is enabled\n"
+            "  \"destination_address\": \"zaddr\",           (string) The Sapling address that will receive Sprout funds\n"
+            "  \"unmigrated_amount\": nnn.n,               (numeric) The total amount of unmigrated " + CURRENCY_UNIT +" \n"
+            "  \"unfinalized_migrated_amount\": nnn.n,     (numeric) The total amount of unfinalized " + CURRENCY_UNIT + " \n"
+            "  \"finalized_migrated_amount\": nnn.n,       (numeric) The total amount of finalized " + CURRENCY_UNIT + " \n"
+            "  \"finalized_migration_transactions\": nnn,  (numeric) The number of migration transactions involving this wallet\n"
+            "  \"time_started\": ttt,                      (numeric, optional) The block time of the first migration transaction as a Unix timestamp\n"
+            "  \"migration_txids\": [txids]                (json array of strings) An array of all migration txids involving this wallet\n"
+            "}\n"
+        );
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+    UniValue migrationStatus(UniValue::VOBJ);
+    migrationStatus.push_back(Pair("enabled", pwalletMain->fSaplingMigrationEnabled));
+    //  The "destination_address" field MAY be omitted if the "-migrationdestaddress"
+    // parameter is not set and no default address has yet been generated.
+    // Note: The following function may return the default address even if it has not been added to the wallet
+    auto destinationAddress = AsyncRPCOperation_saplingmigration::getMigrationDestAddress(pwalletMain->GetHDSeedForRPC());
+    migrationStatus.push_back(Pair("destination_address", EncodePaymentAddress(destinationAddress)));
+    //  The values of "unmigrated_amount" and "migrated_amount" MUST take into
+    // account failed transactions, that were not mined within their expiration
+    // height.
+    {
+        std::vector<SproutNoteEntry> sproutEntries;
+        std::vector<SaplingNoteEntry> saplingEntries;
+        std::set<PaymentAddress> noFilter;
+        // Here we are looking for any and all Sprout notes for which we have the spending key, including those
+        // which are locked and/or only exist in the mempool, as they should be included in the unmigrated amount.
+        pwalletMain->GetFilteredNotes(sproutEntries, saplingEntries, noFilter, 0, INT_MAX, true, true, false);
+        CAmount unmigratedAmount = 0;
+        for (const auto& sproutEntry : sproutEntries) {
+            unmigratedAmount += sproutEntry.note.value();
+        }
+        migrationStatus.push_back(Pair("unmigrated_amount", FormatMoney(unmigratedAmount)));
+    }
+    //  "migration_txids" is a list of strings representing transaction IDs of all
+    // known migration transactions involving this wallet, as lowercase hexadecimal
+    // in RPC byte order.
+    UniValue migrationTxids(UniValue::VARR);
+    CAmount unfinalizedMigratedAmount = 0;
+    CAmount finalizedMigratedAmount = 0;
+    int numFinalizedMigrationTxs = 0;
+    uint64_t timeStarted = 0;
+    for (const auto& txPair : pwalletMain->mapWallet) {
+        CWalletTx tx = txPair.second;
+        // A given transaction is defined as a migration transaction iff it has:
+        // * one or more Sprout JoinSplits with nonzero vpub_new field; and
+        // * no Sapling Spends, and;
+        // * one or more Sapling Outputs.
+        if (tx.vJoinSplit.size() > 0 && tx.vShieldedSpend.empty() && tx.vShieldedOutput.size() > 0) {
+            bool nonZeroVPubNew = false;
+            for (const auto& js : tx.vJoinSplit) {
+                if (js.vpub_new > 0) {
+                    nonZeroVPubNew = true;
+                    break;
+                }
+            }
+            if (!nonZeroVPubNew) {
+                continue;
+            }
+            migrationTxids.push_back(txPair.first.ToString());
+            //  A transaction is "finalized" iff it has at least 10 confirmations.
+            // TODO: subject to change, if the recommended number of confirmations changes.
+            if (tx.GetDepthInMainChain() >= 10) {
+                finalizedMigratedAmount -= tx.valueBalance;
+                ++numFinalizedMigrationTxs;
+            } else {
+                unfinalizedMigratedAmount -= tx.valueBalance;
+            }
+            // If the transaction is in the mempool it will not be associated with a block yet
+            if (tx.hashBlock.IsNull() || mapBlockIndex[tx.hashBlock] == nullptr) {
+                continue;
+            }
+            CBlockIndex* blockIndex = mapBlockIndex[tx.hashBlock];
+            //  The value of "time_started" is the earliest Unix timestamp of any known
+            // migration transaction involving this wallet; if there is no such transaction,
+            // then the field is absent.
+            if (timeStarted == 0 || timeStarted > blockIndex->GetBlockTime()) {
+                timeStarted = blockIndex->GetBlockTime();
+            }
+        }
+    }
+    migrationStatus.push_back(Pair("unfinalized_migrated_amount", FormatMoney(unfinalizedMigratedAmount)));
+    migrationStatus.push_back(Pair("finalized_migrated_amount", FormatMoney(finalizedMigratedAmount)));
+    migrationStatus.push_back(Pair("finalized_migration_transactions", numFinalizedMigrationTxs));
+    if (timeStarted > 0) {
+        migrationStatus.push_back(Pair("time_started", timeStarted));
+    }
+    migrationStatus.push_back(Pair("migration_txids", migrationTxids));
+    return migrationStatus;
+}
 
 /**
 When estimating the number of coinbase utxos we can shield in a single transaction:
@@ -7244,11 +7407,14 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
     bool isToSaplingZaddr = false;
     CTxDestination taddr = DecodeDestination(destaddress);
     if (!IsValidDestination(taddr)) {
-        if (IsValidPaymentAddressString(destaddress, branchId)) {
-            // Is this a Sapling address?
-            auto res = DecodePaymentAddress(destaddress);
-            if (IsValidPaymentAddress(res)) {
-                isToSaplingZaddr = boost::get<libzcash::SaplingPaymentAddress>(&res) != nullptr;
+        auto decodeAddr = DecodePaymentAddress(destaddress);
+        if (IsValidPaymentAddress(decodeAddr)) {
+            if (boost::get<libzcash::SaplingPaymentAddress>(&decodeAddr) != nullptr) {
+                isToSaplingZaddr = true;
+                // If Sapling is not active, do not allow sending to a sapling addresses.
+                if (!saplingActive) {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, Sapling has not activated");
+                }
             } else {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Legacy Sprout address not supported as destination. Use a transparent or Sapling compatible address");
             }
@@ -9528,6 +9694,8 @@ static const CRPCCommand commands[] =
     { "wallet",             "z_gettotalbalance",        &z_gettotalbalance,        false },
     { "wallet",             "z_mergetoaddress",         &z_mergetoaddress,         false },
     { "wallet",             "z_sendmany",               &z_sendmany,               false },
+    { "wallet",             "z_setmigration",           &z_setmigration,           false },
+    { "wallet",             "z_getmigrationstatus",     &z_getmigrationstatus,     false },
     { "wallet",             "z_shieldcoinbase",         &z_shieldcoinbase,         false },
     { "wallet",             "z_getoperationstatus",     &z_getoperationstatus,     true  },
     { "wallet",             "z_getoperationresult",     &z_getoperationresult,     true  },

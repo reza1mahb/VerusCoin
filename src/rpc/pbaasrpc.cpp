@@ -3007,7 +3007,7 @@ UniValue listcurrencies(const UniValue& params, bool fHelp)
         }
         if (numKeys)
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid query object parameter, use \"listidentities help\"");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid query object parameter, use \"listcurrencies help\"");
         }
         if (params.size() > 1)
         {
@@ -3250,27 +3250,39 @@ bool GetChainTransfersUnspentBy(std::multimap<std::pair<uint32_t, uint160>, std:
                 continue;
             }
 
-            if (myGetTransaction(it->first.txhash, ntx, blkHash))
+            std::tuple<uint256, CInputDescriptor, CReserveTransfer> cacheValue;
+            bool inCache = false;
+            if ((inCache = (reserveTransferCache.Get({it->first.txhash, (uint32_t)it->first.index}, cacheValue)) && mapBlockIndex.count(std::get<0>(cacheValue)) && chainActive.Contains(mapBlockIndex[std::get<0>(cacheValue)])) &&
+                ((chainFilter.IsNull() || chainFilter == std::get<2>(cacheValue).GetImportCurrency()) && (flags == CReserveTransfer::VALID)))
             {
-                COptCCParams p, m;
-                CReserveTransfer rt;
-                if (ntx.vout[it->first.index].scriptPubKey.IsPayToCryptoCondition(p) &&
-                    p.evalCode == EVAL_RESERVE_TRANSFER &&
-                    p.vData.size() > 1 && (rt = CReserveTransfer(p.vData[0])).IsValid() &&
-                    (m = COptCCParams(p.vData[1])).IsValid() &&
-                    (nofilter || ((rt.flags & rt.IMPORT_TO_SOURCE) ? rt.FirstCurrency() : rt.destCurrencyID) == chainFilter) &&
-                    (rt.flags & flags) == flags)
-                {
-                    inputDescriptors.insert(std::make_pair(std::make_pair(it->first.blockHeight, (rt.flags & rt.IMPORT_TO_SOURCE) ? rt.FirstCurrency() : rt.destCurrencyID),
-                                                std::make_pair(CInputDescriptor(ntx.vout[it->first.index].scriptPubKey, ntx.vout[it->first.index].nValue, CTxIn(COutPoint(it->first.txhash, it->first.index))),
-                                                               rt)));
-                }
+                inputDescriptors.insert(std::make_pair(std::make_pair(it->first.blockHeight, (std::get<2>(cacheValue).flags & std::get<2>(cacheValue).IMPORT_TO_SOURCE) ? std::get<2>(cacheValue).FirstCurrency() : std::get<2>(cacheValue).destCurrencyID), std::make_pair(std::get<1>(cacheValue), std::get<2>(cacheValue))));
             }
-            else
+            else if (!inCache)
             {
-                LogPrintf("%s: cannot retrieve transaction %s\n", __func__, it->first.txhash.GetHex().c_str());
-                printf("%s: cannot retrieve transaction %s\n", __func__, it->first.txhash.GetHex().c_str());
-                return false;
+                if (myGetTransaction(it->first.txhash, ntx, blkHash))
+                {
+                    COptCCParams p, m;
+                    CReserveTransfer rt;
+                    if (ntx.vout[it->first.index].scriptPubKey.IsPayToCryptoCondition(p) &&
+                        p.evalCode == EVAL_RESERVE_TRANSFER &&
+                        p.vData.size() > 1 && (rt = CReserveTransfer(p.vData[0])).IsValid() &&
+                        (m = COptCCParams(p.vData[1])).IsValid() &&
+                        (nofilter || ((rt.flags & rt.IMPORT_TO_SOURCE) ? rt.FirstCurrency() : rt.destCurrencyID) == chainFilter) &&
+                        (rt.flags & flags) == flags)
+                    {
+                        inputDescriptors.insert(std::make_pair(std::make_pair(it->first.blockHeight, (rt.flags & rt.IMPORT_TO_SOURCE) ? rt.FirstCurrency() : rt.destCurrencyID),
+                                                    std::make_pair(CInputDescriptor(ntx.vout[it->first.index].scriptPubKey, ntx.vout[it->first.index].nValue, CTxIn(COutPoint(it->first.txhash, it->first.index))),
+                                                                rt)));
+
+                        reserveTransferCache.Put({it->first.txhash, (uint32_t)it->first.index}, {blkHash, CInputDescriptor(ntx.vout[it->first.index].scriptPubKey, ntx.vout[it->first.index].nValue, CTxIn(COutPoint(it->first.txhash, it->first.index))), rt});
+                    }
+                }
+                else
+                {
+                    LogPrintf("%s: cannot retrieve transaction %s\n", __func__, it->first.txhash.GetHex().c_str());
+                    printf("%s: cannot retrieve transaction %s\n", __func__, it->first.txhash.GetHex().c_str());
+                    return false;
+                }
             }
         }
         if (!chainFilter.IsNull() && (flags == CReserveTransfer::VALID))
@@ -3787,7 +3799,9 @@ bool GetNotarizationData(const uint160 &currencyID,
             CAddressIndexDBEntryCompare indexComparer;
             std::make_heap(pendingFinalizations.begin(), pendingFinalizations.end(), indexComparer);
 
-            std::multimap<CUTXORef, std::pair<CUTXORef, CPBaaSNotarization>> notarizationReferences;
+            std::multimap<std::pair<CUTXORef, uint32_t>, std::pair<CUTXORef, CPBaaSNotarization>> notarizationReferences;
+            bool notarizationOrder = ConnectedChains.IsEnhancedNotarizationOrder(height);
+
             std::set<CUTXORef> consideredNotarizations;
             std::map<CUTXORef, std::pair<CTransaction, uint256>> referencedTxes;
 
@@ -3848,7 +3862,7 @@ bool GetNotarizationData(const uint160 &currencyID,
                 }
                 consideredNotarizations.insert(f.output);
 
-                notarizationReferences.insert(std::make_pair(std::get<2>(priorNotarization), std::make_pair(f.output, n)));
+                notarizationReferences.insert({{std::get<2>(priorNotarization), notarizationOrder ? blockIt->second->GetHeight() : 0},{f.output, n}});
                 if (optionalTxOut)
                 {
                     referencedTxes.insert(std::make_pair(f.output, std::make_pair(nTx, blkHash)));
@@ -3868,14 +3882,16 @@ bool GetNotarizationData(const uint160 &currencyID,
                 {
                     CUTXORef searchRef = notarizationData.vtx[notarizationData.forks[forkNum].back()].first;
 
-                    std::multimap<CUTXORef, std::pair<CUTXORef, CPBaaSNotarization>>::iterator pendingIt;
+                    std::multimap<std::pair<CUTXORef, uint32_t>, std::pair<CUTXORef, CPBaaSNotarization>>::iterator pendingIt;
+                    std::vector<std::pair<CUTXORef, uint32_t>> toRemove;
 
                     bool newFork = false;
 
-                    for (pendingIt = notarizationReferences.lower_bound(searchRef);
-                        pendingIt != notarizationReferences.end() && pendingIt->first == searchRef;
-                        pendingIt++)
+                    for (pendingIt = notarizationReferences.lower_bound({searchRef, 0});
+                         pendingIt != notarizationReferences.end() && pendingIt->first.first == searchRef;
+                         pendingIt++)
                     {
+                        toRemove.push_back(pendingIt->first);
                         notarizationData.vtx.push_back(pendingIt->second);
                         if (optionalTxOut)
                         {
@@ -3893,7 +3909,10 @@ bool GetNotarizationData(const uint160 &currencyID,
                             somethingAdded = true;
                         }
                     }
-                    notarizationReferences.erase(searchRef);
+                    for (auto oneKey : toRemove)
+                    {
+                        notarizationReferences.erase(oneKey);
+                    }
                 }
             }
 
@@ -6503,37 +6522,6 @@ UniValue estimateconversion(const UniValue& params, bool fHelp)
         retVal.pushKV("outputcurrencyid", EncodeDestination(CIdentityID(oneTransfer.IsReserveToReserve() ? oneTransfer.secondReserveID : oneTransfer.destCurrencyID)));
         retVal.pushKV("estimatedcurrencyout", ValueFromAmount(amountOut));
     }
-
-    // if we have only an object parameter, return without an array
-    if (params[0].isObject())
-    {
-        CReserveTransfer oneTransfer(currencyConversions.begin()->second.back());
-        CAmount conversionFee = CReserveTransactionDescriptor::CalculateConversionFeeNoMin(oneTransfer.FirstValue());
-        if (oneTransfer.IsReserveToReserve())
-        {
-            conversionFee = conversionFee << 1;
-        }
-        CAmount startingAmount = oneTransfer.FirstValue() - conversionFee;
-        CAmount amountOut = 0;
-
-        if (oneTransfer.IsImportToSource())
-        {
-            amountOut = currencyState.NativeToReserveRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[oneTransfer.destCurrencyID]]);
-        }
-        else
-        {
-            amountOut = currencyState.ReserveToNativeRaw(startingAmount, currencyState.conversionPrice[currencyState.GetReserveMap()[oneTransfer.FirstCurrency()]]);
-            if (oneTransfer.IsReserveToReserve())
-            {
-                amountOut = currencyState.NativeToReserveRaw(amountOut, currencyState.viaConversionPrice[currencyState.GetReserveMap()[oneTransfer.secondReserveID]]);
-            }
-        }
-
-        retVal.pushKV("inputcurrencyid", EncodeDestination(CIdentityID(oneTransfer.FirstCurrency())));
-        retVal.pushKV("netinputamount", ValueFromAmount(startingAmount));
-        retVal.pushKV("outputcurrencyid", EncodeDestination(CIdentityID(oneTransfer.IsReserveToReserve() ? oneTransfer.secondReserveID : oneTransfer.destCurrencyID)));
-        retVal.pushKV("estimatedcurrencyout", ValueFromAmount(amountOut));
-    }
     else
     {
         UniValue retArr(UniValue::VARR);
@@ -7969,6 +7957,19 @@ UniValue takeoffer(const UniValue& params, bool fHelp)
     if (accept.isNull() || !accept.isObject())
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Identity or currency to accept must be a valid json object");
+    }
+
+    std::string revocationStr = uni_get_str(find_value(accept, "revocationauthority"));
+    std::string recoveryStr = uni_get_str(find_value(accept, "recoveryauthority"));
+    std::string idNameStr = uni_get_str(find_value(accept, "name"));
+
+    CTxDestination revocationDest = DecodeDestination(revocationStr);
+    CTxDestination recoveryDest = DecodeDestination(recoveryStr);
+    if (idNameStr != "" &&
+        ((revocationStr != "" && revocationDest.which() != COptCCParams::ADDRTYPE_ID) ||
+         (recoveryStr != "" && recoveryDest.which() != COptCCParams::ADDRTYPE_ID)))
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Revocation and recovery identities must be empty or valid identities when accepting an offer for an ID");
     }
 
     if ((acceptedIdentity = CIdentity(accept)).IsValid())
@@ -12904,7 +12905,7 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "A gateway currency must be a fractional token that includes both the launch coin and PBaaS native coin at 10% or greater ratio each");
             }
         }
-        else
+        else if (!IsVerusActive() || !PBAAS_TESTMODE)
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Blockchain and gateway launches currently require a gateway converter basket for fee conversion");
         }
@@ -14892,7 +14893,18 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
 
                         UniValue signParams(UniValue::VARR);
                         signParams.push_back(chainData);
+
+                        if (LogAcceptCategory("dataencryption"))
+                        {
+                            printf("%s: params to signdata %s\n", __func__, signParams.write(1,2).c_str());
+                            LogPrintf("%s: params to signdata %s\n", __func__, signParams.write(1,2).c_str());
+                        }
                         UniValue signResult = signdata(signParams, false);
+                        if (LogAcceptCategory("dataencryption"))
+                        {
+                            printf("%s: return from signdata %s\n", __func__, signResult.write(1,2).c_str());
+                            LogPrintf("%s: return from signdata %s\n", __func__, signResult.write(1,2).c_str());
+                        }
 
                         // now, we have both a CMMRDescriptor as well as a CSignatureData if we signed, all encrypted to the specified Z-address
                         CMMRDescriptor MMRDesc = CMMRDescriptor(find_value(signResult, "mmrdescriptor_encrypted"));
@@ -14936,6 +14948,13 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
 
                         libzcash::SaplingPaymentAddress *pEncryptTo = boost::get<libzcash::SaplingPaymentAddress>(&encryptToAddress);
                         libzcash::SaplingPaymentAddress encryptTo = pEncryptTo ? *pEncryptTo : libzcash::SaplingPaymentAddress();
+
+                        if (LogAcceptCategory("dataencryption"))
+                        {
+                            printf("%s: Setting evidence data %s\n", __func__, evidenceData.ToUniValue().write(1,2).c_str());
+                            LogPrintf("%s: Setting evidence data %s\n", __func__, evidenceData.ToUniValue().write(1,2).c_str());
+                        }
+
                         extraData.insert(std::make_pair(key, std::make_tuple(dataLabel, MMRDesc.dataDescriptors.size() > 1 ? "application/json" : mimeType, evidenceData, encryptTo, ivk)));
                         toRemoveValues.push_back(j);
                         continue;
@@ -15111,9 +15130,16 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         std::vector<CTxDestination> dests({CPubKey(ParseHex(CC.CChexstr))});
 
         COptCCParams chkP;
-        if (!MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &std::get<2>(oneExtraData.second))).IsPayToCryptoCondition(chkP, false))
+        CScript simpleScript = MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &std::get<2>(oneExtraData.second)));
+        if (!simpleScript.IsPayToCryptoCondition(chkP, false))
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to package evidence script in ID data output #" + std::to_string(tb.mtx.vout.size()));
+        }
+
+        if (LogAcceptCategory("dataencryption"))
+        {
+            printf("%s: Output evidence %s\n", __func__, std::get<2>(oneExtraData.second).ToUniValue().write(1,2).c_str());
+            LogPrintf("%s: Output evidence %s\n", __func__, std::get<2>(oneExtraData.second).ToUniValue().write(1,2).c_str());
         }
 
         CVDXFDataRef idLink(uint256(), tb.mtx.vout.size(), 0);
@@ -15143,6 +15169,12 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
             memoData.insert(memoData.end(), memoSig.begin(), memoSig.end());
         }
 
+        if (LogAcceptCategory("dataencryption"))
+        {
+            printf("%s: Encrypted output evidence %s\n", __func__, dd.ToUniValue().write(1,2).c_str());
+            LogPrintf("%s: Encrypted output evidence %s\n", __func__, dd.ToUniValue().write(1,2).c_str());
+        }
+
         newID.contentMultiMap.insert(std::make_pair(oneExtraData.first, memoData));
 
         // the value should be considered for reduction
@@ -15163,7 +15195,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         }
         else
         {
-            tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &std::get<2>(oneExtraData.second))), 0);
+            tb.AddTransparentOutput(simpleScript, 0);
         }
     }
 
