@@ -24,7 +24,27 @@ extern uint32_t KOMODO_STOPAT;
 extern int32_t VERUS_MIN_STAKEAGE;
 extern CChain chainActive;
 
-extern const uint32_t PBAAS_NOTARIZATION_ORDER_HEIGHT;
+static const uint32_t SC_PBAAS_NOTARIZATION_ORDER_HEIGHT = 3227685;
+static const uint32_t SC_PBAAS_NOTARIZATION_ORDER_VARRR_HEIGHT = 238210;
+static const uint32_t SC_PBAAS_NOTARIZATION_ORDER_VDEX_HEIGHT = 68730;
+
+static uint160 _vARRRChainID() 
+{
+    static uint160 vARRRID = GetDestinationID(DecodeDestination("vARRR@"));
+    return vARRRID;
+}
+
+static uint160 _vDEXChainID()
+{
+    static uint160 vARRRID = GetDestinationID(DecodeDestination("vARRR@"));
+    return vARRRID;
+}
+
+static bool _IsEnhancedNotarizationOrder(uint32_t height)
+{
+    uint32_t triggerHeight = _IsVerusMainnetActive() ? SC_PBAAS_NOTARIZATION_ORDER_HEIGHT : (_vARRRChainID() == ASSETCHAINS_CHAINID ? SC_PBAAS_NOTARIZATION_ORDER_VARRR_HEIGHT : (_vDEXChainID() == ASSETCHAINS_CHAINID ? SC_PBAAS_NOTARIZATION_ORDER_VDEX_HEIGHT : 0));
+    return height >= triggerHeight;
+}
 
 namespace {
 
@@ -167,7 +187,7 @@ std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> Serve
                                 KOMODO_STOPAT = chainActive.Height();
                             }
                         }
-                        else if ((!_IsVerusMainnetActive() || spendHeight >= PBAAS_NOTARIZATION_ORDER_HEIGHT) &&
+                        else if ((!_IsVerusMainnetActive() || _IsEnhancedNotarizationOrder(spendHeight)) &&
                                  id.IsValid() &&
                                  (id.IsRevoked() || id.IsLocked(spendHeight)))
                         {
