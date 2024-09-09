@@ -773,6 +773,10 @@ const boost::filesystem::path &GetDataDir(bool fNetSpecific)
             path = "";
             return path;
         }
+        if (!_IsVerusActive())
+        {
+            path /= CanonicalChainFileName(std::string(ASSETCHAINS_SYMBOL));
+        }
     } else {
         path = GetDefaultDataDir();
     }
@@ -790,24 +794,18 @@ const boost::filesystem::path GetDataDir(std::string chainName)
     namespace fs = boost::filesystem;
     fs::path path;
     std::string canonicalName = CanonicalChainFileName(chainName);
-
-    if ((canonicalName == "VRSC" || canonicalName == "vrsctest") && mapArgs.count("-datadir")) {
-        path = fs::system_complete(mapArgs["-datadir"]);
-        if (!fs::is_directory(path)) {
-            path = GetDefaultDataDir(chainName);
-        }
-    } else if (mapArgs.count("-datadir"))
+    bool isExternalChain = canonicalName != CanonicalChainFileName(std::string(ASSETCHAINS_SYMBOL));
+    bool isVerus = canonicalName == "VRSC" || canonicalName == "vrsctest";
+    std::string dataDirArg = isExternalChain ? "-notarydatadir" : "-datadir";
+    if (mapArgs.count(dataDirArg))
     {
-        path = fs::system_complete(mapArgs["-datadir"] + canonicalName);
-        if (!fs::is_directory(path)) {
-            path = GetDefaultDataDir(chainName);
-        }
+        path = fs::system_complete(mapArgs[dataDirArg]);
+        path = !fs::is_directory(path) ?
+               GetDefaultDataDir(chainName) : isVerus ?
+                                              path : path / canonicalName;
+        return path;
     }
-    else
-    {
-        path = GetDefaultDataDir(chainName);
-    }
-    return path;
+    return GetDefaultDataDir(chainName);
 }
 
 void ClearDatadirCache()

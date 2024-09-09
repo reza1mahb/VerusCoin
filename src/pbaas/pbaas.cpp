@@ -6552,7 +6552,13 @@ bool CConnectedChains::vARRRUpdateEnabled(uint32_t height) const
 
 uint160 CConnectedChains::vARRRChainID() const
 {
-    static uint160 vARRRID = GetDestinationID(DecodeDestination("iExBJfZYK7KREDpuhj6PzZBzqMAKaFg7d2"));
+    static uint160 vARRRID = GetDestinationID(DecodeDestination("vARRR@"));
+    return vARRRID;
+}
+
+uint160 CConnectedChains::vDEXChainID() const
+{
+    static uint160 vARRRID = GetDestinationID(DecodeDestination("vARRR@"));
     return vARRRID;
 }
 
@@ -6642,6 +6648,12 @@ bool CConnectedChains::IsEnhancedDustCheck(uint32_t height) const
     return height >= triggerHeight;
 }
 
+bool CConnectedChains::IsEnhancedNotarizationOrder(uint32_t height) const
+{
+    uint32_t triggerHeight = IsVerusMainnetActive() ? PBAAS_NOTARIZATION_ORDER_HEIGHT : (vARRRChainID() == ASSETCHAINS_CHAINID ? PBAAS_NOTARIZATION_ORDER_VARRR_HEIGHT : (vDEXChainID() == ASSETCHAINS_CHAINID ? PBAAS_NOTARIZATION_ORDER_VDEX_HEIGHT : 0));
+    return height >= triggerHeight;
+}
+
 bool CConnectedChains::CrossChainPBaaSProofFix(const uint160 &sysID, uint32_t height) const
 {
     auto oracleProofFix = activeUpgradesByKey.find(CConnectedChains::PBaaSCrossChainProofUpgradeKey());
@@ -6666,7 +6678,7 @@ bool CConnectedChains::IsPromoteExchangeRate(uint32_t height) const
 {
     if (IsVerusActive())
     {
-        if (PBAAS_TESTMODE && height < PBAAS_PROMOTE_EXCHANGE_RATE_TEST_HEIGHT)
+        if (PBAAS_TESTMODE && height < PBAAS_PROMOTE_EXCHANGE_RATE_TEST_HEIGHT) // TODO: TESTNET - remove this check after testnet reset and only check mainnet
         {
             return false;
         }

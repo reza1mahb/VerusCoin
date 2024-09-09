@@ -50,6 +50,9 @@ static const uint32_t PBAAS_CROSS_CHAIN_PROOF_FIX_HEIGHT = 3143920;
 static const uint32_t PBAAS_BLOCK_ONE_ID_UPGRADE_FIX_HEIGHT = 3173198;
 static const uint32_t PBAAS_PROMOTE_EXCHANGE_RATE_HEIGHT = 3173568;
 static const uint32_t PBAAS_PROMOTE_EXCHANGE_RATE_TEST_HEIGHT = 171274;
+static const uint32_t PBAAS_NOTARIZATION_ORDER_HEIGHT = 3227685;
+static const uint32_t PBAAS_NOTARIZATION_ORDER_VARRR_HEIGHT = 238210;
+static const uint32_t PBAAS_NOTARIZATION_ORDER_VDEX_HEIGHT = 68730;
 
 class CUpgradeDescriptor
 {
@@ -1227,12 +1230,14 @@ public:
     uint32_t vARRRUpdateHeight(bool getVerusHeight) const;
     bool vARRRUpdateEnabled(uint32_t height) const;
     uint160 vARRRChainID() const;
+    uint160 vDEXChainID() const;
     bool ForceIdentityUpgrade(uint32_t height) const;
     bool ForceIdentityUnlock(uint32_t height) const;
     bool IdentityLockOverride(const CIdentity &identity, uint32_t height) const;
     bool DoPreconvertReserveTransferPrecheck(uint32_t height) const;
     bool DoImportPreconvertReserveTransferPrecheck(uint32_t height) const;
     bool IsEnhancedDustCheck(uint32_t height) const;
+    bool IsEnhancedNotarizationOrder(uint32_t height) const;
     bool CrossChainPBaaSProofFix(const uint160 &sysID, uint32_t height) const;
     bool BlockOneIDUpgrade() const;
     bool IsPromoteExchangeRate(uint32_t height) const;
